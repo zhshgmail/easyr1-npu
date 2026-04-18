@@ -41,6 +41,8 @@ Public API:
 
 ## Integration recipe
 
+This shim covers the **Ray-specific** integration points only. A framework port that uses CUDA-named APIs in its own code (`torch.cuda.*`, `"cuda"` device strings, nccl backend) still needs the `NPU-CP-001` sweep — see `repo/knowledge/npu-patterns.md` and run `repo/scripts/code-path-sweep.sh <source>` to find those sites. The shim + the sweep together are what a second Ray-based port needs.
+
 Copy `ray_npu_shim.py` somewhere importable (e.g. `verl/utils/ray_npu_shim.py`), then:
 
 1. Replace every `ray.init(...)` call:
@@ -70,7 +72,7 @@ Copy `ray_npu_shim.py` somewhere importable (e.g. `verl/utils/ray_npu_shim.py`),
    bundles = [placement_bundle(num_cpus=c, num_accel=1) for _ in range(world_size)]
    ```
 
-5. If the framework has its own `torch.cuda.device_count()` / `torch.cuda.is_available()` calls that influence Ray config, replace those as well — see `NPU-CP-001` in `npu-patterns.md`.
+5. Run `repo/scripts/code-path-sweep.sh <your-source-tree>` to find the framework's own CUDA-named call sites — `torch.cuda.device_count()`, `torch.cuda.is_available()`, `backend="nccl"`, etc. Those are `NPU-CP-001` and need the `verl/utils/device.py`-style helper (separate from this Ray shim). Typical order: apply this shim first, then do the `NPU-CP-001` sweep, then test.
 
 ## Validation
 

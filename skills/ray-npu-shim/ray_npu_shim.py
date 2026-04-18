@@ -85,13 +85,18 @@ def apply_actor_options(options: dict, num_accel: int) -> dict:
 
     On CUDA hosts, sets ``options["num_gpus"] = num_accel`` (the Ray sugar).
     On NPU hosts, sets ``options["resources"] = {"NPU": num_accel}`` (the
-    explicit custom-resource request — Ray's num_gpus sugar is CUDA-only).
+    explicit custom-resource request — Ray's num_gpus sugar is CUDA-only) and
+    *removes* any preexisting ``options["num_gpus"]`` so upstream frameworks
+    that default to ``num_gpus=1`` can't accidentally double-claim.
 
     Mutates and returns the dict for chaining.
     """
     if get_ray_resource_name() == "GPU":
         options["num_gpus"] = num_accel
     else:
+        # Strip any prior num_gpus so the actor doesn't look like it wants
+        # a CUDA device on top of the NPU claim — Ray would fail the match.
+        options.pop("num_gpus", None)
         options.setdefault("resources", {})[get_ray_resource_name()] = num_accel
     return options
 
