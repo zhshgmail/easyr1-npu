@@ -8,10 +8,24 @@ Status: **v1 functional milestone reached.** Date: 2026-04-18. Work done in 1 da
 
 - `easyr1-npu:ascend-port` docker image runs GRPO training on Qwen2-family models on Ascend 910C A3 hardware.
 - V1.4 smoke: 2 GRPO steps on Qwen2-0.5B + math12k dataset, 2 chips, completed end-to-end (8m24s).
-- V1.5 smoke: same recipe scaled to 4 chips (2 A3 cards) — in progress / finished depending on when you read this, see §4.
-- 7 NPU-specific issues identified, all fixed on `zhshgmail/EasyR1` branch `ascend-port` (13 commits).
+- V1.5 smoke: same recipe scaled to 4 chips (2 A3 cards) — see §4 for status at time of read.
+- **7 issue themes / 10 stable IDs** (NPU-CP × 4, NPU-BUG × 2, NPU-ENV × 2, NPU-OPS × 2) identified and fixed on `zhshgmail/EasyR1` branch `ascend-port` (**16 commits** as of 2026-04-18).
 - 6 reusable skills and 3 reusable scripts in `zhshgmail/easyr1-npu` (this repo) for the next port.
 - v2 work (padding-free via `npu_fusion_attention`, ulysses SP on NPU, 8.5.2 migration) explicitly deferred; see §7.
+
+## Compatibility matrix at a glance (v1)
+
+| Axis | Supported in v1 | Out of v1 |
+|---|---|---|
+| Model family | Qwen2 / Qwen2.5 / Qwen3 (text-only) | Qwen2-VL / Qwen3-VL (VLM); non-Qwen not validated |
+| Modality | text-only | VLM, video (needs HF mirror + `qwen_vl_utils` video deps) |
+| Topology | single-node (1-4 A3 cards) | multi-node scale-out |
+| Attention backend | `sdpa` on NPU, `flash_attention_2` on CUDA | `flash_attention_2` on NPU (requires `npu_fusion_attention` port, v2) |
+| Packing | `padding_free=false` only on NPU | `padding_free=true` on NPU (requires NPU varlen, v2) |
+| Sequence parallelism | `ulysses_size=1` only on NPU | ulysses_size > 1 on NPU (requires NPU varlen, v2) |
+| Loggers | console / file / wandb | mlflow / swanlab / tensorboard (import-guarded — likely works but unexercised) |
+| LoRA | `rank=0` (disabled) validated; LoRA hijack path module-imports cleanly but no end-to-end LoRA smoke | anyone turning LoRA on first thing may find issues |
+| Image | `quay.io/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest` (CANN 8.5.0, torch_npu 2.8.0, transformers 4.57.6, vllm_ascend 0.13.1.dev) | `verl-8.5.2-a3` (CANN 8.5.1 / transformers 5.x) — separate migration project |
 
 ---
 
@@ -29,16 +43,16 @@ Functional target met per `design.md §1.1-1.4`:
 
 ### 2.1 `zhshgmail/EasyR1` (private fork of hiyouga/EasyR1), branch `ascend-port`
 
-13 commits. The port is **additive** — no CUDA path regressed. Grouped by concern:
+**16 commits as of 2026-04-18** (verified `git log --oneline main..ascend-port | wc -l`). The port is **additive** — no CUDA path regressed. Grouped by concern:
 
 | Concern | Commits | What |
 |---|---|---|
-| Dep discipline | 1 (`7ee0f0b`) | Split `requirements.txt` into common / gpu / npu variants; declare 3 previously-hidden direct imports (jinja2, psutil, pyyaml); tighten `tensordict` pin. |
-| Device accessor | 2 (`72b564a`, `7187b51`, `496d198`) | `verl/utils/device.py` helper (`is_npu_available`, `get_device_name`, `get_device_module`, `get_dist_backend`, `get_default_attn_implementation`, `get_ray_resource_name`, `get_visible_devices_env`). Sweep of 35 `torch.cuda.*` call sites; device-mesh / device_map / ROCm gate. |
-| Attention backend | 2 (`6701a50`, `da2487f`, `ffafa0d`) | `attn_implementation` configurable, defaults to `sdpa` on NPU. Vendor flash-attn `bert_padding` helpers as pure-torch. NPU-aware config-level gate for `padding_free=True`. x86 unit tests. |
-| Ray NPU | 3 (`fb1a223`, `59641d4`, `cc8e794`) | Register NPU as Ray custom resource. `RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0` (NPU-BUG-002). `VLLM_ASCEND_ENABLE_NZ=0` for RL param-sync. |
-| Platform shims | 2 (`cbfe645`, `87faff1`, `2d8ee2c`) | `Dockerfile.npu` layered on verl-8.5.0-a3 with triton-ascend reinstall (NPU-BUG-001). `vllm.lora.models` → `vllm.lora.lora_model` compat. `get_tensor_model_parallel_group` → `get_tp_group` compat (vllm 0.13 rename). |
-| Smoke harness | 1 (`906215d`, `72a7f22`) | `examples/qwen2_0_5b_math_grpo_npu_smoke.sh` (2 chip) and `..._4chip.sh` (4 chip). |
+| Dep discipline (1 commit) | `7ee0f0b` | Split `requirements.txt` into common / gpu / npu variants; declare 3 previously-hidden direct imports (jinja2, psutil, pyyaml); tighten `tensordict` pin. |
+| Device accessor (3 commits) | `72b564a`, `7187b51`, `496d198` | `verl/utils/device.py` helper (`is_npu_available`, `get_device_name`, `get_device_module`, `get_dist_backend`, `get_default_attn_implementation`, `get_ray_resource_name`, `get_visible_devices_env`). Sweep of 35 `torch.cuda.*` call sites; device-mesh / device_map / ROCm gate. |
+| Attention backend (3 commits) | `6701a50`, `da2487f`, `ffafa0d` | `attn_implementation` configurable, defaults to `sdpa` on NPU. Vendor flash-attn `bert_padding` helpers as pure-torch. NPU-aware config-level gate for `padding_free=True`. x86 unit tests. |
+| Ray NPU (3 commits) | `fb1a223`, `59641d4`, `cc8e794` | Register NPU as Ray custom resource. `RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0` (NPU-BUG-002). `VLLM_ASCEND_ENABLE_NZ=0` for RL param-sync. |
+| Platform shims (4 commits) | `cbfe645`, `cd16649`, `87faff1`, `2d8ee2c` | `Dockerfile.npu` layered on verl-8.5.0-a3 (`cbfe645`). triton-ascend force-reinstall to fix NPU-BUG-001 (`cd16649`). `vllm.lora.models` → `vllm.lora.lora_model` compat (`87faff1`). `get_tensor_model_parallel_group` → `get_tp_group` compat for vllm 0.13 (`2d8ee2c`). |
+| Smoke harness (2 commits) | `906215d`, `72a7f22` | `examples/qwen2_0_5b_math_grpo_npu_smoke.sh` (2 chip) and `..._4chip.sh` (4 chip). |
 
 ### 2.2 `zhshgmail/easyr1-npu` (this repo, private)
 
@@ -70,7 +84,7 @@ Functional target met per `design.md §1.1-1.4`:
 
 ---
 
-## 3. The 7 NPU-specific findings (all fixed + catalogued)
+## 3. The 7 issue themes (10 stable IDs in `npu-patterns.md`)
 
 | ID | Class | What |
 |---|---|---|
@@ -94,19 +108,75 @@ Each entry in `knowledge/npu-patterns.md` has: symptom, root cause, fix, commit 
 | **V1.1** device accessors inside container | ✅ | `torch.npu.is_available()` True; all 6 accessors resolve correctly. |
 | **V1.2** tensor + `attention_utils.py` round-trip on NPU | ✅ | Vendored `unpad_input` / `pad_input` correctness verified against real torch_npu. |
 | **V1.3** vllm_ascend rollout | ✅ | Qwen2-0.5B generated coherent text, ~42 tok/s single chip. |
-| **V1.4** GRPO training 2 steps, 2 chips | ✅ | 8m24s, FSDP world_size=2, HCCL, checkpoint saved. entropy_loss 0.991 → 1.263. |
+| **V1.4** GRPO training 2 steps, 2 chips | ✅ | 8m24s, FSDP world_size=2, HCCL, entropy_loss 0.991 → 1.263. Checkpoint artifacts were written at the end-of-training save (trainer writes on termination even with `save_freq=-1`). Validation ran at end of training despite `val_before_train=false val_freq=-1` — confirming `val_only`-style final validation still fires. Neither is a problem; both are EasyR1 trainer defaults. |
 | **V1.5** GRPO training 2 steps, 4 chips (2 A3 cards) | pending | Launched 2026-04-18; result not captured in this doc yet. |
 
 ---
 
 ## 5. How to reproduce (on a fresh A3 host)
 
-1. Clone: `git clone git@github.com:zhshgmail/easyr1-npu.git repo` and `git clone -b ascend-port git@github.com:zhshgmail/EasyR1.git upstream/EasyR1`. On a CN host set up an askpass helper for private repos — see `a3_server.md`.
-2. Pull the base image: `docker pull quay.io/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest` (14 GB, ≈2 min from quay.io).
-3. Build the layered image: `cd upstream/EasyR1 && docker build -t easyr1-npu:ascend-port -f Dockerfile.npu .` (triton-ascend reinstall is baked in).
-4. Download a small model: `HF_ENDPOINT=https://hf-mirror.com python3 -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen2-0.5B-Instruct', local_dir='/data/$USER/models/Qwen2-0.5B-Instruct')"`.
-5. Smoke up: `bash repo/scripts/run-npu-container.sh --chips 0,1 -- python3 /home/$USER/workspace/easyr1-npu/repo/scripts/smoke_v11_device.py` (V1.1). Then V1.3 rollout, then V1.4 training.
-6. V1.4: `bash repo/scripts/run-npu-container.sh --chips 0,1 -- bash -c 'cd /home/$USER/workspace/easyr1-npu/upstream/EasyR1 && bash examples/qwen2_0_5b_math_grpo_npu_smoke.sh'`.
+### 5.1 One-shot setup
+
+1. **Private-repo auth on the host** (CN hosts can't always use gh CLI):
+   ```bash
+   # One-shot askpass helper that reads GITHUB_TOKEN from env
+   cat > ~/.git-askpass-github.sh <<'EOS'
+   #!/bin/sh
+   case "$1" in
+     *Username*) echo <YOUR_GH_USERNAME> ;;
+     *Password*) echo "$GITHUB_TOKEN" ;;
+   esac
+   EOS
+   chmod +x ~/.git-askpass-github.sh
+   ```
+   Use it per-clone: `GITHUB_TOKEN=<your-PAT> GIT_ASKPASS=~/.git-askpass-github.sh git clone https://github.com/zhshgmail/easyr1-npu.git`.
+
+2. Lay out the workspace:
+   ```bash
+   mkdir -p /home/$USER/workspace/easyr1-npu/upstream /data/$USER /tmp/$USER
+   cd /home/$USER/workspace/easyr1-npu
+   GITHUB_TOKEN=... GIT_ASKPASS=~/.git-askpass-github.sh \
+     git clone https://github.com/zhshgmail/easyr1-npu.git repo
+   cd upstream
+   GITHUB_TOKEN=... GIT_ASKPASS=~/.git-askpass-github.sh \
+     git clone -b ascend-port https://github.com/zhshgmail/EasyR1.git
+   ```
+
+3. Pull the base image: `docker pull quay.io/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest` (14 GB, ≈2 min from quay.io).
+
+4. Build the layered image: `cd upstream/EasyR1 && docker build -t easyr1-npu:ascend-port -f Dockerfile.npu .` (triton-ascend reinstall is baked in; takes ~3 min).
+
+5. Download a small model (via HF CN mirror, directly on the host — not routed through your laptop):
+   ```bash
+   HF_ENDPOINT=https://hf-mirror.com python3 -c "
+   from huggingface_hub import snapshot_download
+   snapshot_download('Qwen/Qwen2-0.5B-Instruct', local_dir='/data/$USER/models/Qwen2-0.5B-Instruct')"
+   ```
+
+### 5.2 Smoke tests (reproducing the branch state exactly)
+
+- V1.1/V1.2 device accessor + vendored `bert_padding` round-trip on NPU:
+  ```bash
+  bash repo/scripts/run-npu-container.sh --chips 0,1 -- \
+    python3 /home/$USER/workspace/easyr1-npu/repo/scripts/smoke_v11_device.py
+  ```
+- V1.3 vllm_ascend rollout (needs the Qwen2-0.5B weights from step 5):
+  ```bash
+  bash repo/scripts/run-npu-container.sh --chips 0,1 -- \
+    python3 /home/$USER/workspace/easyr1-npu/repo/scripts/smoke_v13_rollout.py
+  ```
+- V1.4 GRPO training 2 steps, 2 chips:
+  ```bash
+  bash repo/scripts/run-npu-container.sh --chips 0,1 -- bash -c \
+    'cd /home/'$USER'/workspace/easyr1-npu/upstream/EasyR1 && bash examples/qwen2_0_5b_math_grpo_npu_smoke.sh'
+  ```
+- V1.5 GRPO training 2 steps, 4 chips (2 A3 cards):
+  ```bash
+  bash repo/scripts/run-npu-container.sh --chips 0,1,2,3 -- bash -c \
+    'cd /home/'$USER'/workspace/easyr1-npu/upstream/EasyR1 && bash examples/qwen2_0_5b_math_grpo_npu_smoke_4chip.sh'
+  ```
+
+The V1.4/V1.5 smoke scripts set `val_freq=-1 save_freq=-1 val_before_train=false` — but EasyR1's trainer writes a final checkpoint and runs a final validation at training end, so expect `/tmp/$USER/easyr1_smoke_ckpt/global_step_2/` to appear and a short validation block at the end of the log.
 
 ---
 
@@ -118,6 +188,18 @@ Each entry in `knowledge/npu-patterns.md` has: symptom, root cause, fix, commit 
 - 8.5.2 image migration not attempted. Transformers 5.x + huggingface_hub 1.x compatibility sweep needed. Covered by v2 (§7.3).
 - LoRA rollout path touched via `vllm_utils.py` compat but not exercised end-to-end. If someone uses LoRA first thing, there may be further issues.
 - Single-node only. Multi-node scaling unverified (out of v1 per `design.md §1.3`).
+
+### 6.1 Residual risks / likely first failure modes
+
+Short list of "watch for these first" — drawn from `porting-journal.md` and `npu-gap-plan.md §4` hidden-issues section:
+
+- **Network flakiness to GitHub from the A3 host**. `git fetch` sometimes times out for 2 minutes and then works; fetch retries are built into our workflow but not automated. If something looks like an auth failure, retry 2-3 times first.
+- **Shared host — chip contention**. The A3 at `115.190.166.102` is shared. Always run `npu-smi info -t proc-mem -i <npu>` before claiming chips; `run-npu-container.sh --chips …` auto-aborts if it sees someone else's process. Bypass with `--skip-chip-check` **only** if the holding process is yours.
+- **Disk pressure**. Root fs was 93% used at onboarding. Docker images (18GB each), weight downloads, checkpoints all land under `/` by default. Prune old images + keep checkpoints in `/data/$USER/` only.
+- **RNG state portability**. Checkpoint's `accelerator` key is a device-specific byte string. A CUDA checkpoint loaded on NPU (or vice versa) won't reproduce — that's an EasyR1-wide limitation, not introduced by us, but worth knowing.
+- **vllm-ascend dev build**. The base image's `vllm_ascend 0.13.1.dev18+g2e5f72f92` is a dev build not on PyPI; the image's internal commit is not in the public `releases/v0.13.0` branch. If a question surfaces that seems to hinge on vllm-ascend internals, expect the local checkout at `/vllm-ascend` (editable install) to differ from the public branch.
+- **`torch.backends.cuda.matmul.allow_tf32` no longer applies on NPU**. We guard the knob behind `is_npu_available()`, but the intent ("stable numerics") isn't preserved — npu matmul uses its own precision modes. If numerical stability matters, check vllm-ascend / torch_npu precision flags separately.
+- **HCCL deterministic flags default off**. `LCCL_DETERMINISTIC=0 LCCL_PARALLEL=0` in the base image. For reproducible RL runs set both to 1; expect slower collectives.
 
 ---
 
@@ -142,7 +224,7 @@ The scaffold is built so the **next framework port** (OpenRLHF, TRL, custom) get
 - `skills/upstream-branch-hygiene/` — the operational rule for any multi-repo port.
 - `knowledge/npu-patterns.md` — add new NPU-CP/NPU-BUG/NPU-ENV IDs as they surface.
 
-The expectation is that a second port takes **much less than 1 day**, because 80%+ of the surprises in this port are in the catalog.
+The expectation is that a second similar port (another Ray-based RL framework targeting the same A3 image) is **materially faster and lower-risk** because most of the surprises in this port are already in the catalog. This is a hypothesis based on one data point — it won't be confirmed until we actually do a second port.
 
 ---
 
