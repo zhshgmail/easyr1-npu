@@ -286,3 +286,25 @@ All accessors resolve to their NPU variants. The vendored `npu_flash_attn_utils.
 ### Next: V1.3 rollout smoke
 
 Need to download a small Qwen2 checkpoint (Qwen2-0.5B) via `hf-mirror.com` into `/data/z00637938/models/`, then run a rollout through `vllm_ascend` inside the container. This is the first real test of the vllm_ascend attention path on this image.
+
+### V1.3 rollout smoke PASSED
+
+Downloaded `Qwen/Qwen2-0.5B-Instruct` via hf-mirror.com (no `hf_transfer` since the host python doesn't have it, plain HTTPS is fine — 954 MB in ~2 minutes, one file at 1:58 per-file spike but overall fine) to `/data/z00637938/models/Qwen2-0.5B-Instruct`.
+
+`repo/scripts/smoke_v13_rollout.py` loaded the model through vllm 0.13.0 + vllm_ascend 0.13.1.dev18, TP=1, `enforce_eager=True`, `gpu_memory_utilization=0.5`. Key log lines:
+
+- `device_config=npu`, `backend=hccl` (confirms our device + collective routing)
+- `Loading model weights took 0.9348 GB`
+- `Available memory: 30891205120, total memory: 65787658240` (half the chip)
+- `GPU KV cache size: 2,513,920 tokens` (naming still says "GPU" — cosmetic, it's NPU)
+- `init engine took 16.39 seconds`
+- Three prompts generated coherent text: "Hello, my name is Daniel…", "The capital of France is Paris…", a working `fibonacci` snippet.
+- Throughput `42.57 toks/s` single-chip bf16 eager — not optimized but enough to know the forward path works.
+
+One harmless warning near the end (`Driver Version: 8��... is invalid or not supported yet`) and a teardown-time `Engine core proc died unexpectedly` — both cosmetic on clean runs (vllm engine shutdown race). Nothing actionable.
+
+**Meaning for the port**: vllm_ascend 0.13.1.dev18 covers Qwen2 forward on this image. Our ascend-port changes don't touch the rollout path (it's vllm_ascend's own code), so we didn't regress anything there. Next is the harder test — V1.4 FSDP training, which does exercise our edits.
+
+### Next: V1.4 training smoke
+
+Requires wiring an EasyR1 trainer config with `padding_free=False`, `ulysses_size=1`, the local Qwen2-0.5B-Instruct path, a tiny dataset, a trivial reward. Then 2-4 GRPO steps.
