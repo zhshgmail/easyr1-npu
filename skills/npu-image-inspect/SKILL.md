@@ -50,15 +50,20 @@ Keep the temp dir (for debugging or running `grep` on pip-freeze): `--keep-tmp`.
 
 ## Output schema
 
-Stable section headers so other skills can parse them:
+The script auto-generates these sections with stable headers (other skills can parse them):
 
-- `## Runtime environment`
-- `## Triton-ascend integrity check (NPU-BUG-001)`
-- `## Core ML stack (versions from dist-info)`
-- `## Totals`
-- `## Full pip freeze`
+- `## Runtime environment` — Python prefix, ASCEND_HOME_PATH, Entrypoint, Cmd.
+- `## Triton-ascend integrity check (NPU-BUG-001)` — emits `:warning:` block only when broken.
+- `## Core ML stack (versions from dist-info)` — interesting packages filtered from pip-freeze.
+- `## Totals` — python + apt package counts.
+- `## Full pip freeze` — all dist-info-derived entries (collapsible).
 
-The integrity check emits a `:warning:` block **only** when broken — grep for `NPU-BUG-001 ... warning` to detect bad images.
+**Hand-augmented sections** (not auto-generated; add manually after running the script if the doc is going to be cited elsewhere):
+
+- `## Matching upstream refs` — which branch/tag of torch-npu / vllm-ascend / triton-ascend / transformers matches this image's pins. Derive from `knowledge/upstream-refs.md` and the image's own pip-freeze.
+- `## Open questions` — anything we noticed inspecting the image but can't answer without running it on hardware.
+
+The two hand-written examples in `knowledge/images/verl-8.5.0-a3.md` and `knowledge/images/verl-8.5.2-a3.md` include the hand-augmented sections. When you use `inspect-ascend-image.sh` to bootstrap a new image doc, consider adding at least the `Matching upstream refs` section before treating the doc as complete.
 
 ## Rules / gotchas
 

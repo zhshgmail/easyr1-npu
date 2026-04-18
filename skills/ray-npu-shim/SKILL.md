@@ -1,9 +1,11 @@
 ---
 name: ray-npu-shim
-description: A drop-in Python module for any Ray-based trainer that needs to run on Ascend NPU. Wraps ray.init, actor options, and placement-group bundles with NPU-aware defaults (custom NPU resource, RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO, VLLM_ASCEND_ENABLE_NZ). Copy `ray_npu_shim.py` into the target project and swap 4-5 call sites. Generalizes NPU-CP-003 + NPU-BUG-002 + NPU-ENV-002 so future RL/ML framework ports don't re-derive them.
+description: A drop-in Python module that handles the Ray-specific integration points for Ascend NPU (custom resource, actor options, placement bundles, RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO, VLLM_ASCEND_ENABLE_NZ). Necessary but not sufficient — a real port ALSO needs the NPU-CP-001 sweep over the framework's own CUDA-named calls (see repo/skills/npu-code-path-sweep). Use this shim when porting any Ray-based trainer; pair it with the sweep. Covers NPU-CP-003 + NPU-BUG-002 + NPU-ENV-002 only.
 ---
 
 # ray-npu-shim
+
+> **Scope**: this shim only handles the **Ray↔NPU** integration points (resource registration, actor options, runtime_env defaults). It does NOT port the framework's own CUDA-named code (`torch.cuda.*`, `"cuda"` device strings, `nccl` backend). For that, run `repo/scripts/code-path-sweep.sh <source>` separately and apply the `NPU-CP-001` fix family. The shim + the sweep together are what a second Ray-based port needs.
 
 ## Why
 

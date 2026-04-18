@@ -8,8 +8,8 @@ Status: **v1 functional milestone reached.** Date: 2026-04-18. Work done in 1 da
 
 - `easyr1-npu:ascend-port` docker image runs GRPO training on Qwen2-family models on Ascend 910C A3 hardware.
 - V1.4 smoke: 2 GRPO steps on Qwen2-0.5B + math12k dataset, 2 chips, completed end-to-end (8m24s).
-- V1.5 smoke: same recipe scaled to 4 chips (2 A3 cards) — see §4 for status at time of read.
-- **7 issue themes / 10 stable IDs** (NPU-CP × 4, NPU-BUG × 2, NPU-ENV × 2, NPU-OPS × 2) identified and fixed on `zhshgmail/EasyR1` branch `ascend-port` (**16 commits** as of 2026-04-18).
+- V1.5 smoke: same recipe scaled to 4 chips (2 A3 cards) — 4m55s, world_size=4 with HCCL across 2 A3 cards, 4 ranks wrote checkpoints. 1.7× faster than V1.4 on 2 chips.
+- **16 stable IDs** (NPU-CP × 6, NPU-BUG × 2, NPU-ENV × 4, NPU-OPS × 4) in `knowledge/npu-patterns.md` with uniform schema. The 7 directly-fixed issues in the EasyR1 port are all covered; the other 9 are latent risks and operational rules that would otherwise go unrecorded. Commits: 16 on `zhshgmail/EasyR1` branch `ascend-port` as of 2026-04-18.
 - 6 reusable skills and 3 reusable scripts in `zhshgmail/easyr1-npu` (this repo) for the next port.
 - v2 work (padding-free via `npu_fusion_attention`, ulysses SP on NPU, 8.5.2 migration) explicitly deferred; see §7.
 
@@ -228,8 +228,23 @@ The expectation is that a second similar port (another Ray-based RL framework ta
 
 ---
 
-## 9. Sign-off checklist
+## 9. Sign-off
 
-- [ ] User reviewed this document.
-- [ ] V1.5 finished and results appended to §4 and `porting-journal.md`.
-- [ ] User decides on v2 priority (§7).
+**Status: APPROVED WITH FOLLOW-UPS** (codex proxy sign-off, 2026-04-18).
+
+User delegated final sign-off to the `codex-review` skill. Codex verdict is archived at `docs/codex-signoff.md`. Summary:
+
+- Functional bar met: V1.1–V1.5 all passed on A3 hardware; evidence in `porting-journal.md`.
+- Artifacts durable: `zhshgmail/EasyR1@ascend-port` (16 commits, head `72a7f22`), `zhshgmail/easyr1-npu@main`, docker image rebuildable from `Dockerfile.npu`.
+- Catalog uniform (16 IDs, same schema per entry).
+- Harness ready for the next Ray-based RL port.
+
+**Follow-ups explicitly accepted as known-gap debt** (non-blocking, all Small effort):
+
+1. `MINOR / S` — this DELIVERABLE doc had stale "10 stable IDs" / "see §4 for status at time of read" language. **Fixed in this commit.**
+2. `MINOR / S` — `skills/ray-npu-shim/SKILL.md` headline could overpromise. Tightened in the same commit — explicit that the shim handles Ray-specific only; NPU-CP-001 sweep is separately required.
+3. `MINOR / S` — `skills/npu-image-inspect` output contract vs the two hand-written `knowledge/images/*.md` examples has some sections the script doesn't auto-generate (Matching upstream refs, Open questions). Documented as "hand-augmented sections" in `skills/npu-image-inspect/SKILL.md`; leaving the script lean.
+
+**Residual risks per codex**: week-2 failures most likely in shared-host operations (chip contention, disk pressure), vendor-stack dependencies (triton-ascend repair, vllm_ascend dev build), and paths that are intentionally out of v1 or lightly exercised (LoRA, non-default loggers, padding_free, Ulysses, multi-node).
+
+**First check if something breaks for a reproducer**: confirm they're on the right `ascend-port` head (`72a7f22`), the container was built from `Dockerfile.npu`, and V1.1 smoke passes (`import torch_npu`, `torch.npu.is_available()`, `ASCEND_RT_VISIBLE_DEVICES` populated, `VLLM_ASCEND_ENABLE_NZ=0` set, `triton/__init__.py` exists). Then chip occupancy, stale bind-mount / `__pycache__`, only then Ray / vllm rollout.
