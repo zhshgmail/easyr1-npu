@@ -223,3 +223,66 @@ None are urgent. They'd earn their place by being useful for the next EasyR1 ver
 ### Session stopping point
 
 As far as x86 can take us. Next user-facing decision: provision A3 hardware and run 4.4.2 / 4.4.3. Until then, this branch is ready.
+
+---
+
+## 2026-04-18 (eve) — A3 host onboarded + first NPU smoke
+
+Host details now in memory (`a3_server.md`) and `repo/` has been copied from our x86 box to `github.com/zhshgmail/easyr1-npu` (private). EasyR1 ascend-port is on `github.com/zhshgmail/EasyR1` (private fork, added as `personal` remote locally), 8 commits replicated. Standard dirs `/home/z00637938/workspace`, `/data/z00637938`, `/tmp/z00637938` created on A3. `repo/scripts/run-npu-container.sh` is the canonical container runner — device passthrough + the three user-scoped bind mounts + `network=host --ipc=host` for HCCL.
+
+### First real NPU issue: broken triton-ascend install in the base image
+
+`verl-8.5.0-a3-ubuntu22.04-py3.11-latest`'s `triton-ascend 3.2.0` install is partial. The dist-info RECORD file lists `triton/__init__.py` (1347 bytes) and many sibling files, but the filesystem only contains the compiled subdirs (`_C`, `backends`, `language`, `runtime`, `tools`, `triton_patch`). No `__init__.py` means `import triton` gives an empty namespace, and `torch._inductor.runtime.triton_compat` — which `import torch_npu` transitively pulls in — fails with `ImportError: cannot import name 'Config' from 'triton'`.
+
+Reproduction (inside base image):
+```
+python3 -c "import torch; import torch_npu"
+# ImportError: cannot import name 'Config' from 'triton' (unknown location)
+```
+
+Confirmed the same error in the adjacent `verl-sglang-8.3.rc1-a3` image someone else had running — so this is a base-image-build issue, not specific to our layer.
+
+Hint from `/vllm-ascend/Dockerfile.a3.openEuler` (inside the base image):
+```
+# In x86, triton will be installed by vllm. But in Ascend, triton doesn't work correctly. we need to uninstall it.
+RUN ... && python3 -m pip uninstall -y triton && python3 -m pip cache purge
+```
+So the build sequence leaves a partial triton tree on disk when vllm is installed first, then triton uninstalled, then triton-ascend reinstalled — and the reinstall somehow didn't populate the top-level files back. A known-bad ordering in the base image build script.
+
+Fix in our `Dockerfile.npu`: force-reinstall triton-ascend immediately after `FROM`, before anything else. One extra RUN layer, ~1.6 GB delta.
+
+```dockerfile
+RUN pip install --no-cache-dir --force-reinstall --no-deps triton-ascend==3.2.0 || \
+    pip install --no-cache-dir --force-reinstall --no-deps \
+      --index-url https://mirrors.huaweicloud.com/ascend/repos/pypi triton-ascend==3.2.0
+```
+
+Falls back to huaweicloud's Ascend PyPI mirror if PyPI direct fails (it will on some days — pypi.org is TIMEOUT from this host today, though aliyun is configured as the default index).
+
+### V1.1 / V1.2 smoke PASSED
+
+After the triton-ascend repair, inside the rebuilt container (chips 0,1 passed through):
+
+```
+torch.__version__: 2.8.0+cpu
+torch_npu.__version__: 2.8.0
+torch.npu.is_available(): True
+torch.npu.device_count(): 2
+---
+is_npu_available(): True
+get_device_name(): npu
+get_device_module(): <module 'torch_npu.npu' …>
+get_default_attn_implementation(): sdpa
+get_dist_backend(): hccl
+get_visible_devices_env(): ASCEND_RT_VISIBLE_DEVICES
+---
+round-trip result (3x4 tensor, x*2+1 on NPU): correct values back
+unpad shapes: torch.Size([5, 3]) torch.Size([5]) torch.Size([3]) 3
+pad/unpad round-trip on npu: OK
+```
+
+All accessors resolve to their NPU variants. The vendored `npu_flash_attn_utils.py` helpers run correctly against `torch_npu` — first hardware validation of that file beyond x86 CPU.
+
+### Next: V1.3 rollout smoke
+
+Need to download a small Qwen2 checkpoint (Qwen2-0.5B) via `hf-mirror.com` into `/data/z00637938/models/`, then run a rollout through `vllm_ascend` inside the container. This is the first real test of the vllm_ascend attention path on this image.
