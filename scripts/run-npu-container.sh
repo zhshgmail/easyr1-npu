@@ -44,6 +44,11 @@ for c in "${CHIP_ARR[@]}"; do
   DEVICE_FLAGS+=(--device "/dev/davinci${c}")
 done
 
+# Mount our bind-mounted live EasyR1 source over /opt/easyr1 so code edits on
+# ascend-port are picked up without rebuilding the image. Keep this mount last
+# so it takes precedence over anything COPYed at build time.
+LIVE_EASYR1="${LIVE_EASYR1:-/home/z00637938/workspace/easyr1-npu/upstream/EasyR1}"
+
 docker run --rm \
   "${DEVICE_FLAGS[@]}" \
   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
@@ -53,6 +58,7 @@ docker run --rm \
   -v /home/z00637938:/home/z00637938 \
   -v /data/z00637938:/data/z00637938 \
   -v /tmp/z00637938:/tmp/z00637938 \
+  -v "${LIVE_EASYR1}:/opt/easyr1" \
   --network=host --ipc=host --shm-size=64g \
   -e ASCEND_RT_VISIBLE_DEVICES="${CHIPS}" \
   -e HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}" \
