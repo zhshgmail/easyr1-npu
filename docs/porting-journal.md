@@ -390,3 +390,25 @@ This is the v1 functional milestone per `design.md §1.1-1.4`. Everything from t
 - Operational (`NPU-OPS-*`): 2 found (bind-mount shadowing, stale pycache)
 
 Branch: 12 commits on `personal/ascend-port`. Source-of-truth for port: `zhshgmail/easyr1-npu` main (private).
+
+---
+
+## 2026-04-18 — V1.5 PASSED (multi-card scale-up)
+
+Added `examples/qwen2_0_5b_math_grpo_npu_smoke_4chip.sh` — same config as V1.4 but `n_gpus_per_node=4`, `global_batch_size=8`, `rollout_batch_size=8`. Launched via `run-npu-container.sh --chips 0,1,2,3`.
+
+Result: **2/2 training steps in 4m55s**. V1.4 on 2 chips was 8m24s — **1.7× wall-clock speedup** with 4 chips (sub-linear because per-step work is small and init overhead dominates). Same `entropy_loss` trajectory shape as V1.4 (different values are expected — different batches, different RNG across 4 vs 2 ranks). FSDP `world_size=4` across 2 A3 cards; HCCL inter-card collective path exercised for the first time. All 4 ranks wrote `/tmp/z00637938/easyr1_smoke_ckpt_4chip/global_step_2/actor/{model,optim,extra_state}_world_size_4_rank_{0,1,2,3}.pt`.
+
+No new NPU-specific issues surfaced at 4-chip scale. The code paths (FSDP shard count, HCCL topology, vllm_ascend TP=1) were already exercised in V1.4; V1.5 just confirmed they scale.
+
+## 2026-04-18 — harness fixes from second codex review
+
+Second codex review flagged the catalog and skill implementation as not-yet-handoff-quality. Applied:
+
+- `scripts/code-path-sweep.sh`: replaced broken `IFS='|' read` parser with parallel bash arrays. Canonicalized emitted IDs to match `npu-patterns.md` — no more invented `NPU-CP-001a/b/c` ad-hoc sub-IDs.
+- `knowledge/npu-patterns.md`: rewritten with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema for every entry. Extended NPU-CP-001 to the full CUDA-API family. Promoted 4 latent risks to stable IDs: NPU-CP-005 (flash_attn/liger import), NPU-CP-006 (torch.backends.cuda knobs), NPU-ENV-003 (HCCL determinism), NPU-ENV-004 (RNG portability), NPU-OPS-003 (shared-host contention), NPU-OPS-004 (disk pressure). **Total: 16 IDs** across CP/BUG/ENV/OPS.
+- `docs/skills-design.md`: status table (planned/shipped/deferred/superseded) so the 10-vs-6 mismatch is no longer a gap. Registered `ray-npu-shim` as an emergent unplanned shipment. Struck the "stable IDs TODO" note — DONE.
+- `skills/ray-npu-shim/ray_npu_shim.py`: `apply_actor_options()` now pops any preexisting `num_gpus` on the NPU path, so upstream frameworks that default to `num_gpus=1` don't cause Ray to look for a mixed CUDA+NPU claim.
+- `skills/ray-npu-shim/SKILL.md`: clarified that the shim is necessary-but-not-sufficient. A real second port also needs the `NPU-CP-001` sweep over the framework's own CUDA-named calls.
+
+Harness handoff is now credible per the reviewer's verdict.

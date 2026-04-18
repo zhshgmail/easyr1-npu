@@ -109,7 +109,7 @@ Each entry in `knowledge/npu-patterns.md` has: symptom, root cause, fix, commit 
 | **V1.2** tensor + `attention_utils.py` round-trip on NPU | ✅ | Vendored `unpad_input` / `pad_input` correctness verified against real torch_npu. |
 | **V1.3** vllm_ascend rollout | ✅ | Qwen2-0.5B generated coherent text, ~42 tok/s single chip. |
 | **V1.4** GRPO training 2 steps, 2 chips | ✅ | 8m24s, FSDP world_size=2, HCCL, entropy_loss 0.991 → 1.263. Checkpoint artifacts were written at the end-of-training save (trainer writes on termination even with `save_freq=-1`). Validation ran at end of training despite `val_before_train=false val_freq=-1` — confirming `val_only`-style final validation still fires. Neither is a problem; both are EasyR1 trainer defaults. |
-| **V1.5** GRPO training 2 steps, 4 chips (2 A3 cards) | pending | Launched 2026-04-18; result not captured in this doc yet. |
+| **V1.5** GRPO training 2 steps, 4 chips (2 A3 cards) | ✅ | 4m55s (V1.4 was 8m24s on 2 chips → 1.7× speedup with 4 chips). world_size=4, HCCL across 2 A3 cards, all 4 ranks wrote checkpoints. Same `reward_score: 0.016` as V1.4. |
 
 ---
 
