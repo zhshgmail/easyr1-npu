@@ -308,3 +308,59 @@ One harmless warning near the end (`Driver Version: 8��... is invalid or not
 ### Next: V1.4 training smoke
 
 Requires wiring an EasyR1 trainer config with `padding_free=False`, `ulysses_size=1`, the local Qwen2-0.5B-Instruct path, a tiny dataset, a trivial reward. Then 2-4 GRPO steps.
+
+---
+
+## 2026-04-18 (late) — V1.4 bring-up bugs
+
+Wrote `examples/qwen2_0_5b_math_grpo_npu_smoke.sh` (tiny batch, `padding_free=false`, `ulysses_size=1`, `max_steps=2`). Launched via `repo/scripts/run-npu-container.sh`. Each attempt uncovered one more NPU-specific issue, fixed on the local workstation and git-synced. Cumulative NPU-findings ledger:
+
+### NPU-BUG-001: base image's triton-ascend install is partial
+
+`verl-8.5.0-a3` ships `triton-ascend 3.2.0` but the filesystem under `/usr/local/python3.11.14/.../site-packages/triton/` is missing `__init__.py` and several top-level files that its own dist-info `RECORD` claims should be there. `import torch_npu` fails via `torch._inductor.runtime.triton_compat` (which wants `from triton import Config`).
+
+**Fix**: `Dockerfile.npu` adds a `pip install --force-reinstall --no-deps triton-ascend==3.2.0` layer before any other installs. Falls back to huaweicloud Ascend PyPI mirror if PyPI is unreachable.
+
+### NPU-CP-002: EasyR1 imports a vllm module that was renamed in vllm 0.13
+
+`verl/utils/vllm_utils.py` does `from vllm.lora.models import LoRAModel`. vllm 0.13 (what our target image ships) renamed that file to `vllm.lora.lora_model`. Every `verl.trainer.main` import path transitively pulls vllm_utils in, so the module-level import breaks the whole trainer before anything runs.
+
+**Fix**: try new-path first, fall back to old-path. Also moved `worker_manager` and `utils` imports into `hijack()` so module load doesn't force eager attribute lookups.
+
+### NPU-CP-003: Ray doesn't auto-detect Ascend NPU as a builtin resource
+
+Ray auto-detects CUDA GPUs as the sugar-named `"GPU"` resource. Ascend chips don't get that sugar. EasyR1's placement-group code requests `{"GPU": 1}` bundles and calls `ray.available_resources().get("GPU", 0)` → 0 → `ValueError: Total available GPUs 0 is less than total desired GPUs 2`.
+
+**Fix across 4 files**:
+- New `verl/utils/device.py::get_ray_resource_name()` returns `"NPU"` on NPU, `"GPU"` otherwise.
+- `verl/trainer/main.py` passes `resources={"NPU": torch.npu.device_count()}` to `ray.init()` on NPU hosts.
+- `verl/trainer/ray_trainer.py::_check_resource_available` reads `available_resources()[resource_name]`.
+- `verl/single_controller/ray/base.py`: placement-group bundles use `{resource_name: 1}`; actor spawn uses `options["resources"]={"NPU": n}` (Ray's `num_gpus` sugar is CUDA-only).
+
+### NPU-ENV-001: container didn't have HF_ENDPOINT
+
+Dataset download (`hiyouga/math12k`) went to `huggingface.co` (blocked) → 5 retries → failure.
+
+**Fix**: `run-npu-container.sh` injects `HF_ENDPOINT=https://hf-mirror.com` and `HF_HOME=/data/z00637938/hf-cache` by default.
+
+### NPU-BUG-002: Ray 2.55 clears visibility env vars inside actors
+
+Most confusing one. After the previous 3 fixes, Runner actor still failed with the pre-fix error message ("Total available GPUs 0"). Probed with a fresh Ray actor that imports `torch` + `torch_npu`: **driver saw `torch.npu.is_available() == True, device_count == 2`, actor saw `False, 0` and `ASCEND_RT_VISIBLE_DEVICES=""`**.
+
+Ray 2.55+ defensively clears `{CUDA,ASCEND_RT,HABANA,NEURON_RT}_VISIBLE_*` env vars on actor spawn when the actor isn't claiming `num_gpus > 0`. Our Runner actor uses the custom `NPU` resource, not `num_gpus`, so Ray wipes the visibility list. `torch_npu` auto-load inside the actor then reports no NPU → `is_npu_available()` returns False → we hit the CUDA-path error message.
+
+Ray itself surfaces the knob and warns: *"To enable this behavior and turn off this error message, set `RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0`"*.
+
+**Fix**: `verl/trainer/main.py` adds `RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0` to `runtime_env.env_vars`.
+
+### Non-bug but operational issue: build-time COPY shadowed our edits
+
+`Dockerfile.npu` does `COPY . /opt/easyr1` + `pip install -e .`. The editable link points at the COPY, not the bind-mounted source. So every `git pull` on the host had to be followed by a `docker build` to take effect — a slow loop that masked whether our code changes were even applied. Spent ~5 reruns re-hitting the pre-fix error message until I noticed.
+
+**Fix**: `run-npu-container.sh` now bind-mounts `/home/z00637938/workspace/easyr1-npu/upstream/EasyR1` over `/opt/easyr1`, so `git pull` is enough (no rebuild) for pure source changes. Dockerfile changes still need a rebuild.
+
+**Lesson added to the `upstream-branch-hygiene` skill**: when an editable install's target path is baked into the image, the bind-mount has to shadow it.
+
+### Also cleared `/opt/easyr1`'s stale `__pycache__`
+
+After changing imports in edited modules while `.pyc` files existed, Python sometimes picked up the stale cache. `find .../upstream/EasyR1 -name __pycache__ -type d -exec rm -rf {} +` once — and for future sessions, the runner script should probably clear caches on startup or set `PYTHONDONTWRITEBYTECODE=1`.
