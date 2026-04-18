@@ -364,3 +364,29 @@ Ray itself surfaces the knob and warns: *"To enable this behavior and turn off t
 ### Also cleared `/opt/easyr1`'s stale `__pycache__`
 
 After changing imports in edited modules while `.pyc` files existed, Python sometimes picked up the stale cache. `find .../upstream/EasyR1 -name __pycache__ -type d -exec rm -rf {} +` once — and for future sessions, the runner script should probably clear caches on startup or set `PYTHONDONTWRITEBYTECODE=1`.
+
+### V1.4 PASSED — GRPO 2 steps end-to-end on A3
+
+Final bug before pass: `NPU-ENV-002` — vllm-ascend's FRACTAL_NZ layout causes param-sync precision drift in RL. Set `VLLM_ASCEND_ENABLE_NZ=0` in `ray.init` runtime_env. vllm-ascend itself raises a prescriptive `ValueError` pointing at exactly this knob.
+
+After that commit (`cc8e794`), V1.4 completed:
+
+- 2/2 training steps finished in 8m24s (Qwen2-0.5B, chips 0+1, bf16, eager, `padding_free=false`, `n=2` rollouts, `global_batch_size=4`)
+- Actor forward+backward OK (entropy_loss printed: 0.991 → 1.263)
+- Rollout generated coherent text via `vllm_ascend`
+- Validation ran; `reward_score=0.016` (small model, 2 steps — expected)
+- FSDP world_size=2 across two chips with HCCL — both ranks wrote `/tmp/z00637938/easyr1_smoke_ckpt/global_step_2/actor/{model,optim,extra_state}_world_size_2_rank_{0,1}.pt`
+- vllm offload path exercised: `After vllm offload in sharding manager: 4.98 GB / 61.27 GB`
+
+This is the v1 functional milestone per `design.md §1.1-1.4`. Everything from this point is either V1.5 (multi-card scale-up, same code), perf work, or the deferred v2 items (NPU varlen attention, ulysses, 8.5.2 migration).
+
+### Summary of NPU-specific findings from the V1.4 bring-up
+
+7 items total, all captured with stable IDs in `repo/knowledge/npu-patterns.md`:
+
+- Code patterns (`NPU-CP-*`): 4 found
+- Platform bugs (`NPU-BUG-*`): 2 found
+- Env/config (`NPU-ENV-*`): 2 found
+- Operational (`NPU-OPS-*`): 2 found (bind-mount shadowing, stale pycache)
+
+Branch: 12 commits on `personal/ascend-port`. Source-of-truth for port: `zhshgmail/easyr1-npu` main (private).
