@@ -55,5 +55,7 @@ docker run --rm \
   -v /tmp/z00637938:/tmp/z00637938 \
   --network=host --ipc=host --shm-size=64g \
   -e ASCEND_RT_VISIBLE_DEVICES="${CHIPS}" \
+  -e HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}" \
+  -e HF_HOME="${HF_HOME:-/data/z00637938/hf-cache}" \
   "${IMAGE}" \
   "$@"
