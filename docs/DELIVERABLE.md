@@ -110,7 +110,7 @@ Each entry in `knowledge/npu-patterns.md` has: symptom, root cause, fix, commit 
 | **V1.3** vllm_ascend rollout | ✅ | Qwen2-0.5B generated coherent text, ~42 tok/s single chip. |
 | **V1.4** GRPO training 2 steps, 2 chips | ✅ | 8m24s, FSDP world_size=2, HCCL, entropy_loss 0.991 → 1.263. Checkpoint artifacts were written at the end-of-training save (trainer writes on termination even with `save_freq=-1`). Validation ran at end of training despite `val_before_train=false val_freq=-1` — confirming `val_only`-style final validation still fires. Neither is a problem; both are EasyR1 trainer defaults. |
 | **V1.5** GRPO training 2 steps, 4 chips (2 A3 cards) | ✅ | 4m55s (V1.4 was 8m24s on 2 chips → 1.7× speedup with 4 chips). world_size=4, HCCL across 2 A3 cards, all 4 ranks wrote checkpoints. Same `reward_score: 0.016` as V1.4. |
-| **V1.6** GRPO training 2 steps, 2 chips, **padding_free=True** | ✅ | 7m44s (V1.4 was 8m24s with padding_free=False, so ~8% faster on this tiny batch; production batches with higher length variance will see more). NPU flash-attn varlen path via `transformers.integrations.npu_flash_attention`. `entropy_loss: 0.991 → 1.264` matches V1.4 exactly → numerical equivalence. Required `use_torch_compile=false` workaround for NPU-BUG-003 (triton-ascend inductor shape-sensitive crash). |
+| **V2.1** GRPO training 2 steps, 2 chips, **padding_free=True** | ✅ | 7m44s (V1.4 was 8m24s with padding_free=False, so ~8% faster on this tiny batch; production batches with higher length variance will see more). NPU flash-attn varlen path via `transformers.integrations.npu_flash_attention`. `entropy_loss: 0.991 → 1.264` matches V1.4 exactly → numerical equivalence. Required `use_torch_compile=false` workaround for NPU-BUG-003 (triton-ascend inductor shape-sensitive crash). |
 
 ---
 
@@ -183,7 +183,7 @@ The V1.4/V1.5 smoke scripts set `val_freq=-1 save_freq=-1 val_before_train=false
 
 ## 6. Known limitations (v1 scope)
 
-- ~~`padding_free=True` raises `NotImplementedError` on NPU~~ — **v2 fixed 2026-04-19**. Uses `transformers.integrations.npu_flash_attention` for varlen attention; V1.6 validated numerically equivalent to V1.4 (`padding_free=False`).
+- ~~`padding_free=True` raises `NotImplementedError` on NPU~~ — **v2 fixed 2026-04-19**. Uses `transformers.integrations.npu_flash_attention` for varlen attention; V2.1 validated numerically equivalent to V1.4 (`padding_free=False`).
 - `ulysses_size > 1` raises `NotImplementedError` on NPU. Requires NPU-native `flash_attn_varlen_func` equivalent. Covered by v2 (§7.2).
 - Perf is unoptimized: `enforce_eager=true`, no inductor graph. See v2 (§7.4).
 - 8.5.2 image migration not attempted. Transformers 5.x + huggingface_hub 1.x compatibility sweep needed. Covered by v2 (§7.3).

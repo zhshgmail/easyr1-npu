@@ -226,7 +226,7 @@ torch_functional.log_probs_from_logits  (wrapped by torch.compile)
 
 **Fix (workaround)**: set `worker.actor.use_torch_compile=false` in any EasyR1 config running on NPU. Falls back to eager-mode `log_probs_from_logits` (slight perf cost, no correctness impact).
 
-**Commit ref**: `75bad74` in EasyR1 (V1.6 smoke script sets `use_torch_compile=false`).
+**Commit ref**: `75bad74` in EasyR1 (V2.1 smoke script sets `use_torch_compile=false`).
 
 **Generalizable rule**: **on NPU, default-disable `torch.compile` for RL / varlen workloads** until triton-ascend is proven stable for the shapes in use. Before enabling `torch.compile`, run the target workload with `ASCEND_LAUNCH_BLOCKING=1` and watch for `vector core exception` traces — if any, keep compile disabled. Candidate future `NPU-ENV-NNN`: bake `TORCHINDUCTOR_DISABLE=1` into the container runner env defaults.
 

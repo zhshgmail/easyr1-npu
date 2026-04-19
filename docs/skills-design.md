@@ -12,7 +12,7 @@
 | `code-path-sweep` | **shipped** (D3) | `skills/npu-code-path-sweep/` + `scripts/code-path-sweep.sh` |
 | `container-run` | **shipped** (D1) | `skills/npu-container-runner/` + `scripts/run-npu-container.sh` |
 | `upstream-branch-hygiene` | **shipped** (pre-D) | `skills/upstream-branch-hygiene/` |
-| `npu-smoke-test` | **deferred / superseded** | the smoke scripts (`smoke_v11_device.py`, `smoke_v13_rollout.py`, `examples/qwen2_0_5b_math_grpo_npu_smoke*.sh`) ARE the smoke harness; wrapping them in a skill adds little |
+| `npu-smoke-test` | **partially shipped** | the smoke scripts themselves ARE the harness (`smoke_v11_device.py`, `smoke_v13_rollout.py`, `examples/qwen2_0_5b_math_grpo_npu_smoke*.sh`); and the **ladder convention** is now documented at `knowledge/smoke-ladder-convention.md` for reuse by future ports. No single `SKILL.md` wrapper — the convention doc + the concrete scripts suffice. |
 | `codex-review` | **shipped** (pre-D) | `skills/codex-review/` |
 | `gap-plan` | **deferred** | done as a hand-written `docs/npu-gap-plan.md`; automation over-engineered for a 1-day port |
 | `ray-npu-shim` | **shipped (unplanned addition, D4)** | `skills/ray-npu-shim/` + `ray_npu_shim.py` — extracted from the EasyR1 port when NPU-CP-003 + NPU-BUG-002 + NPU-ENV-002 kept appearing together |
