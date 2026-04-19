@@ -132,7 +132,7 @@ Every level below ran on the target image, in sequence. Each passing level was c
 | V1.4 | GRPO 2-step, 2 chips, padding_free=False, ulysses=1 | ✅ | 8m24s | entropy_loss 0.991 → 1.263; checkpoints ranked 0, 1 |
 | V1.5 | GRPO 2-step, 4 chips, padding_free=False, ulysses=1 | ✅ | 4m55s | 1.7× speedup; HCCL cross-card; ranks 0-3 |
 | V2.1 | GRPO 2-step, 2 chips, padding_free=**True**, ulysses=1 | ✅ | 7m44s | entropy_loss 0.991 → 1.264 (matches V1.4 numerically); NPU FA varlen via `transformers.integrations.npu_flash_attention` |
-| V2.2 | GRPO 2-step, 4 chips, padding_free=True, ulysses=**2** | (in progress at doc time) | ~10m est. | validates HCCL SP collectives under varlen |
+| V2.2 | GRPO 2-step, 4 chips, padding_free=True, ulysses=**2** | ✅ | 4m18s | fastest smoke; HCCL SP collectives auto-routed via torch_npu PrivateUse1; no code changes needed beyond V2.1 |
 
 Each smoke script is independently runnable via `repo/scripts/run-npu-container.sh`; commands documented in `DELIVERABLE.md §5.2`.
 
