@@ -206,11 +206,12 @@ Short list of "watch for these first" — drawn from `porting-journal.md` and `n
 
 ## 7. v2 / follow-up work (prioritized)
 
-1. **NPU varlen attention → enables `padding_free=True`**. Write a `_custom_flash_attention_forward` variant backed by `torch_npu.npu_fusion_attention` with `cu_seqlens` mapped to `actual_seq_{q,kv}len`. Un-gate in `monkey_patch.apply_ulysses_patch`.
-2. **NPU-aware Ulysses SP**. Prerequisite: (1). Then the existing Ulysses collectives (`gather_seq_scatter_heads`) just need HCCL variants.
-3. **8.5.2 image migration**. Transformers 4.57.6 → 5.3.0.dev0, huggingface_hub 0.36 → 1.11, vllm_ascend 0.13 → 0.17. Likely re-expands the NPU-CP catalog.
-4. **Perf pass**. Turn off `enforce_eager`, enable inductor graph compile, benchmark. Compare against veRL NPU baseline if available.
-5. **Liger on NPU**. Only if perf pass identifies fused kernel gaps big enough to matter. Likely a triton-ascend project.
+1. ~~**NPU varlen attention → enables `padding_free=True`**~~ — **shipped 2026-04-19 as v2**. The correct fix was swapping to `transformers.integrations.npu_flash_attention` (veRL's pattern), NOT writing a custom `torch_npu.npu_fusion_attention` adapter. See `NPU-CP-007` + lesson `NPU-OPS-005`.
+2. **Stabilize `NPU-BUG-003`** (newly surfaced by v2). Triton-ascend inductor crashes on `log_probs_from_logits` under varlen shapes. Current workaround is `use_torch_compile=false`. Follow-up is decide: permanent NPU default-off, or narrower shape-guard, or upstream fix.
+3. **V2.2 smoke — 4-chip + `ulysses_size=2`** with `padding_free=True`. First missing smoke above V2.1's envelope. Same scripts + config override.
+4. **8.5.2 image migration**. Transformers 4.57.6 → 5.3.0.dev0, huggingface_hub 0.36 → 1.11, vllm_ascend 0.13 → 0.17. Likely re-expands the NPU-CP catalog.
+5. **Perf pass**. Turn off `enforce_eager`, enable inductor graph compile (blocked by NPU-BUG-003 for actor path; vllm rollout path independent). Compare against veRL NPU baseline if available.
+6. **Liger on NPU**. Only if perf pass identifies fused kernel gaps big enough to matter. Likely a triton-ascend project.
 
 ---
 
@@ -231,9 +232,10 @@ The expectation is that a second similar port (another Ray-based RL framework ta
 
 ## 9. Sign-off
 
-**Status: APPROVED WITH FOLLOW-UPS** (codex proxy sign-off, 2026-04-18).
+- **v1 milestone**: APPROVED WITH FOLLOW-UPS (codex proxy, 2026-04-18). Archived at `docs/codex-signoff.md`.
+- **v2 milestone**: APPROVED WITH FOLLOW-UPS (codex proxy, 2026-04-19). Archived at `docs/codex-signoff-v2.md`.
 
-User delegated final sign-off to the `codex-review` skill. Codex verdict is archived at `docs/codex-signoff.md`. Summary:
+User delegated final sign-off to the `codex-review` skill. Summary of v1:
 
 - Functional bar met: V1.1–V1.5 all passed on A3 hardware; evidence in `porting-journal.md`.
 - Artifacts durable: `zhshgmail/EasyR1@ascend-port` (16 commits, head `72a7f22`), `zhshgmail/easyr1-npu@main`, docker image rebuildable from `Dockerfile.npu`.
@@ -248,4 +250,10 @@ User delegated final sign-off to the `codex-review` skill. Codex verdict is arch
 
 **Residual risks per codex**: week-2 failures most likely in shared-host operations (chip contention, disk pressure), vendor-stack dependencies (triton-ascend repair, vllm_ascend dev build), and paths that are intentionally out of v1 or lightly exercised (LoRA, non-default loggers, padding_free, Ulysses, multi-node).
 
-**First check if something breaks for a reproducer**: confirm they're on the right `ascend-port` head (`72a7f22`), the container was built from `Dockerfile.npu`, and V1.1 smoke passes (`import torch_npu`, `torch.npu.is_available()`, `ASCEND_RT_VISIBLE_DEVICES` populated, `VLLM_ASCEND_ENABLE_NZ=0` set, `triton/__init__.py` exists). Then chip occupancy, stale bind-mount / `__pycache__`, only then Ray / vllm rollout.
+**First check if something breaks for a reproducer**: confirm they're on the right `ascend-port` head (`9e971f0` for v2, `72a7f22` for v1), the container was built from `Dockerfile.npu`, and V1.1 smoke passes (`import torch_npu`, `torch.npu.is_available()`, `ASCEND_RT_VISIBLE_DEVICES` populated, `VLLM_ASCEND_ENABLE_NZ=0` set, `triton/__init__.py` exists). Then chip occupancy, stale bind-mount / `__pycache__`, only then Ray / vllm rollout. For v2 issues specifically (padding_free=True failing), double-check `use_torch_compile=false` is set (NPU-BUG-003 workaround).
+
+**v2 follow-ups captured** (non-blocking):
+
+- `MAJOR / M` — `NPU-BUG-003` stabilization: decide whether `use_torch_compile=false` stays the permanent default on NPU or a narrower guard is sufficient. See `docs/codex-signoff-v2.md`.
+- `MEDIUM / S` — V2.2 (4-chip + ulysses padding_free) is the first missing smoke above V2.1's envelope. Same machinery; ~half-hour to run once hardware time is allocated.
+- `MINOR / S` — residual v1-era wording — addressed in this commit.
