@@ -106,10 +106,14 @@ Fold these in on the next edit:
 
 ---
 
-## Open follow-ups
+## Follow-ups status (completed 2026-04-19)
 
-1. Add NPU-OPS-007 (pip.conf absence) and NPU-OPS-008 (huaweicloud mirror empty) to `repo/knowledge/npu-patterns.md` with full Symptom/Root cause/Fix schema.
-2. Add `set -o pipefail` to `repo/scripts/run-npu-container.sh` and any other harness scripts that use `| tee` or `|`. A one-liner but important.
-3. Evaluate NPU-BUG-003 (inductor crash on log_probs) on CANN 8.5.1 by flipping `use_torch_compile=true` on the drill branch and rerunning. If CANN 8.5.1 fixes it, update the bug entry in `npu-patterns.md`.
-4. Run a longer smoke on the drill branch (e.g. 20 steps, `use_torch_compile=false`) to confirm numerical equivalence over a non-trivial trajectory — step-1 match isn't a guarantee.
-5. Decide whether to merge the drill branch's two code commits (`55bb730`, `d213f01`) back to `ascend-port` **now** (they're backward-compatible), or keep them on the drill branch until the team commits to the 8.5.2 image. The code is safe to take either way.
+1. ✅ NPU-OPS-007 (pip.conf absence) and NPU-OPS-008 (huaweicloud mirror empty) added to `repo/knowledge/npu-patterns.md` with full schema.
+2. ✅ `pipefail` audit: all three harness scripts already had `set -euo pipefail`; only the ad-hoc `/tmp/drill_launch.sh` needed it (fixed during the drill). No other offenders.
+3. ✅ **NPU-BUG-003 on CANN 8.5.1 — probed and documented (`bug003_probe` script).** Result: **not fixed, and arguably worse.** After also fixing a newly-surfaced NPU-BUG-004, the probe reached the inductor kernel and found: step-1 runs without crashing but returns silently corrupted values (`entropy_loss=0.725` vs 1.434 baseline, `grad_norm=88973` vs 1.493 baseline — 60000× blow-up, `ppo_kl=0.033` vs 0 baseline); step-2 propagates the garbage into `aclnnNonzero` → same vector-core crash as 8.5.0. Workaround (`use_torch_compile=false`) stays mandatory. BUG-003's Generalizable rule now requires a numerical comparison against eager baseline before trusting a clean compile run on NPU.
+4. ✅ **20-step trajectory smoke — PASS** (`qwen2_0_5b_math_grpo_npu_smoke_drill_20step.sh`, log `drill_20step_20260419_143746.log`). All 20 training steps + validation + checkpoint save completed cleanly on the drill image with `use_torch_compile=false`. Metrics (entropy_loss per step): `1.434, 1.55, 1.456, 1.543, 1.561, 1.515, 1.69, 1.536, 1.576, 1.599, 1.556, 1.314, 1.828, 1.548, 1.648, 1.612, 1.563, 1.716, 1.345, ...` — stays in [1.31, 1.83] band, `grad_norm` in [0, 3.2] when nonzero (reward-tied steps yield 0), `ppo_kl=0` throughout (KL disabled per config). Validation: `accuracy_reward=0.022`, `overall_reward=0.02`. Checkpoint: 6.1 GB at `global_step_20` across 4 FSDP ranks. No HCCL / vector-core / OOM errors. **This confirms the 8.5.2 stack is stable over a non-trivial trajectory, not just step-1 equivalence.**
+5. ✅ Drill commits cherry-picked onto `ascend-port` mainline: `1f716ea` (no_init_weights compat), `ecce71d` (SamplingParams read-only property skip). Backward-compatible; 8.5.0 users unaffected. Pushed to `personal/ascend-port`.
+
+## New finding: NPU-BUG-004
+
+The BUG-003 probe surfaced a new pattern that had to be fixed before the inductor path could be exercised at all: `triton==3.6.0` and `triton-ascend==3.2.0` coexist in the 8.5.2 base image's `site-packages/triton/` tree and `triton.backends._discover_backends()` walks every `backends/*/compiler.py`, including upstream's `backends/amd/compiler.py` which imports `Language` from `backends/compiler.py` — but the `compiler.py` on disk is from triton-ascend 3.2 which doesn't export it. Any `torch.compile` path crashes at registration. Fix: delete `backends/amd/` and `backends/nvidia/` from the image at build time (we only need `ascend/` on NPU). See `npu-patterns.md#npu-bug-004` and `Dockerfile.npu-852` commits `15f9450` + `a18d1f8`.
