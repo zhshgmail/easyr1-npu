@@ -210,6 +210,28 @@ RUN pip install --no-cache-dir --force-reinstall --no-deps triton-ascend==3.2.0 
 
 ---
 
+### NPU-BUG-003 — triton-ascend inductor kernel crash on shape-sensitive log-probs op
+
+**Symptom**: `[Error]: The vector core execution is abnormal. Kernel task happen error, retCode=0x31, [vector core exception].` raised during training, async traceback points at `aclnnNonzero` or another op downstream of the failing one. With `ASCEND_LAUNCH_BLOCKING=1` the real op is pinned to a triton-ascend inductor-compiled kernel called from `verl/utils/torch_functional.py::log_probs_from_logits` (wrapped by `torch.compile`).
+
+Full blocking-mode stack (EasyR1 repro 2026-04-19):
+```
+torch_functional.log_probs_from_logits  (wrapped by torch.compile)
+  → torch._inductor → torch_npu._inductor.npu_triton_heuristics.run
+  → triton.backends.ascend.driver.__call__
+  → [vector core exception]
+```
+
+**Root cause**: `torch.compile(..., dynamic=True)` on NPU compiles through `torch._inductor` which generates a triton-ascend kernel. On certain input shapes (observed: flat `(1, total_nnz)` packing under `padding_free=True`, vs padded `(batch, seqlen)` under `padding_free=False`), the generated kernel hits a vector-core error. V1.4 happened to avoid it because `padding_free=false` paths give a different shape that compiles and runs.
+
+**Fix (workaround)**: set `worker.actor.use_torch_compile=false` in any EasyR1 config running on NPU. Falls back to eager-mode `log_probs_from_logits` (slight perf cost, no correctness impact).
+
+**Commit ref**: `75bad74` in EasyR1 (V1.6 smoke script sets `use_torch_compile=false`).
+
+**Generalizable rule**: **on NPU, default-disable `torch.compile` for RL / varlen workloads** until triton-ascend is proven stable for the shapes in use. Before enabling `torch.compile`, run the target workload with `ASCEND_LAUNCH_BLOCKING=1` and watch for `vector core exception` traces — if any, keep compile disabled. Candidate future `NPU-ENV-NNN`: bake `TORCHINDUCTOR_DISABLE=1` into the container runner env defaults.
+
+---
+
 ## Environment / configuration (NPU-ENV-NNN)
 
 ### NPU-ENV-001 — container needs `HF_ENDPOINT=https://hf-mirror.com`
@@ -378,8 +400,8 @@ This lets `git log --grep=NPU-CP-003` find every application of the pattern acro
 ## IDs defined (summary)
 
 - Code patterns: `NPU-CP-001` ... `NPU-CP-007` (7 entries)
-- Platform bugs: `NPU-BUG-001` ... `NPU-BUG-002` (2 entries)
+- Platform bugs: `NPU-BUG-001` ... `NPU-BUG-003` (3 entries)
 - Environment/config: `NPU-ENV-001` ... `NPU-ENV-004` (4 entries)
 - Operational: `NPU-OPS-001` ... `NPU-OPS-005` (5 entries)
 
-**Total: 18 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
+**Total: 19 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
