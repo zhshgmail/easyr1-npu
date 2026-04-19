@@ -216,6 +216,26 @@ fresh repo
 
 ---
 
+## 6.5 Mandatory pre-design step: read the reference port
+
+Before designing any non-trivial port work, grep the adjacent ported system + the upstream library for the same sub-problem. Rationale in `knowledge/npu-patterns.md::NPU-OPS-005`.
+
+Concrete for this project: we have **veRL** (the NPU-ported parent of EasyR1) and **transformers.integrations.npu_flash_attention** (upstream library's own NPU adapter). Before writing any adapter / shim / from-scratch code for an NPU-specific concern, **always** check:
+
+1. `upstream/verl/` — does veRL solve this? If yes, in which module? Copy its pattern.
+2. Upstream library's `integrations/` / `backends/` / `*_utils.py` directories on the tag matching our target image — does it ship the adapter?
+3. Only after both come up dry, design from scratch.
+
+Concrete 2026-04-18 incident that seeded this rule: estimated v2 (NPU flash-attn varlen) at 2 days. User asked "how does veRL do it?" — 4-line import swap from `transformers.integrations.npu_flash_attention`. Total real cost: 1-2 hours. See NPU-OPS-005.
+
+Generalization: **this project is a port. Every port has a reference. Reading the reference is always cheaper than re-deriving it.** This rule applies to:
+- EasyR1 → veRL (same framework family)
+- Any RL framework port → veRL (veRL is the most-NPU-ported RL stack)
+- Any ML framework port → transformers, accelerate, vllm-ascend, torch_npu (all ship integration helpers under `integrations/` / `backends/`)
+- Any ops port → a5_ops (has the AscendC / CANN patterns)
+
+If a piece of work needs more than a paragraph of explanation, invest the 5-10 minutes to grep the reference first.
+
 ## 7. Next steps (this session)
 
 1. 把已经手写的 knowledge / journal / scripts 归位到 §4 定义的 skill 输出契约上。缺少的 section schema 补齐。

@@ -287,6 +287,34 @@ Expect measurably slower collectives. Not on by default in our harness.
 
 ---
 
+### NPU-OPS-005 — always inspect the reference implementation before designing
+
+**Symptom**: time estimate for a piece of work is off by an order of magnitude. Typically: "this is going to take days because we need to write an adapter from scratch" — then it turns out the upstream library already ships that adapter, the reference port uses it in 4 lines, and the real work is 1 hour of import swap.
+
+**Root cause**: skipping the "what does the reference port do for this?" check before designing. The combination that makes this trap fire:
+1. There is an existing ported system solving the same problem (in our case, **veRL is the ported version of what EasyR1 is a slim fork of**).
+2. There is an upstream library already supporting the target platform (in our case, **`transformers.integrations.npu_flash_attention`** ships `npu_flash_attn_varlen_func` baked into the library, not in the framework layer).
+3. The agent reasons from first principles about what would be needed to solve the problem, without first checking whether it's already solved in the adjacent project.
+
+Concrete 2026-04-18 incident: I estimated v2 (NPU varlen attention for `padding_free=True`) at 2 days of work writing a `torch_npu.npu_fusion_attention` adapter. After the user asked "how does veRL do it?" I checked `upstream/verl/verl/models/transformers/qwen2_vl.py:52-55` and found:
+```python
+if is_npu_available:
+    from transformers.integrations.npu_flash_attention import npu_flash_attn_func as flash_attn_func
+    from transformers.integrations.npu_flash_attention import npu_flash_attn_varlen_func as flash_attn_varlen_func
+```
+4 lines. Total work dropped from ~2 days to ~1-2 hours. I had violated my own version-aware-reviews rule — had skipped reading the reference before proposing an implementation.
+
+**Fix**:
+- Before proposing any non-trivial work on a problem that has a known adjacent port (veRL ↔ EasyR1 relation; OpenRLHF ↔ TRL; any fork ↔ upstream; any frontend ↔ backend), **spend 5-10 minutes grep-reading the adjacent system** for the same sub-problem. Look specifically in `models/transformers/`, `utils/`, integration modules — anywhere `if is_npu_available()` / `if is_cuda_available()` branching happens.
+- Separately, check whether the **upstream library** (in our case transformers, in other cases pytorch, vllm, ray) has a ready-made integration. The integration usually lives under `*integrations*`, `*backends*`, or `*_utils.py`.
+- Only after both of those come up dry, design from scratch.
+
+**Where applied**: —
+
+**Generalizable rule**: **any time you're about to write an adapter, shim, or "from scratch" implementation of a cross-platform concern (device routing, kernel replacement, distributed backend, IO)**, ask first: has this already been solved one layer up? The pattern holds across ports — the adjacent ported project AND the upstream library are both cheaper to read than to rewrite. Log the answer (even if it's "nobody did this") in the relevant design doc so the next session doesn't re-explore.
+
+---
+
 ### NPU-OPS-004 — disk pressure on a shared host
 
 **Symptom**: `docker pull` fails with `no space left on device`, or a training job dies during checkpoint save.
@@ -322,6 +350,6 @@ This lets `git log --grep=NPU-CP-003` find every application of the pattern acro
 - Code patterns: `NPU-CP-001` ... `NPU-CP-006` (6 entries)
 - Platform bugs: `NPU-BUG-001` ... `NPU-BUG-002` (2 entries)
 - Environment/config: `NPU-ENV-001` ... `NPU-ENV-004` (4 entries)
-- Operational: `NPU-OPS-001` ... `NPU-OPS-004` (4 entries)
+- Operational: `NPU-OPS-001` ... `NPU-OPS-005` (5 entries)
 
-**Total: 16 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
+**Total: 17 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.

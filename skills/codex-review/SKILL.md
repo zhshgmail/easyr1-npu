@@ -83,6 +83,18 @@ Critical: **trust but verify.** Before acting on codex's concrete claims:
 3. **Weight severity appropriately.** CRITICAL findings warrant correction; MAJOR warrant discussion with the user; MINOR warrant a judgment call.
 4. **Don't over-index on any one reviewer.** Codex has its own blind spots (sycophancy, hedge-heavy writing when the prompt permits it, occasional over-confidence on library APIs).
 
+## Reference-first for port reviews
+
+Before asking codex to review a proposal that says "write a new X" for a port, **first grep the reference port and upstream library for X**. If either already has X, the review should be on "should we adopt their pattern?" not "is our design for X good?"
+
+Mechanism: a proposal to write a substantial new adapter / shim / backend for a port is suspicious if it doesn't cite:
+- what the reference port (e.g. veRL for any RL framework port) does for the same concern,
+- whether the upstream library (e.g. transformers, vllm, ray) already ships the integration.
+
+Codex can fact-check these claims, but only if they're in the prompt. If the prompt says "we need to build X from scratch" without referencing those two places, that's usually a red flag — ask codex to check both before designing.
+
+Concrete incident (2026-04-18): v2 proposal estimated 2 days to write an `npu_fusion_attention` adapter. User asked "how does verl do it?" before authorizing. veRL does it with a 4-line import swap from `transformers.integrations.npu_flash_attention` (which ships `npu_flash_attn_varlen_func` already). Total work dropped from ~2 days to ~1 hour. See `repo/knowledge/npu-patterns.md::NPU-OPS-005`.
+
 ## Version-aware reviews
 
 **Critical for multi-version projects (like any port against specific SDK releases):** code behavior differs between branches/tags/master. A review of master when production runs a release branch produces false positives and false negatives.
