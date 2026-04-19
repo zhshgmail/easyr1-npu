@@ -6,8 +6,9 @@ This document covers **what changes, in which repositories, driven by which fact
 - `DELIVERABLE.md` — the sign-off doc (project-status view).
 - `npu-patterns.md` — the stable-ID catalog (per-finding view).
 - `smoke-ladder-convention.md` — the validation methodology.
+- `transformers-upgrade-drill.md` — the 2026-04-19 rehearsal on the 8.5.2 image (second data point for §6 estimates).
 
-Last updated: 2026-04-19. EasyR1 base ref: `dd71bbd` (`origin/main` as of port start). Target image: `quay.io/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest` (CANN 8.5.0, torch_npu 2.8.0, transformers 4.57.6, vllm_ascend 0.13.1.dev18, triton-ascend 3.2.0).
+Last updated: 2026-04-19 (post-drill refresh). EasyR1 base ref: `dd71bbd` (`origin/main` as of port start). Primary target image: `quay.io/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest` (CANN 8.5.0, torch_npu 2.8.0, transformers 4.57.6, vllm_ascend 0.13.1.dev18, triton-ascend 3.2.0). Drill-validated future target: `verl-8.5.2-a3-...-qwen3-5` (CANN 8.5.1, torch_npu 2.9.0, transformers 5.3.0.dev0, vllm_ascend 0.17, triton-ascend 3.2.0).
 
 ---
 
@@ -150,8 +151,12 @@ This is the **step-by-step for redoing this work on a newer EasyR1 commit, or po
 
 ### Step 2 — Inventory the new target image
 - `bash scripts/inspect-ascend-image.sh <image>` → emits `knowledge/images/<slug>.md`.
-- Check NPU-BUG-001 integrity warning (triton-ascend `__init__.py` sanity).
+- Check NPU-BUG-001 integrity warning (triton-ascend `__init__.py` sanity). **NPU-BUG-001 recurs on every Ascend verl image inspected so far (8.5.0 and 8.5.2).** Treat the `Dockerfile.npu` triton-ascend force-reinstall as mandatory, not conditional.
 - Diff pip freeze against `knowledge/images/verl-8.5.0-a3.md` to find package version shifts.
+- **Image-infra pre-flight** (NPU-OPS-006/007/008) — these three pits each cost 10-15 min if you hit them reactively; 30 seconds each to check proactively:
+  - `docker run --rm --entrypoint cat <image> /etc/pip.conf` — if empty, the image has no baked pip index. Bake `ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/` into your Dockerfile (NPU-OPS-007) or every `pip install` will hang on pypi.org from a firewalled host.
+  - `curl -sL 'https://mirrors.huaweicloud.com/ascend/repos/pypi/triton-ascend/' | grep -c '.whl'` — if zero, huaweicloud's ascend mirror is empty for triton-ascend today; use aliyun's general pypi index instead (NPU-OPS-008). Don't hard-code huaweicloud as the source.
+  - `docker info | grep -A2 'Registry Mirrors'` + `systemctl cat docker | grep HTTP_PROXY` — if the daemon routes through an HTTP proxy, add your chosen registry mirror hostname to `NO_PROXY` before the first `docker pull` (NPU-OPS-006). Pull timeouts on A3 almost always mean the proxy is dead, not the registry.
 
 ### Step 3 — Version-align upstream refs
 - Update `knowledge/upstream-refs.md` with which branch/tag of each upstream matches the new target image (torch-npu, vllm-ascend, triton-ascend, transformers).
@@ -194,9 +199,9 @@ Based on this port's time spend (~2 days from zero to v2):
 - **Same EasyR1 version, different machine**: ~half day, most of it setup (image pulls, host onboarding, chip access).
 - **Newer EasyR1 commit (minor upstream changes)**: ~0.5-1 day. Assume 2-4 catalog patterns hit, each 30-60 minutes to confirm the fix pattern applies and run smoke levels.
 - **Different Ray-based RL framework (OpenRLHF, TRL with Ray)**: ~1-1.5 days. Same sweep + shim + smoke pattern; new framework-specific quirks cost 0.5 day of new-ID work.
-- **Major transformers upgrade (4.57 → 5.0+)**: ~0.5-2 days. Depends on whether `transformers.integrations.npu_flash_attention` surface stable.
+- **Major transformers upgrade (4.57 → 5.0+)**: ~45 min if you hit a new image-infra pit, ~20 min if not. **Measured 2026-04-19** on the `ascend-port-transformers-upgrade` drill branch: 45 min wall-clock (transformers 4.57 → 5.3.0.dev0, vllm 0.13 → 0.18, torch_npu 2.7 → 2.9 simultaneously), **4 LOC of code changes** across 2 files, step-1 `entropy_loss` matched V1.4 baseline exactly. Code diff was cheaper than the 0.5-2 day estimate; infra cost dominated (3 new image-infra pits surfaced — see NPU-OPS-006/007/008). See `repo/docs/transformers-upgrade-drill.md` for the full report.
 
-These are estimates based on **one data point**. The 2-day → 1-hour discovery of `transformers.integrations.npu_flash_attention` suggests that for anything with a reference port, actual cost is lower than first estimate.
+These are estimates based on **two data points** (initial port + transformers upgrade drill). Code cost is reliably low once the helper-layer is in place (`verl/utils/device.py` + hasattr-gated vllm imports absorb API drift automatically). **Infra cost is where you get surprised**: budget 10-15 min per new image-infra pit and expect 1-2 pits on any new base image. The drill's 30% overrun came entirely from hitting these reactively rather than checking them in pre-flight (Step 2 now covers this).
 
 ---
 
@@ -204,9 +209,9 @@ These are estimates based on **one data point**. The 2-day → 1-hour discovery 
 
 Non-blocking but named:
 
-1. `NPU-BUG-003` stabilization — triton-ascend inductor shape-sensitive crash. Currently worked around via `use_torch_compile=false`. Need: either a narrower guard, a triton-ascend version bump, or upstream fix.
+1. `NPU-BUG-003` stabilization — triton-ascend inductor shape-sensitive crash. Currently worked around via `use_torch_compile=false`. Need: either a narrower guard, a triton-ascend version bump, or upstream fix. Status on CANN 8.5.1 unknown — the 8.5.2-image drill masked this by inheriting `use_torch_compile=false` from V2.2, so it did not exercise the inductor path. Flip the flag on the drill branch to probe.
 2. V2.2 passing is the last ladder level — once confirmed, v2 is fully closed. (This doc gets a status update in the journal.)
-3. 8.5.2 image migration — transformers 5.3.0.dev0 + huggingface_hub 1.11 + vllm_ascend 0.17. Separate project (`v3`).
+3. 8.5.2 image migration — transformers 5.3.0.dev0 + huggingface_hub 1.11 + vllm_ascend 0.17. **Drill status (2026-04-19): validated end-to-end** on `ascend-port-transformers-upgrade` branch; step-1 entropy_loss matches V1.4 baseline. Two code commits (`no_init_weights` import move, `SamplingParams.eos_token_id` read-only property) cherry-picked onto `ascend-port` as `1f716ea` / `ecce71d`. Image still non-default pending a longer (20-step) trajectory smoke to confirm stability past step-1. See `repo/docs/transformers-upgrade-drill.md`.
 4. Multi-node scaling — only validated single-node.
 5. Long-context (>2k response length) — not exercised.
 
