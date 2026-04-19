@@ -129,6 +129,36 @@ else:
 
 ---
 
+### NPU-CP-007 — swap flash-attn imports for transformers NPU integrations
+
+**Pattern**: framework code does `from flash_attn import flash_attn_func, flash_attn_varlen_func` (or similar) to drive FA2-style variable-length attention.
+
+**Symptom**: on NPU the flash-attn package isn't installed; `ImportError` at module load. Worse: if the framework guards this import behind `try/except ImportError`, the exported functions are undefined but the module imports cleanly → `NameError` is deferred until runtime.
+
+**Root cause**: flash-attn's CUDA kernels are absent on NPU. However, `transformers >= 4.45` ships its own NPU adapters at `transformers.integrations.npu_flash_attention` — `npu_flash_attn_func` and `npu_flash_attn_varlen_func` — that wrap `torch_npu.npu_fusion_attention` behind flash-attn-style signatures. The adapters are available on transformers 4.57.6 (our v1 target) and on main.
+
+**Fix**: conditional-import swap before the flash-attn import:
+```python
+from verl.utils.device import is_npu_available
+# ... or your own is_npu_available helper ...
+
+if is_npu_available():
+    from transformers.integrations.npu_flash_attention import npu_flash_attn_func as flash_attn_func
+    from transformers.integrations.npu_flash_attention import npu_flash_attn_varlen_func as flash_attn_varlen_func
+    _flash_use_top_left_mask = False  # NPU FA uses bottom-right causal
+elif is_flash_attn_2_available():
+    from flash_attn import flash_attn_func, flash_attn_varlen_func
+    # ... existing CUDA introspection ...
+```
+
+After the swap, code downstream (`_flash_attention_forward` from `transformers.modeling_flash_attention_utils`, `fa_peft_integration_check`, and custom varlen paths) stays backend-agnostic — transformers' `_flash_attention_forward` itself does the same dispatch (see `src/transformers/modeling_flash_attention_utils.py` lines 161-163 in master).
+
+**Commit ref**: `fbaa983` in EasyR1's `verl/models/transformers/flash_attention_utils.py`.
+
+**Generalizable rule**: **transformers is the NPU adapter layer for flash-attention**, not torch_npu directly. Any framework with a conditional `if is_npu_available(): from torch_npu ...` hand-written adapter should be refactored to use the transformers integration. This is also the pattern veRL uses in `verl/models/transformers/qwen2_vl.py:52-55` and `glm4v.py:52-55`. See also NPU-OPS-005 — reading the reference port saved ~2 days vs writing a custom adapter.
+
+---
+
 ### NPU-CP-006 — `torch.backends.cuda.*` knobs are no-ops on NPU
 
 **Pattern**: `torch.backends.cuda.matmul.allow_tf32 = False` / `torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False` / other `torch.backends.cuda.*` numerical-precision toggles.
@@ -347,9 +377,9 @@ This lets `git log --grep=NPU-CP-003` find every application of the pattern acro
 
 ## IDs defined (summary)
 
-- Code patterns: `NPU-CP-001` ... `NPU-CP-006` (6 entries)
+- Code patterns: `NPU-CP-001` ... `NPU-CP-007` (7 entries)
 - Platform bugs: `NPU-BUG-001` ... `NPU-BUG-002` (2 entries)
 - Environment/config: `NPU-ENV-001` ... `NPU-ENV-004` (4 entries)
 - Operational: `NPU-OPS-001` ... `NPU-OPS-005` (5 entries)
 
-**Total: 17 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
+**Total: 18 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
