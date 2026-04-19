@@ -230,6 +230,30 @@ torch_functional.log_probs_from_logits  (wrapped by torch.compile)
 
 **Generalizable rule**: **on NPU, default-disable `torch.compile` for RL / varlen workloads** until triton-ascend is proven stable for the shapes in use. Before enabling `torch.compile`, run the target workload with `ASCEND_LAUNCH_BLOCKING=1` and watch for `vector core exception` traces — if any, keep compile disabled. Candidate future `NPU-ENV-NNN`: bake `TORCHINDUCTOR_DISABLE=1` into the container runner env defaults.
 
+**Status on 8.5.2 image (probed 2026-04-19, `bug003_probe` script on drill branch)**: could not confirm or refute. The probe hit NPU-BUG-004 (triton 3.6 + triton-ascend 3.2 coexistence crash) at `torch.compile` registration, **before** the inductor could execute a kernel. Until NPU-BUG-004's fix lands (remove upstream triton's amd/nvidia backends in the drill Dockerfile), BUG-003's state on CANN 8.5.1 remains unknown.
+
+---
+
+### NPU-BUG-004 — upstream `triton==3.6.0` + `triton-ascend==3.2.0` in same site-packages
+
+**Symptom**: any `torch.compile` code path on the 8.5.2-based image fails at inductor registration with `ImportError: cannot import name 'Language' from 'triton.backends.compiler'` during `torch_npu._inductor` import, raised from `triton/backends/amd/compiler.py:1`. Followed by `torch._dynamo.exc.BackendCompilerFailed: backend='inductor' raised: ImportError ...` and a secondary `TypeError: cannot pickle 'frame' object` as Ray tries to serialize the error frames back to the driver.
+
+**Root cause**: the `verl-8.5.2-a3-...-qwen3-5` base image installs **both** `triton==3.6.0` (upstream CUDA/AMD triton) and `triton-ascend==3.2.0` into the single `site-packages/triton/` tree. Their backend trees merge: `backends/amd/` + `backends/nvidia/` come from upstream 3.6, while `backends/ascend/` + the top-level `backends/compiler.py` come from triton-ascend 3.2. Upstream 3.6's `backends/amd/compiler.py` starts with `from triton.backends.compiler import BaseBackend, GPUTarget, Language` — but the `compiler.py` currently on disk (from triton-ascend 3.2) doesn't export `Language`. Any `torch.compile` path eventually imports `torch_npu._inductor`, which imports `triton.runtime`, which triggers `triton.backends._discover_backends()`, which walks **every** `backends/*/compiler.py` including `amd` — boom.
+
+**Fix**: delete the `amd/` and `nvidia/` backend dirs after installing triton-ascend. We only need `ascend/` on an NPU host, and keeping the other two was already broken. One-line fix in the Dockerfile:
+
+```
+RUN python3 -c "import triton.backends, os, shutil; \
+  root=os.path.dirname(triton.backends.__file__); \
+  [shutil.rmtree(os.path.join(root,d), ignore_errors=True) for d in ('amd','nvidia')]"
+```
+
+Alternative (heavier) fixes: (a) downgrade upstream triton to 3.2 to match triton-ascend; (b) rebuild triton-ascend against upstream 3.6 tip; (c) pass `TRITON_DISABLE_BACKENDS=amd,nvidia` env if upstream adds such a knob (none exists today in 3.6).
+
+**Commit ref**: `Dockerfile.npu-852` on the `ascend-port-transformers-upgrade` drill branch (2026-04-19). Not needed on the 8.5.0-a3 image (ships only triton-ascend 3.2, no upstream triton).
+
+**Generalizable rule**: **whenever two triton distributions share a site-packages**, their `backends/` subdirs will auto-discover together, and any ABI drift between the version of `backends/compiler.py` on disk and the version imported by a sibling backend's `compiler.py` crashes all compile paths. On a new base image, inspect `pip show triton triton-ascend` and `ls site-packages/triton/backends/` early; if both are present and the backend dirs don't match the on-disk `compiler.py`, prune the non-ascend backends as part of the Dockerfile.
+
 ---
 
 ## Environment / configuration (NPU-ENV-NNN)
@@ -460,8 +484,8 @@ This lets `git log --grep=NPU-CP-003` find every application of the pattern acro
 ## IDs defined (summary)
 
 - Code patterns: `NPU-CP-001` ... `NPU-CP-007` (7 entries)
-- Platform bugs: `NPU-BUG-001` ... `NPU-BUG-003` (3 entries)
+- Platform bugs: `NPU-BUG-001` ... `NPU-BUG-004` (4 entries)
 - Environment/config: `NPU-ENV-001` ... `NPU-ENV-004` (4 entries)
 - Operational: `NPU-OPS-001` ... `NPU-OPS-008` (8 entries)
 
-**Total: 22 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
+**Total: 23 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
