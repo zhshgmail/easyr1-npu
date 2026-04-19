@@ -228,9 +228,9 @@ torch_functional.log_probs_from_logits  (wrapped by torch.compile)
 
 **Commit ref**: `75bad74` in EasyR1 (V2.1 smoke script sets `use_torch_compile=false`).
 
-**Generalizable rule**: **on NPU, default-disable `torch.compile` for RL / varlen workloads** until triton-ascend is proven stable for the shapes in use. Before enabling `torch.compile`, run the target workload with `ASCEND_LAUNCH_BLOCKING=1` and watch for `vector core exception` traces — if any, keep compile disabled. Candidate future `NPU-ENV-NNN`: bake `TORCHINDUCTOR_DISABLE=1` into the container runner env defaults.
+**Generalizable rule**: **on NPU, default-disable `torch.compile` for RL / varlen workloads** until triton-ascend is proven stable for the shapes in use. Before enabling `torch.compile`, (1) run the target workload with `ASCEND_LAUNCH_BLOCKING=1` and watch for `vector core exception` traces, AND (2) compare step-1 `entropy_loss` / `grad_norm` against a known-good eager baseline — numerical divergence without a crash is the 8.5.1 failure mode (compile runs but produces garbage). Candidate future `NPU-ENV-NNN`: bake `TORCHINDUCTOR_DISABLE=1` into the container runner env defaults.
 
-**Status on 8.5.2 image (probed 2026-04-19, `bug003_probe` script on drill branch)**: could not confirm or refute. The probe hit NPU-BUG-004 (triton 3.6 + triton-ascend 3.2 coexistence crash) at `torch.compile` registration, **before** the inductor could execute a kernel. Until NPU-BUG-004's fix lands (remove upstream triton's amd/nvidia backends in the drill Dockerfile), BUG-003's state on CANN 8.5.1 remains unknown.
+**Status on 8.5.2 image (probed 2026-04-19, `bug003_probe` script on drill branch, after NPU-BUG-004 fix)**: **NOT fixed. Arguably worse.** With `use_torch_compile=true` on CANN 8.5.1, the inductor-compiled `log_probs_from_logits` kernel now **runs without crashing** at step 1 — but returns corrupted values: step-1 `entropy_loss=0.725` (vs. 1.434 baseline), `grad_norm=88973` (vs. 1.493 baseline, a 60000× blow-up), `ppo_kl=0.033` (vs. 0 baseline, immediate drift). At step 2 the propagated garbage trips `aclnnNonzero` with the same `vector core exception` signature as 8.5.0 saw at step 1. Workaround (`use_torch_compile=false`) **still required**; additionally we now have evidence the NPU inductor path is not numerically safe even when it doesn't crash.
 
 ---
 
