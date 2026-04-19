@@ -381,6 +381,66 @@ if is_npu_available:
 
 ---
 
+### NPU-OPS-007 — base image missing `/etc/pip.conf` causes build-time pypi.org hang
+
+**Symptom**: `docker build` hangs indefinitely inside a `RUN pip install ...` step. `ps` shows pip in `S` (sleeping) state on TLS sockets. No retry messages, no error — just silence. Kills only via signal.
+
+**Root cause**: the base image shipped no baked-in pip configuration (`/etc/pip.conf`, `/root/.pip/pip.conf`, or `PIP_INDEX_URL` env), so pip defaults to `https://pypi.org/simple/`. On a firewalled host, pypi.org is either unreachable (GFW) or only reachable via the docker daemon's HTTP proxy — which the build container does *not* inherit. Unlike `docker run` (where `-e http_proxy=...` can be plumbed), `docker build` does not automatically pass the daemon's proxy into the build context.
+
+**Fix**: set pip's index URL in the Dockerfile itself so it survives image rebuilds and never touches pypi.org:
+
+```
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu/
+ENV PIP_TRUSTED_HOST="mirrors.aliyun.com mirrors.huaweicloud.com"
+ENV PIP_DEFAULT_TIMEOUT=120
+```
+
+This is per-image, not per-invocation — covers the whole build context plus any later `pip install` inside running containers.
+
+**Commit ref**: `Dockerfile.npu-852` — transformers upgrade drill (2026-04-19).
+
+**Generalizable rule**: whenever you change the base image, re-inspect it for baked-in pip config: `docker run --rm --entrypoint cat <image> /etc/pip.conf` and check `PIP_INDEX_URL` in `docker inspect <image>`. If absent, patch the layer **before** adding `RUN pip install ...` steps. Don't rely on the daemon's `HTTP_PROXY` — it doesn't plumb through to build.
+
+---
+
+### NPU-OPS-008 — huaweicloud's ascend pypi mirror is not a reliable source
+
+**Symptom**: `pip install triton-ascend==3.2.0 --index-url https://mirrors.huaweicloud.com/ascend/repos/pypi` returns `ERROR: Could not find a version that satisfies the requirement triton-ascend==3.2.0 (from versions: none)` even though that version is a GA release on aliyun. Browsing the huaweicloud index URL returns an empty listing for the package.
+
+**Root cause**: the huaweicloud ascend pypi mirror's per-package HTML pages are empty/incomplete for several Ascend wheels (observed for triton-ascend on 2026-04-19; other packages may be affected intermittently). It is maintained out-of-band by Huawei and stale or blank listings happen.
+
+**Fix**: use aliyun's general-purpose pypi simple index as the primary source for triton-ascend and other Ascend wheels:
+
+```
+pip install --no-cache-dir --force-reinstall --no-deps \
+    --index-url https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com \
+    triton-ascend==3.2.0
+```
+
+Keep huaweicloud as a documented fallback in a bash `||` chain, but put aliyun first. Aliyun carries the aarch64+x86_64 cp39/cp310/cp311 wheels we need.
+
+**Commit ref**: `Dockerfile.npu-852` (drill branch, 2026-04-19).
+
+**Generalizable rule**: don't treat huaweicloud's ascend pypi index as authoritative. Probe with `curl -sL '<index-url>/<package>/' | grep -oE '<package>[^"<>]*\.whl' | sort -u` before wiring a new package into a Dockerfile; if the listing is empty, try aliyun, then the official vendor release page. Record which indexes worked on which date in the commit message so future triage can tell whether the mirror or the network is the problem.
+
+---
+
+### NPU-OPS-006 — docker daemon stuck behind dead/slow HTTP proxy on A3
+
+**Symptom**: `docker pull <any-registry>` on A3 times out with `Get "https://<registry>/v2/": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)`, even though `curl` from the same shell reaches the registry in <1s (HTTP 200/401). Retrying the pull just hits the same wall. Layers may get stuck in `Verifying Checksum` or `Retrying in N seconds` loops and eventually die with `unexpected EOF`.
+
+**Root cause**: A3 is behind the GFW and the docker daemon is configured with an upstream HTTP proxy (e.g. `HTTP_PROXY=http://100.66.1.4:7897`) in `/etc/systemd/system/docker.service.d/http-proxy.conf`. The proxy is shared infra and periodically saturates/dies. Even if the registry is a CN-local mirror that the host can reach directly, the daemon still forces traffic through the proxy because the mirror hostname isn't listed in `NO_PROXY`. Note: the `registry-mirrors` field in `/etc/docker/daemon.json` only applies to Docker Hub (`docker.io`); it does **not** rewrite requests for third-party registries like `quay.io` — you must pull by the mirror hostname directly and/or retag.
+
+**Fix**: (1) verify host-level reachability with `curl -I https://<mirror>/v2/` (expect HTTP 200 quickly); (2) add the mirror hostname to `NO_PROXY` in `/etc/systemd/system/docker.service.d/http-proxy.conf` so docker bypasses the dead proxy for that host; (3) `systemctl daemon-reload && systemctl restart docker`; (4) pull by the mirror hostname — e.g. `docker pull quay.nju.edu.cn/ascend/verl:...` instead of `quay.io/ascend/verl:...`. For CN-hosted quay mirrors that work today: `quay.nju.edu.cn` (NJU) responds HTTP 200; `quay.mirrors.ustc.edu.cn` and `hub-mirror.c.163.com` were unreachable in our tests. Docker caches partial layer blobs keyed by digest, so retagging a mirror that serves the same digests will reuse any bytes already pulled against quay.io.
+
+**Commit ref**: —
+
+**Generalizable rule**: on firewalled hosts behind a shared HTTP proxy, never assume `docker pull` timeouts mean the registry is down — probe with `curl` first. If the registry is reachable but docker isn't, the proxy is the problem. Keep a short list of working CN mirror hostnames in the knowledge base per registry (quay, ghcr, gcr, docker.io) and prefer mirror-hostname pulls over proxy-dependent pulls. Never change `HTTP_PROXY` itself without checking what else depends on it; extend `NO_PROXY` instead.
+
+---
+
 ## Referencing from commit messages
 
 Commit messages should cite IDs when the change implements a known pattern. Example:
@@ -402,6 +462,6 @@ This lets `git log --grep=NPU-CP-003` find every application of the pattern acro
 - Code patterns: `NPU-CP-001` ... `NPU-CP-007` (7 entries)
 - Platform bugs: `NPU-BUG-001` ... `NPU-BUG-003` (3 entries)
 - Environment/config: `NPU-ENV-001` ... `NPU-ENV-004` (4 entries)
-- Operational: `NPU-OPS-001` ... `NPU-OPS-005` (5 entries)
+- Operational: `NPU-OPS-001` ... `NPU-OPS-008` (8 entries)
 
-**Total: 19 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
+**Total: 22 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
