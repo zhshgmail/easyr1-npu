@@ -14,69 +14,15 @@
 
 ---
 
-## 1. 仓库布局（关键！读任何 md 前先理解这个）
+## 1. 先读这两份（本文件是 transit state，不是布局 / convention）
 
-```
-~/workspace/easyr1-npu/                    ← 本仓（github.com/zhshgmail/easyr1-npu）
-├── README.md                              ← 入口，选四条路径之一
-├── CLAUDE.md                              ← 项目 instructions（agent 必读）
-├── docs/
-│   ├── HANDOVER.md                        ← 本文件（session 起手必读）
-│   ├── DOCS-CONVENTION.md                 ← **文档组织 convention**（必读，不要重复计划）
-│   ├── PORT-GUIDE.md                      ← 路径 1：怎么跑起来 EasyR1 v1
-│   ├── SKILLS-GUIDE.md                    ← 路径 2 & 4：用 skill 自动化移植
-│   ├── UPGRADE-DRILL-STATUS.md            ← 路径 3：transformers/CANN 升级当前状态
-│   ├── easyr1-dep-chain-audit.md          ← EasyR1 master 依赖 A/B/C/D/E 分级（P1 闭环证据）
-│   ├── npu-adaptation-tasks.md            ← NPU 适配 task 清单（档 1/2/3，待建）
-│   ├── DELIVERABLE.md                     ← v1/v2 正式 sign-off
-│   ├── transformers-upgrade-drill.md      ← v2 drill 完整实证报告
-│   ├── skill-dry-run-2026-04-20.md        ← skill 有效性 dry-run 验证记录
-│   ├── porting-journal.md                 ← 移植过程时间线日志
-│   ├── design.md                          ← 原始需求 + 任务拆解
-│   ├── skills-design.md                   ← skills 系统架构
-│   ├── dep-matrix.md                      ← GPU↔NPU 依赖对照（早期）
-│   ├── npu-gap-plan.md                    ← 早期 gap 计划（被 adaptation-tasks 取代）
-│   ├── PORT-SUMMARY.md                    ← 早期 playbook（被 PORT-GUIDE + SKILLS-GUIDE 取代）
-│   ├── codex-*.md                         ← codex 独立 review 存档
-│   └── handoff-2026-04-19.md              ← (旧) 初版 handoff（被本文件替代）
-├── skills/                                ← 7 个可复用 skill
-│   ├── npu-image-inspect/
-│   ├── npu-code-path-sweep/
-│   ├── npu-container-runner/
-│   ├── upstream-branch-hygiene/
-│   ├── codex-review/
-│   ├── ray-npu-shim/
-│   └── image-upgrade-drill/
-├── scripts/                               ← 对外脚本 + skill 内部脚本
-│   ├── install-skills.sh                  ← 部署 skills 到 ~/.claude/skills/
-│   ├── fetch-upstream.sh                  ← 拉 upstream 参考库（路径 2 用）
-│   ├── run-npu-container.sh               ← NPU 容器 launcher
-│   ├── inspect-ascend-image.sh            ← image 体检
-│   ├── code-path-sweep.sh                 ← CUDA-only 扫描
-│   ├── smoke_v11_device.py                ← V1.1/V1.2 smoke
-│   ├── smoke_v13_rollout.py               ← V1.3 smoke
-│   └── smoke/README.md                    ← 完整 smoke 梯子索引
-└── knowledge/
-    ├── npu-patterns.md                    ← **23 条 stable ID 目录**
-    ├── smoke-ladder-convention.md
-    ├── upstream-refs.md                   ← image → upstream ref 对应表
-    ├── easyr1-master-deps.md              ← EasyR1 requirements 原始提取
-    ├── verl-master-deps.md                ← veRL 对照
-    ├── cann-9-0-x-install.md              ← CANN 9 安装笔记
-    └── images/                            ← 每个 image 的 pip freeze + inventory
+- **仓库布局** → 见 [`../README.md`](../README.md)（"仓库布局" 段）。**HANDOVER 不再重复它**，布局改了改 README，不要回来改这里
+- **每类文档归属 + 更新 convention** → 见 [`DOCS-CONVENTION.md`](DOCS-CONVENTION.md)
+- **项目 instructions + working preferences** → 见 [`../CLAUDE.md`](../CLAUDE.md)
 
-开发本地还有 `~/workspace/upstream/`（跟 easyr1-npu 同级，不 track）：
-├── EasyR1/                                ← zhshgmail/EasyR1（我们 fork）
-├── verl/                                  ← GPU 参考
-├── torch-npu/
-├── vllm-ascend/
-├── triton-ascend/
-└── transformers/
-```
+**本文件的职责**：**transit state** —— 当前分支 head、当前 A3 状态、未结工作、下一个 agent 要知道但不稳定的一次性事项。任何**稳定的** convention / 布局 / 设计规则不写在这里。
 
-**文档归属规则**：见 [`DOCS-CONVENTION.md`](DOCS-CONVENTION.md) §1 的 place-of-record map。每类信息单一来源；README 只做索引；所有重要文档从 README 2 跳以内可达。
-
-**ground rule**（见 `CLAUDE.md`）：**upstream 修改都走 git branch（`ascend-port`）**，**不** 维护独立 patch 文件。
+**ground rule**（见 `CLAUDE.md`）：**upstream 修改都走 git branch（`ascend-port`）**，**不**维护独立 patch 文件。
 
 ---
 

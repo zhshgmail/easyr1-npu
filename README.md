@@ -174,12 +174,16 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 │   ├── DOCS-CONVENTION.md            ← **文档组织 convention + 归属 map**（贡献者 / agent 必读）
 │   ├── DELIVERABLE.md                ← 正式 sign-off 文档
 │   ├── easyr1-dep-chain-audit.md     ← EasyR1 master 依赖 A/B/C/D/E 分级审计
-│   ├── npu-adaptation-tasks.md       ← NPU 适配 task 清单（档 1/2/3，待建）
+│   ├── npu-adaptation-tasks.md       ← NPU 适配 task 清单（档 1/2/3）
 │   ├── transformers-upgrade-drill.md ← v2 升级演练完整报告（drill 实证）
 │   ├── skill-dry-run-2026-04-20.md   ← Skill 有效性 dry-run 验证记录
 │   ├── porting-journal.md            ← 时间线日志
 │   ├── design.md                     ← 原始需求 + 任务拆解
 │   ├── skills-design.md              ← skills 系统架构设计
+│   ├── dep-matrix.md                 ← 早期 GPU↔NPU 依赖对照（被 easyr1-dep-chain-audit 取代）
+│   ├── npu-gap-plan.md               ← 早期 gap 计划（被 npu-adaptation-tasks 取代）
+│   ├── PORT-SUMMARY.md               ← 早期 playbook（被 PORT-GUIDE + SKILLS-GUIDE 取代）
+│   ├── handoff-2026-04-19.md         ← (旧) 初版 handoff，被 HANDOVER.md 替代
 │   └── codex-*.md                    ← codex 独立 review 存档
 ├── skills/                           ← 7 个可复用 skill
 │   ├── npu-image-inspect/
@@ -199,11 +203,24 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 │   ├── smoke_v13_rollout.py          ← V1.3 smoke
 │   └── smoke/README.md               ← 完整 smoke 梯子索引
 └── knowledge/
-    ├── npu-patterns.md               ← **23 条 NPU 坑 stable ID 目录**
-    ├── smoke-ladder-convention.md
+    ├── npu-patterns.md               ← **NPU 坑 stable ID 目录**
+    ├── smoke-ladder-convention.md    ← smoke 命名约定
     ├── upstream-refs.md              ← image→upstream ref 对应表
+    ├── easyr1-master-deps.md         ← EasyR1 requirements.txt 原始提取
+    ├── verl-master-deps.md           ← veRL 对照（EasyR1 是 veRL 的精简 fork）
+    ├── cann-9-0-x-install.md         ← CANN 9 安装笔记
     └── images/                       ← 每个目标 image 的 pip freeze + inventory
+
+开发机额外有 ~/workspace/upstream/（跟 easyr1-npu 同级，不 track）：
+    ├── EasyR1/                       ← zhshgmail/EasyR1 fork
+    ├── verl/                         ← GPU 参考
+    ├── torch-npu/
+    ├── vllm-ascend/
+    ├── triton-ascend/
+    └── transformers/
 ```
+
+每类文件的**归属规则 + 更新触发**见 [`docs/DOCS-CONVENTION.md`](docs/DOCS-CONVENTION.md)。新建文件前先查那里的 place-of-record map。
 
 `upstream/` 不是本仓的一部分。走路径 2 的人用 `scripts/fetch-upstream.sh` 现拉现用，拉到 `../upstream/`（跟 `easyr1-npu/` 同级，不 track）。
 

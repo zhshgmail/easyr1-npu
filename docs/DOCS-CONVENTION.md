@@ -69,14 +69,35 @@
 
 ---
 
-## 3. HANDOVER.md 的特殊地位
+## 3. 稳定内容 vs Transit 内容
 
-`HANDOVER.md` 是**给下一个 session 接手的人读的压缩索引**。它不是内容归属处，而是**状态快照 + 指针**。
+两类文档的角色**严格分开**：
 
-- 约定：任何开 session 的第一件事 → 读 `README.md` + `HANDOVER.md`，这两篇就能理解当前状态
-- HANDOVER 里提到的具体内容都要有**权威文档的链接**（遵循 place-of-record map）
-- HANDOVER §6 "未结工作" 是最常更新的一节
-- HANDOVER 本身要随状态变化实时更新，**完成一件事立刻更新对应条目**（不要攒到 session 末尾）
+### 稳定内容（stable convention / 设计）
+
+不随 session 状态变动的东西：
+- **仓库 / 文件夹 / 文件结构说明** → **仅** 放在 `README.md` 的"仓库布局"段。改布局时改 README，**不要在 HANDOVER 等状态类文档里重复布局树**（会 drift）
+- **文档归属 + 更新规则** → `docs/DOCS-CONVENTION.md`（本文件）
+- **项目 working preferences**（commit message 风格、语言约定、Discord 同步规则）→ `CLAUDE.md`
+- **四条用户路径** → `README.md`
+- **每类文档的完整使用说明** → 各自的手册文件（PORT-GUIDE / SKILLS-GUIDE / UPGRADE-DRILL-STATUS 等）
+
+### Transit 内容（session-to-session 变化）
+
+状态快照、当前进度、未结工作 —— 随时变：
+- **当前 A3 host 状态 + docker image 版本 + 占用情况** → `HANDOVER.md`
+- **当前分支 head commit / 各分支状态** → `HANDOVER.md`
+- **open items / P0 / P1 工作清单** → `HANDOVER.md` §6 + `npu-adaptation-tasks.md`
+- **下一步候选工作** → `HANDOVER.md` §11
+- **当前 session 的 TaskCreate list** → 运行时工具（不进 git）
+
+### 规则
+
+- `HANDOVER.md` **不重复 README 布局**。只在 §1 指向 README + DOCS-CONVENTION 就够
+- `HANDOVER.md` **不承载 convention / 规则**。它是状态快照
+- 改布局时改 README；改 convention 时改 DOCS-CONVENTION；改状态时改 HANDOVER。三者互不重叠
+- 任何开 session 的第一件事 → 读 `README.md` + `HANDOVER.md` + `DOCS-CONVENTION.md`（3 篇）
+- HANDOVER 本身要**实时更新**，完成一件事立刻更新对应条目（不要攒到 session 末尾）
 
 ---
 
