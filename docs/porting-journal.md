@@ -425,11 +425,11 @@ Harness handoff is now credible per the reviewer's verdict.
 - **`docs/easyr1-dep-chain-audit.md`** — systematic A/B/C/D/E classification of EasyR1 master's 20 runtime deps against v1 (8.5.0) image. **D = 0**. Proves P1 scenario is structurally closed (no new NPU development required).
 - **`docs/npu-adaptation-tasks.md`** — tier-1/2/3 adaptation task registry, the single source of truth for "NPU gap" tracking.
 - **`scripts/dep-gap-detect.sh` + `skills/dep-gap-detect/`** — automated A/B/C/D/E classifier. Takes requirements.txt + image inventory; exit 0 = P1 (proceed), exit 1 = P2 (stop + file task). Tested positive + negative cases pass.
-- **`knowledge/npu-patterns.md` NPU-OPS-009** — new stable ID for "all containers can't access NPU while host `npu-smi` works" — host driver state class, first seen during today's V1.4 regression attempt.
+- **`knowledge/npu-patterns.md` NPU-OPS-009** — new stable ID. Initial framing as "host driver state class" was too vague; see specific root cause below + refined NPU-OPS-009 entry.
 
 ### Attempted + blocked
 
-- **V1.4 regression** of `ascend-port` head `ecce71d` on v1 (8.5.0) image — was supposed to verify the two drill cherry-picks don't regress v1. Failed at Ray resource check: `Total available GPUs 0`. Root-caused to NPU-OPS-009 via vanilla-container isolation test. Not a port regression. Host admin intervention needed. Reproduction materials all preserved for re-run.
+- **V1.4 regression** of `ascend-port` head `ecce71d` on v1 (8.5.0) image — was supposed to verify the two drill cherry-picks don't regress v1. Failed at Ray resource check: `Total available GPUs 0`. Root-caused via vanilla-container isolation + `dmesg` to **UDA user-namespace conflict** (`uda_occupy_dev_by_ns ... Conflict open udevid`), not a driver bug and not a port regression. **Specific culprit**: zombie Ray raylet (PID 3546648, another user's `chj_roll` conda env, 1d16h old, Ray session dir `/tmp/ray/session_2026-04-18_*` already gone) holds NPU UDA lock exclusively via `--static_resource_list NPU,16`. User decided not to kill another user's process; wait for A3 recovery 2026-04-21+. One-command rerun lives in HANDOVER §6.2.
 
 ### Scope re-correction (earlier in day)
 

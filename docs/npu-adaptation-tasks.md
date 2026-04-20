@@ -19,7 +19,7 @@
 |---|---|---|---|---|
 | T3-001 | **NPU-BUG-003** — triton-ascend inductor log_probs 数值损坏（CANN 8.5.0 crash；CANN 8.5.1 silent corrupt + delayed crash） | **OPEN** | `use_torch_compile=false`（已在 V2.1 / V2.2 smoke 固定） | 等 triton-ascend 3.3+ 或 torch_npu 2.10 → 重跑 `bug003_probe`。见 [`transformers-upgrade-drill.md §follow-ups #3`](transformers-upgrade-drill.md) |
 | T3-002 | **NPU-BUG-004** — upstream triton 3.6.0 + triton-ascend 3.2.0 共存时 `backends/amd/compiler.py` import `Language` 失败 | **WORKED-AROUND** | Dockerfile 里删 `backends/amd/` + `backends/nvidia/`（drill commit `a18d1f8`） | 监控 triton-ascend 是否升级对齐 upstream triton；若升级则可移除 workaround |
-| T3-003 | **NPU-OPS-009** — A3 host 所有容器都无法枚举 NPU（`drvRetCode=87`、`device_count: 0`），但 host 外 `npu-smi info` 正常。sister container 也挂。2026-04-20 阻塞了 V1.4 回归测 | **BLOCKING** | 无——host-level 问题，容器侧修不了 | 请 host admin 重启 ascend driver services / shared memory，或 reboot。恢复后：立即跑 `T1-001`（已准备好） |
+| T3-003 | **NPU-OPS-009** — A3 host 所有容器都无法枚举 NPU。2026-04-20 root-caused：僵尸 Ray raylet（PID 3546648, 别人的 `chj_roll` env, 跑了 1+ 天）通过 `--static_resource_list NPU,16` 独占了 NPU UDA user-namespace，所以所有容器（不同 ns）被拒。session dir 已没了是僵尸实锤。`dmesg` 里 `uda_occupy_dev_by_ns Conflict open udevid` 刷屏 | **BLOCKING，等 2026-04-21+ host 恢复** | 无（user 决定不擅自 kill 别人 process） | 2026-04-21+ 检查：`ssh host "ps -p 3546648"` —— 如果 raylet 没了 / 或 user 已协调 kill，可以直接跑 V1.4 回归（一键命令见 HANDOVER §6.2） |
 
 ### Tier-1 已知项（本仓待跑）
 

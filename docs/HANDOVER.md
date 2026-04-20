@@ -146,19 +146,42 @@ catalog 每一条都有**统一 schema**：`Symptom / Root cause / Fix / Commit 
 2. 或者判决复现实验失败，在 `skills/image-upgrade-drill/SKILL.md` 补一条"**不要把全部 7 步丢给单个 isolated agent**，harness 会超时，要拆成人+agent 接力或分段子 agent"的 note
 3. **不要清 `/tmp/z00637938/reproduce/` 和 `easyr1-npu-852:drill-reproduce`**——留着给下一次复现用
 
-### 6.2 `ascend-port` 的两个 cherry-pick — **未能实测**（阻塞在 A3 host 状态）
+### 6.2 `ascend-port` 的两个 cherry-pick — **未能实测**（阻塞：僵尸 Ray raylet 锁 NPU namespace）
 
 `1f716ea` + `ecce71d` 两个 fix 是在 drill image 上写的，backward-compat 理论上 8.5.0 也 ok——但 **没在 8.5.0 container 里跑过 V1.4 回归确认没 regression**。
 
-**2026-04-20 尝试闭环失败**：在 A3 host 上启动 V1.4 smoke，容器内 torch_npu 无法枚举 NPU（`drvRetCode=87`、`dcmi device is used`、`device_count: 0`），Ray 资源检查直接报 `Total available GPUs 0`。**这不是 port 的 regression** —— 用 vanilla 容器直接 `torch_npu.npu.device_count()` 也是 0；sister container `afap-cann9` 也挂（`npu get board type failed. ret is -9005`）。host 外 `npu-smi info` 正常、16 个 chip 全空。
+**2026-04-20 闭环尝试**：V1.4 smoke 失败在容器 NPU 枚举（`drvRetCode=87`、`dcmi device is used`、Ray 报 `Total available GPUs 0`）。深挖 dmesg **找到真正 root cause**：
 
-**根因**：host-level 驱动状态卡住，所有容器都访问不到 NPU。**已作为 `NPU-OPS-009` 写入** `knowledge/npu-patterns.md`。
+```
+[ascend] [uda] [ERROR] [uda_occupy_dev_by_ns] <npu-smi> Conflict open udevid
+(udevid=0; access_ns=XXX; ns=YYY)
+```
 
-**需要**：host admin 重启驱动服务 / 共享内存、或重启机器。本 session 没这个权限。
+**不是驱动坏**，是 **host 上有一个僵尸 Ray raylet（PID `3546648`，conda env `chj_roll`，不是我们的进程）独占了 NPU 的 user-namespace**。它从 Apr 18 运行 1 天多，`--static_resource_list` 里声明了 `NPU,16` 独占。它的 session dir `/tmp/ray/session_2026-04-18_21-05-49_338731_3545605` **已经不存在了**（Ray 自己认为 session 已完）—— 但 raylet 还在跑，NPU UDA namespace 不释放。host-side `npu-smi info` 能用是因为 raylet 跟 host 同 ns；容器在独立 user-ns 所以被 UDA 拒绝。
 
-**闭环的所有其他准备已就绪**（A3 上 git checkout 到 `ecce71d`、image build 好、脚本可用、chip 空闲），**host 恢复后立即能跑**。
+**记录到 stable ID `NPU-OPS-009`** in `knowledge/npu-patterns.md`。
 
-Log 档案：`/tmp/z00637938/easyr1-logs/v14_regression_ecce71d_20260420-053059.log`
+**恢复路径**（按风险从低到高）：
+1. **最简单**：`kill 3546648`（僵尸 process，session dir 都没了，几乎无风险）。需要 user 确认才能动别人的 process
+2. 机器 reboot
+3. 等它自己 OOM / 崩
+
+**2026-04-20 user 决定**：等 A3 host 恢复后再跑（不擅自杀别人的进程）。
+
+**恢复后的闭环步骤**（一键）：
+```bash
+ssh -p 443 root@115.190.166.102
+cd /home/z00637938/workspace/easyr1-npu
+bash repo/scripts/run-npu-container.sh --chips 0,1 \
+  --image easyr1-npu:ascend-port \
+  --live-source /home/z00637938/workspace/easyr1-npu/upstream/EasyR1 \
+  -- bash /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh \
+  2>&1 | tee /tmp/z00637938/easyr1-logs/v14_regression_ecce71d_retry.log
+```
+
+期望：`entropy_loss` step1 ≈ 0.991（±5% = 0.94-1.04），step2 ≈ 1.263，`grad_norm` ≈ 1.43。
+
+A3 准备就绪的状态：`upstream/EasyR1/` 已经 ff 到 `ecce71d`；`easyr1-npu:ascend-port` image 已 build；16 chip 全 idle；log 目录已建；今日失败的 log 存档在 `/tmp/z00637938/easyr1-logs/v14_regression_ecce71d_20260420-053059.log`。
 
 ### 6.3 A3 上易踩坑：`build_ascendc.py` 的 SoC 字符串 ≠ `acl.get_soc_name()`
 

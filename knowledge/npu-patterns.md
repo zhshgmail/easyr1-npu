@@ -465,7 +465,7 @@ Keep huaweicloud as a documented fallback in a bash `||` chain, but put aliyun f
 
 ---
 
-### NPU-OPS-009 — container-wide NPU access fails while host `npu-smi` still works
+### NPU-OPS-009 — container NPU access blocked by another namespace's UDA lock
 
 **Symptom**: Every container on the host — ours (`easyr1-npu:ascend-port`) and unrelated ones (`afap-cann9`, vanilla `quay.io/ascend/verl`) — fails to enumerate NPU devices. Inside container: `torch_npu.npu.device_count()` returns 0 with:
 
@@ -477,18 +477,30 @@ rtGetDeviceCount:ErrCode=507899, desc=[driver error:internal error]
 UserWarning: Can't get ascend_hal device count
 ```
 
-From the host directly (outside any container), `npu-smi info` works fine, all 16 chips show 0% usage, no processes holding `/dev/davinci*`, and device files exist.
+From the host directly (outside any container), `npu-smi info` works fine. 16 chips show 0% AICore, no processes in `npu-smi info -t proc-mem`, device files exist with wide permissions.
 
-**Root cause**: Host-level Ascend driver state is in an inconsistent mode — either DCMI userland has lost sync with the kernel driver, or a previous container crash left a stuck shared-memory / semaphore, or the host `/usr/local/Ascend/driver` bind source drifted from the currently-loaded kernel modules. This is a **known class of Ascend driver-health issue** where the symptom surfaces only inside containers (host-userspace paths bypass the broken layer).
+The **smoking gun** is in `dmesg` (keeps scrolling as each container retries):
 
-**Fix**: Recovery typically requires **host-level action**, which on a shared host you usually don't have permission for:
-1. Stop every NPU-holding container: `docker ps --filter 'label=ascend' | awk 'NR>1 {print $1}' | xargs -r docker stop`
-2. Ask the host admin (or whoever owns the box) to run `systemctl restart driver-services.service` or equivalent; in some deployments a `hccn_tool -i 0 -reset` per card; worst case a `reboot`
-3. After reset, verify with a vanilla `docker run --device /dev/davinci0 ...` before retrying your workload
+```
+[ascend] [uda] [ERROR] [uda_occupy_dev_by_ns 932] <npu-smi:PID> Conflict open udevid.
+(udevid=0; access_ns=00000000XXXXXXXX; ns=00000000YYYYYYYY)
+```
 
-**Commit ref**: — (first observed 2026-04-20 while attempting V1.4 regression on `ascend-port` HEAD `ecce71d`)
+`uda_occupy_dev_by_ns` is Ascend UDA (User Device Access) cross-namespace conflict. Some process on the host has exclusively registered the NPU for its user-namespace (`access_ns`), and any container (different user-namespace `ns`) gets denied.
 
-**Generalizable rule**: before filing a "NPU port regression" bug, run a vanilla container with only device passthrough and check `torch_npu.npu.device_count()`. If that fails too, it's a host state issue, not your port. Keep a short isolation test (same `docker run` with only `--device`, no bind mounts, `python3 -c "import torch_npu; print(torch_npu.npu.device_count())"`) in the runbook. A3 is a **shared host**, and any shared-host diagnosis must distinguish port bugs (container-specific) from platform health (affects all containers).
+**Root cause — first real observation (2026-04-20)**: a **zombie Ray raylet** on the host. Someone's previous Ray session (conda env `chj_roll`, PID `3546648`, running 1 day 16+ hours) launched with `--static_resource_list "NPU,16,accelerator_type:Ascend910_9382"`, which makes raylet open all NPU devices and register them into its user-namespace. The Ray session directory `/tmp/ray/session_2026-04-18_*` was gone (Ray treated the session as done), but the raylet process was orphaned and continued to hold the UDA namespace lock.
+
+`npu-smi info` on the host (same user-ns as raylet) works because their namespaces match. Any container gets a fresh user-ns at `docker run` time, so UDA rejects.
+
+**Fix**:
+1. Identify the process holding the NPU user-ns: `dmesg | grep uda_occupy_dev_by_ns | tail` to see the PID that conflicted with yours, then `ps -ef | grep 'raylet\|ray start\|torch\|python3'` to find host-side long-runners that might hold NPU. Cross-reference `access_ns` against owners.
+2. **If the process is yours or a known-abandoned zombie**: `kill <PID>` — the UDA lock releases immediately and containers can access NPU.
+3. **If the process belongs to another user**: coordinate with them before killing. Never unilaterally kill other users' workloads on a shared host.
+4. **If nobody admits to it and the session dir is missing**: strong signal it's a zombie — safe to kill after confirming with host admin.
+
+**Commit ref**: — (first root-caused 2026-04-20 while attempting V1.4 regression on `ascend-port` HEAD `ecce71d`; could not kill because raylet belonged to another user)
+
+**Generalizable rule**: on a shared NPU host, before filing a "port regression" bug, run the isolation test (vanilla container, bare `--device` passthrough, `python3 -c "import torch_npu; print(torch_npu.npu.device_count())"`). If that also fails, `dmesg | grep 'uda_occupy_dev_by_ns\|Conflict open udevid' | tail` **immediately** — it tells you whether another namespace is holding the NPU exclusively. If yes, it's coordination, not debugging. Never start suspect driver-reset commands before confirming namespace conflict — those don't fix UDA-ns conflicts and can destabilize other users' running workloads.
 
 ---
 
