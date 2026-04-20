@@ -229,11 +229,23 @@ cat /tmp/review-prompt.txt | \
 
 ---
 
-## 6. 什么时候这些 skill 不够用
+## 6. 什么时候这些 skill 需要配合外部协作
 
-- 需要**写新 CUDA-equivalent 算子**（例如某个 fused attention 在 NPU 上不存在）—— 出 `skills/` 范围，参考姐妹项目 `ascend-fused-accuracy-probe` 的 `fused-op-accuracy-probe` skill
-- 需要**跨多 host RDMA / HCCL 调优** —— 本项目 skills 只覆盖单节点；多节点是 `DELIVERABLE.md` 标的 known debt
-- 需要**改 CANN 本身或 torch_npu 的 C++ 层** —— 那是 gitcode Ascend 仓的工作，超出本项目 scope
+**第一性原则**：本项目目标是让 EasyR1 master 跑在 A3 上。遇到 NPU 生态还没覆盖的 gap 时，**必须识别 + 驱动解决**，不能用 "不在 scope" 绕过。
+
+以下情况 skill **自己不能直接写代码修复**，但**仍然要识别问题 + 建任务 + 推动落地**：
+
+- **新融合算子 NPU 上不存在** —— 本项目 skill 不实现 kernel，但要**识别 gap** + **建任务**（要么自己按姐妹项目 `ascend-fused-accuracy-probe` 的 kernel 编写流程实现，要么向 Ascend 团队提需求）。记入 `docs/npu-adaptation-tasks.md`（待建）
+- **EasyR1 依赖的某个 Python 包没有 NPU 版本** —— skill 要识别 gap + 评估替代方案（shim / fork / 向上游提 PR）+ 建任务。Python 层 shim / fork 是**在 scope** 的工作
+- **vllm-ascend / triton-ascend / torch_npu 的 Python 层有 bug 或缺少 API** —— 向上游提 issue + 建 workaround + track 修复进展。workaround 在 scope，上游 Python 层 PR 在 scope（只是可能走他们的 review 流程）
+- **多节点 / 跨 host HCCL 调优** —— 本项目目前只单节点，多节点是已标的 known debt（`DELIVERABLE.md`）；需要时要建任务扩 skill
+
+以下情况**真的超出本项目能力范围**（识别了也只能向外上报）：
+
+- **CANN 底层 C++ / kernel 实现**（kernel math、HCCL C 层、ACL runtime）—— 专属 CANN / Ascend 团队
+- **torch_npu C++ 扩展层的 ATen dispatcher 实现** —— 专属 Ascend PyTorch 团队
+
+**但对这两类，skill 仍然要做**：识别 + 向上游提 issue + 记录到 `docs/npu-adaptation-tasks.md` + 给出本项目的 workaround（关 feature、用替代 API、等待 upstream）。**不是置之不理**。
 
 ---
 

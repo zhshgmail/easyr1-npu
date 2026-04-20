@@ -6,6 +6,14 @@
 1. **EasyR1 在 A3 上能跑** —— 代码改动在 [`zhshgmail/EasyR1`](https://github.com/zhshgmail/EasyR1) 的 **`ascend-port`** 分支（20 个 commit）
 2. **一套可复用的移植 skills** —— 下一次 EasyR1 版本升级 / CANN 升级 / 别的 RL 框架（OpenRLHF / TRL）移植都能套用
 
+> **📣 2026-04-20 Scope 说明（勘误）**：之前版本的 README / SKILLS-GUIDE 把"改 NPU 上游库"打成 ❌ 不在 scope 是**错误的表述**。
+>
+> 正确的区分是：
+> - ❌ **改 CANN C++ 底层 / torch_npu ATen 扩展层** —— 这确实是 Ascend 团队专属
+> - ✅ **识别 NPU 生态 gap + 驱动适配任务落地** —— 这是本项目**核心工作的一部分**。包括：Python 层 shim / fork、向 vllm-ascend / triton-ascend / torch_npu 上游提 issue 或 PR、向 Ascend 团队提适配需求、记录和 track 适配进度
+>
+> 如果新 EasyR1 版本依赖一个 NPU 还没覆盖的包，"不在 scope" 不是可接受答案 —— 项目目标就死了。**必须建任务推动适配**，见路径 4 + `docs/npu-adaptation-tasks.md`（待建）。
+
 ---
 
 ## 选你要走的路径
@@ -96,28 +104,38 @@ bash scripts/fetch-upstream.sh --include-optional
 
 ## 路径 4：复现"EasyR1 + 新依赖自动移植"的流程
 
-适合：NPU 软件栈升级（CANN 9.x、torch_npu 2.10、transformers 6 之类）发布后，你要评估 "我们的 EasyR1 port 能不能跟上新 image"。
+适合：NPU 软件栈升级（CANN 9.x、torch_npu 2.10、transformers 6 之类）发布后，你要评估 "我们的 EasyR1 port 能不能跟上新 image"，**以及**识别出哪些新依赖是 NPU 生态还没适配的，驱动相应的 NPU 适配任务。
 
-**明确的 scope**（路径 4 能做的）：
-- 验证新 image 里的一整套新依赖（torch_npu、vllm_ascend、triton_ascend、transformers 等）跟我们的 EasyR1 `ascend-port` 分支是否兼容
+**第一性原则重申**：本项目的目标是"让 EasyR1 master 在 A3 上跑"。如果新 EasyR1 版本或新 image 引入一个 NPU 还没适配的依赖，**我们不能说"不在 scope" 就结束** —— 那等于放弃项目目标。正确的做法是**识别这个 gap，建 NPU 适配任务，推动它完成**（可能是我们自己做，可能是协调 Ascend / upstream 团队做）。见 [`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)（**待建**，见本文档 §下一步）。
+
+**本路径明确在 scope**：
+- 验证新 image 的一整套新依赖（torch_npu、vllm_ascend、triton_ascend、transformers 等）跟我们的 EasyR1 `ascend-port` 分支是否兼容，做数值 smoke 验证
 - 修复 EasyR1 自己源码里的版本 compat 问题（e.g. transformers 5 改了 import 路径 → EasyR1 里加 try/except）
 - 换 base image + rebuild 层叠 image
+- **识别 NPU 适配 gap**：新 EasyR1 依赖某个 CUDA-only 包、或某个包的 NPU 移植还没跟上 → 建任务 track。见 [`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)（待建）
+- **协调 NPU 适配工作落地**：比如需要给 vllm-ascend / triton-ascend 提 issue 或 PR、或跟 Ascend 团队提适配需求、或自己写 shim/fork
 
-**不在 scope**（路径 4 不能做的）：
-- ❌ **改 NPU 上游库的源码**（torch-npu C++ 层、vllm-ascend / triton-ascend 的 Python/C++）。这些库本项目**只消费 base image 的版本**，不 patch。要改，是 CANN / Ascend 团队或相关 upstream 项目的工作，见 [`SKILLS-GUIDE.md §6 "什么时候这些 skill 不够用"`](docs/SKILLS-GUIDE.md)
-- ❌ **同时协调多个 NPU 上游库分支 commit 到 NPU 生态**。本项目的 `upstream-branch-hygiene` skill 只管 EasyR1 fork 的分支
-- ❌ **改 CANN 本身**
+**本路径不在 scope 的**（真的做不到的事，非常窄）：
+- ❌ **改 CANN 本身的 C++ 底层**（kernel 实现、HCCL C 层等）—— 那是 CANN / Ascend 团队的专属范围。我们能做的是**提 issue / 提需求 / 做 workaround**
+- ❌ **改 torch_npu C++ 扩展层的底层实现** —— 同上
+
+**至于 Python 层的 shim、上游库的 issue、vllm-ascend 的移植协调、triton-ascend 的 wheel 整理 —— 这些都在 scope，都是我们要驱动的工作**（哪怕具体 commit 是别的仓 merge 的）。
 
 用 [`image-upgrade-drill`](skills/image-upgrade-drill/SKILL.md) skill 的 7 步演练流程。产物：
 - 一份带数字的 drill report（预测 vs 实际成本、LOC 变动、bug probe 结果）
 - backward-compat commit 序列，可 cherry-pick 进 `ascend-port`
+- **NPU 适配 gap 清单**：哪些新依赖还没 NPU 适配，各自需要的工作量 / 谁去做 / 当前状态
 - 新 stable ID 条目加到 `knowledge/npu-patterns.md`
-- PASS / BLOCKED 决策依据
+- PASS / BLOCKED 决策依据（区分"EasyR1 代码 compat 完成" vs "NPU 适配 gap 完成"两件事）
 
-**注意**：这个 skill 的"自动化复现能力"**还没完全证明** —— 2026-04-19 首次用 isolated agent 走完 7 步时卡住了（见 [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md) §3）。skill 本身内容可用（人 + agent 协作跑过），但"一条命令交给 agent 就出结果"的 end-to-end 自动化还在迭代。
+**当前状态警告**：
+- 2026-04-19 的 transformers 升级 drill 在 **drill 分支 + 8.5.2 image 上 PASS**（2-step 数值匹配 + 20-step 稳定），但 drill 的 fix cherry-pick 到 `ascend-port` 后**还没在 8.5.0 image 上跑过回归测**（HANDOVER §6.2 标的 P1）。所以 README / PORT-GUIDE 里说 "ascend-port 兼容 v1/v2 两套 image" 是**理论 backward-compat 写法，不是实测结论**
+- "skill 自动化端到端复现" **没有证明**。2026-04-19 首次用 isolated agent 走完 7 步时卡住了（见 [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md) §3）；2026-04-20 的 dry-run 验证发现当时的 SKILL.md 直接写了答案，agent 本质是"看着答案做"，**不是独立发现**（见 [`docs/skill-dry-run-2026-04-20.md`](docs/skill-dry-run-2026-04-20.md)）。已更新 SKILL.md 隐藏答案，但新版本还没真实场景测过
+- **NPU 适配 gap 清单未建立** —— 下一步要做的事。目前 v1 (8.5.0) 上 EasyR1 master 能跑，说明在 v1 基线下 D 类 blocker 为 0；drill 在 v2 (8.5.2) 上能跑说明 v2 也没 D 类 blocker。但对未来 EasyR1 或更新 image 做了系统性分类 gap
 
 完整 skill 说明 → [`skills/image-upgrade-drill/SKILL.md`](skills/image-upgrade-drill/SKILL.md)
 v2 drill 的首次实证报告 → [`docs/transformers-upgrade-drill.md`](docs/transformers-upgrade-drill.md)
+Skill dry-run 验证 → [`docs/skill-dry-run-2026-04-20.md`](docs/skill-dry-run-2026-04-20.md)
 
 ---
 

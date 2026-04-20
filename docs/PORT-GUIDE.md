@@ -249,7 +249,14 @@ v1 只 smoke 过 Qwen2-0.5B + context ≤ 2k，单节点。更大 scale 是 [`DE
 
 ### 7.5 CANN / torch_npu / 其他库的版本跟不上怎么办？
 
-**别手动升级单个**，换一个我们已验证的 image。如果必须升级，用 `skills/image-upgrade-drill/` 走完整演练流程，产物是一份 drill report 判断能不能切。见 [`SKILLS-GUIDE.md`](SKILLS-GUIDE.md)。
+**别手动升级单个**，换一个我们已验证的 image（version 对齐紧密，单独升会 drift）。
+
+如果新 EasyR1 或新模型**要求**某个版本还没被我们验证过的依赖：
+1. 先用 `skills/image-upgrade-drill/` 走演练流程评估 —— 产出 drill report 判断是否能切
+2. 如果该依赖 NPU 生态还没适配（没有 NPU 版本、或 NPU 版本有 bug、或 NPU 完全没跟进），**这是需要驱动的 NPU 适配任务**，不是"不在 scope" —— 建任务到 `docs/npu-adaptation-tasks.md`（待建），可能的动作包括：Python 层 shim、提 issue / PR 到 vllm-ascend / triton-ascend / torch_npu、向 Ascend 团队提适配需求
+3. 只有 CANN C++ 底层 / torch_npu ATen 层的修改**真的**需要 Ascend 团队做，我们能做的是提需求 + 做 workaround
+
+详见 [`SKILLS-GUIDE.md §6`](SKILLS-GUIDE.md)。
 
 ---
 

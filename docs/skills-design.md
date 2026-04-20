@@ -27,9 +27,19 @@
 
 从一个已有 ML/RL 框架（EasyR1、veRL、OpenRLHF、TRL、其他），把它从 **GPU (CUDA/NCCL/flash-attn/vllm)** 移植到 **Ascend NPU (910C A3, CANN 8.5+, torch_npu, HCCL, vllm-ascend, triton-ascend)** 上。
 
-> 不在 scope 内：
-> - 从零写 NPU 算子（那是 `a5_ops` 的工作）。我们的系统如果需要 NPU 算子就**委托 a5_ops 或先用 torch 算子兜底**。
-> - 训练推理本身的算法改动（RL 算法、模型结构）。我们只做"在 NPU 上把它跑起来"。
+> **scope 的第一性原则**：目标是"让 EasyR1 在 A3 上跑"。遇到 NPU 生态 gap 必须**识别 + 驱动解决**，不用"不在 scope" 绕过。
+>
+> 直接做的事：
+> - EasyR1 / 其他 RL 框架 **自己源码的改动**（device 路由、版本 compat shim、Ray 集成、Dockerfile 等）
+> - 识别 **NPU 适配 gap**（某个依赖包没有 NPU 版本 / NPU 版本有 bug / NPU API 缺失），记到 `docs/npu-adaptation-tasks.md`（待建）
+> - Python 层的 shim / fork / 上游 PR / 向 Ascend 团队提需求，都**在 scope**
+>
+> **委托**（但仍然要识别 + 建任务 + 跟进）：
+> - NPU kernel 实现 —— 技术上委托 `ascend-fused-accuracy-probe` 的 kernel 编写流程，或提需求给 Ascend 团队；本项目要 track 进度
+> - CANN C++ 底层 / torch_npu C++ 扩展层 —— 提 issue 给 Ascend 团队，提供 workaround
+>
+> 真正不碰：
+> - RL 算法本身的改动（reward shaping、loss 公式、模型结构）。我们只做"让它在 NPU 上跑"，不碰算法层
 
 ---
 
