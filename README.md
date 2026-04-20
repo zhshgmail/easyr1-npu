@@ -170,12 +170,17 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 │   ├── PORT-GUIDE.md                 ← 路径 1：怎么跑起来
 │   ├── SKILLS-GUIDE.md               ← 路径 2 & 4：怎么用 skill 自动化移植
 │   ├── UPGRADE-DRILL-STATUS.md       ← 路径 3：升级演练当前状态
-│   ├── HANDOVER.md                   ← 当前状态 + 未结工作
+│   ├── HANDOVER.md                   ← 当前状态 + 未结工作（**session 起手必读**）
+│   ├── DOCS-CONVENTION.md            ← **文档组织 convention + 归属 map**（贡献者 / agent 必读）
 │   ├── DELIVERABLE.md                ← 正式 sign-off 文档
+│   ├── easyr1-dep-chain-audit.md     ← EasyR1 master 依赖 A/B/C/D/E 分级审计
+│   ├── npu-adaptation-tasks.md       ← NPU 适配 task 清单（档 1/2/3，待建）
 │   ├── transformers-upgrade-drill.md ← v2 升级演练完整报告（drill 实证）
+│   ├── skill-dry-run-2026-04-20.md   ← Skill 有效性 dry-run 验证记录
 │   ├── porting-journal.md            ← 时间线日志
 │   ├── design.md                     ← 原始需求 + 任务拆解
-│   └── ...                           ← 其它分析 / codex review 存档
+│   ├── skills-design.md              ← skills 系统架构设计
+│   └── codex-*.md                    ← codex 独立 review 存档
 ├── skills/                           ← 7 个可复用 skill
 │   ├── npu-image-inspect/
 │   ├── npu-code-path-sweep/
@@ -222,14 +227,19 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 
 ---
 
-## 维护
+## 维护 + 文档 convention
 
-- **坑目录**：`knowledge/npu-patterns.md` 按 `NPU-CP / NPU-BUG / NPU-ENV / NPU-OPS + NNN` schema 加新条目
-- **新目标 image**：跑 `npu-image-inspect` skill，输出到 `knowledge/images/`，更新 `upstream-refs.md`
-- **移植日记**：有状态变化写 `porting-journal.md`
-- **交接**：维护 `HANDOVER.md` —— 下一个 session 接手的人只读这一篇就能上手
+**第一性原则**：README 是入口 + 索引，**不**往 README 塞具体内容。重要文档从 README 出发**都能**通过链接 2 跳以内可达。
 
-commit message **不要**加 Claude 相关文字（见 `CLAUDE.md`）。项目文档默认中文；代码注释、commit message、SKILL.md frontmatter 保持英文。
+完整规则见 [`docs/DOCS-CONVENTION.md`](docs/DOCS-CONVENTION.md)，贡献者（人 + agent）**必读**。简要摘要：
+
+- **每类信息有唯一归属（single source of truth）**。完整 place-of-record map 见 DOCS-CONVENTION.md §1
+  - 常见入口：坑目录 `knowledge/npu-patterns.md` · 日记 `docs/porting-journal.md` · 状态 `docs/HANDOVER.md` · 适配任务 `docs/npu-adaptation-tasks.md` · 依赖审计 `docs/easyr1-dep-chain-audit.md`
+- **什么时候更新什么**：见 DOCS-CONVENTION §2 的触发表
+- **Language**：项目文档中文，代码 / commit / SKILL.md frontmatter 英文（详见 DOCS-CONVENTION §4）
+- **Session 起手**：读 README → HANDOVER → DOCS-CONVENTION（3 篇）就能接手。详见 DOCS-CONVENTION §7
+
+commit message **不要**加 Claude 相关文字（`CLAUDE.md` 规定）。
 
 ---
 

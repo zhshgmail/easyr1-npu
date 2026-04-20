@@ -61,6 +61,8 @@ CANN source is **not** in `upstream/` — it lives at `gitcode.com/cann`. Pull o
 
 ## Working preferences
 
+- **Docs organization is governed by `docs/DOCS-CONVENTION.md`.** Every kind of information (bugs, status, decisions, plans, kb updates, skill changes, version bumps) has a single authoritative file. README is **index only, never content sink**. Read DOCS-CONVENTION at session start; don't reinvent the place-of-record each time.
+- **README must be 2-hop-reachable to every important doc.** If you add a doc, wire it into README (either directly or via an index doc like HANDOVER / DOCS-CONVENTION).
 - **Mirror milestones and waiting-for-input responses to Discord.** User is primarily reachable via Discord, not the terminal. Use `mcp__plugin_discord_discord__reply` with chat_id `1494825170399924366`.
 - **Commit messages:** no Claude-related text.
 - **Design doc format:** formal (requirements, background, restrictions, high/detailed design). For now, requirements + task decomposition + status are the populated sections; detailed design stays TBD until dep-matrix is done.
