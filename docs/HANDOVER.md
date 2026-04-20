@@ -116,7 +116,7 @@ v1 的两个修复（`1f716ea` + `ecce71d`）已经 cherry-pick 到 `ascend-port
 
 ---
 
-## 5. 知识库（`repo/knowledge/npu-patterns.md`）— 23 条 stable ID
+## 5. 知识库（`repo/knowledge/npu-patterns.md`）— 24 条 stable ID
 
 catalog 每一条都有**统一 schema**：`Symptom / Root cause / Fix / Commit ref / Generalizable rule`。
 
@@ -125,7 +125,7 @@ catalog 每一条都有**统一 schema**：`Symptom / Root cause / Fix / Commit 
 | `NPU-CP-NNN`（code patterns） | 7 | CP-001 torch.cuda.* 全面扫除；CP-007 npu_flash_attention integration |
 | `NPU-BUG-NNN`（platform bugs） | 4 | BUG-001 triton-ascend 装残；BUG-003 inductor log_probs crash；BUG-004 triton 3.6 + triton-ascend 3.2 冲突 |
 | `NPU-ENV-NNN`（env/config） | 4 | ENV-001 HF_ENDPOINT mirror；ENV-002 VLLM_ASCEND_ENABLE_NZ=0 |
-| `NPU-OPS-NNN`（operational） | 8 | OPS-003 shared-host chip 争用；**OPS-006 docker daemon HTTP_PROXY 死掉**；OPS-007 base image 无 pip.conf；OPS-008 huaweicloud pypi mirror 不稳 |
+| `NPU-OPS-NNN`（operational） | 9 | OPS-003 shared-host chip 争用；**OPS-006 docker daemon HTTP_PROXY 死掉**；OPS-007 base image 无 pip.conf；OPS-008 huaweicloud pypi mirror 不稳；**OPS-009 container 无法访问 NPU（host-level driver state 坏）** |
 
 下一个 agent 遇到任何"这个 NPU 问题之前见过吗？"的时刻，**第一件事 grep `npu-patterns.md`**。
 
@@ -146,9 +146,19 @@ catalog 每一条都有**统一 schema**：`Symptom / Root cause / Fix / Commit 
 2. 或者判决复现实验失败，在 `skills/image-upgrade-drill/SKILL.md` 补一条"**不要把全部 7 步丢给单个 isolated agent**，harness 会超时，要拆成人+agent 接力或分段子 agent"的 note
 3. **不要清 `/tmp/z00637938/reproduce/` 和 `easyr1-npu-852:drill-reproduce`**——留着给下一次复现用
 
-### 6.2 `ascend-port` 的两个 cherry-pick 已 push 但**未经过生产 image 实测**
+### 6.2 `ascend-port` 的两个 cherry-pick — **未能实测**（阻塞在 A3 host 状态）
 
-`1f716ea` + `ecce71d` 两个 fix 是在 drill image 上写的，backward-compat 理论上 8.5.0 也 ok——但 **没在 8.5.0 container 里重跑过 V2.2 smoke 确认没 regression**。P1，建议补。
+`1f716ea` + `ecce71d` 两个 fix 是在 drill image 上写的，backward-compat 理论上 8.5.0 也 ok——但 **没在 8.5.0 container 里跑过 V1.4 回归确认没 regression**。
+
+**2026-04-20 尝试闭环失败**：在 A3 host 上启动 V1.4 smoke，容器内 torch_npu 无法枚举 NPU（`drvRetCode=87`、`dcmi device is used`、`device_count: 0`），Ray 资源检查直接报 `Total available GPUs 0`。**这不是 port 的 regression** —— 用 vanilla 容器直接 `torch_npu.npu.device_count()` 也是 0；sister container `afap-cann9` 也挂（`npu get board type failed. ret is -9005`）。host 外 `npu-smi info` 正常、16 个 chip 全空。
+
+**根因**：host-level 驱动状态卡住，所有容器都访问不到 NPU。**已作为 `NPU-OPS-009` 写入** `knowledge/npu-patterns.md`。
+
+**需要**：host admin 重启驱动服务 / 共享内存、或重启机器。本 session 没这个权限。
+
+**闭环的所有其他准备已就绪**（A3 上 git checkout 到 `ecce71d`、image build 好、脚本可用、chip 空闲），**host 恢复后立即能跑**。
+
+Log 档案：`/tmp/z00637938/easyr1-logs/v14_regression_ecce71d_20260420-053059.log`
 
 ### 6.3 A3 上易踩坑：`build_ascendc.py` 的 SoC 字符串 ≠ `acl.get_soc_name()`
 

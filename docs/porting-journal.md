@@ -412,3 +412,33 @@ Second codex review flagged the catalog and skill implementation as not-yet-hand
 - `skills/ray-npu-shim/SKILL.md`: clarified that the shim is necessary-but-not-sufficient. A real second port also needs the `NPU-CP-001` sweep over the framework's own CUDA-named calls.
 
 Harness handoff is now credible per the reviewer's verdict.
+
+---
+
+## 2026-04-20 — P1 scenario automation + attempted A3 regression (blocked on host state)
+
+**Day's outcome**: P1 scenario (no-NPU-adaptation-needed) is **structurally** closed but **not empirically** validated; A3 host-state issue blocked the smoke regression.
+
+### Done
+
+- **`docs/DOCS-CONVENTION.md`** — documented convention file for doc organization; ends the "replan per session" cycle. README is index-only; HANDOVER is transit; DOCS-CONVENTION is stable rules. README 2-hop reachability to all important docs enforced.
+- **`docs/easyr1-dep-chain-audit.md`** — systematic A/B/C/D/E classification of EasyR1 master's 20 runtime deps against v1 (8.5.0) image. **D = 0**. Proves P1 scenario is structurally closed (no new NPU development required).
+- **`docs/npu-adaptation-tasks.md`** — tier-1/2/3 adaptation task registry, the single source of truth for "NPU gap" tracking.
+- **`scripts/dep-gap-detect.sh` + `skills/dep-gap-detect/`** — automated A/B/C/D/E classifier. Takes requirements.txt + image inventory; exit 0 = P1 (proceed), exit 1 = P2 (stop + file task). Tested positive + negative cases pass.
+- **`knowledge/npu-patterns.md` NPU-OPS-009** — new stable ID for "all containers can't access NPU while host `npu-smi` works" — host driver state class, first seen during today's V1.4 regression attempt.
+
+### Attempted + blocked
+
+- **V1.4 regression** of `ascend-port` head `ecce71d` on v1 (8.5.0) image — was supposed to verify the two drill cherry-picks don't regress v1. Failed at Ray resource check: `Total available GPUs 0`. Root-caused to NPU-OPS-009 via vanilla-container isolation test. Not a port regression. Host admin intervention needed. Reproduction materials all preserved for re-run.
+
+### Scope re-correction (earlier in day)
+
+- "Modify NPU upstream libraries" / "modify CANN kernels" incorrectly labeled as out-of-scope. Corrected to 3-tier responsibility model: tier 1 (this repo), tier 2 (delegate to sister projects like `ascend-fused-accuracy-probe` / `a5_ops` / A3 kernel repo), tier 3 (escalate to Ascend team). All 4 docs (README / SKILLS-GUIDE / skills-design / PORT-GUIDE) updated consistently.
+
+### Still open
+
+- **T3-003** (A3 host NPU driver) — blocking T1-001 (V1.4 regression on 8.5.0) + T1-002 (V1.4 on 8.5.2). External dependency.
+- **T1-003** automated dep-gap integrated with `image-upgrade-drill` as Step 1.5 — done, but the drill skill's discovery behavior still untested on a truly unknown break (dry-run 2026-04-19 leaked the answer).
+- Task #29 (scope P2 end-to-end workflow) — next up once A3 unblocked.
+
+Skill count: **8** (added `dep-gap-detect`). Catalog: **24 stable IDs** (added NPU-OPS-009).

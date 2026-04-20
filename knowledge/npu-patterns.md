@@ -465,6 +465,33 @@ Keep huaweicloud as a documented fallback in a bash `||` chain, but put aliyun f
 
 ---
 
+### NPU-OPS-009 — container-wide NPU access fails while host `npu-smi` still works
+
+**Symptom**: Every container on the host — ours (`easyr1-npu:ascend-port`) and unrelated ones (`afap-cann9`, vanilla `quay.io/ascend/verl`) — fails to enumerate NPU devices. Inside container: `torch_npu.npu.device_count()` returns 0 with:
+
+```
+dcmi model initialized failed, because the device is used. ret is -8020
+npu get board type failed. ret is -9005
+RUNTIME ... GetDeviceCount:Call drvGetDevNum, drvRetCode=87
+rtGetDeviceCount:ErrCode=507899, desc=[driver error:internal error]
+UserWarning: Can't get ascend_hal device count
+```
+
+From the host directly (outside any container), `npu-smi info` works fine, all 16 chips show 0% usage, no processes holding `/dev/davinci*`, and device files exist.
+
+**Root cause**: Host-level Ascend driver state is in an inconsistent mode — either DCMI userland has lost sync with the kernel driver, or a previous container crash left a stuck shared-memory / semaphore, or the host `/usr/local/Ascend/driver` bind source drifted from the currently-loaded kernel modules. This is a **known class of Ascend driver-health issue** where the symptom surfaces only inside containers (host-userspace paths bypass the broken layer).
+
+**Fix**: Recovery typically requires **host-level action**, which on a shared host you usually don't have permission for:
+1. Stop every NPU-holding container: `docker ps --filter 'label=ascend' | awk 'NR>1 {print $1}' | xargs -r docker stop`
+2. Ask the host admin (or whoever owns the box) to run `systemctl restart driver-services.service` or equivalent; in some deployments a `hccn_tool -i 0 -reset` per card; worst case a `reboot`
+3. After reset, verify with a vanilla `docker run --device /dev/davinci0 ...` before retrying your workload
+
+**Commit ref**: — (first observed 2026-04-20 while attempting V1.4 regression on `ascend-port` HEAD `ecce71d`)
+
+**Generalizable rule**: before filing a "NPU port regression" bug, run a vanilla container with only device passthrough and check `torch_npu.npu.device_count()`. If that fails too, it's a host state issue, not your port. Keep a short isolation test (same `docker run` with only `--device`, no bind mounts, `python3 -c "import torch_npu; print(torch_npu.npu.device_count())"`) in the runbook. A3 is a **shared host**, and any shared-host diagnosis must distinguish port bugs (container-specific) from platform health (affects all containers).
+
+---
+
 ## Referencing from commit messages
 
 Commit messages should cite IDs when the change implements a known pattern. Example:
@@ -486,6 +513,6 @@ This lets `git log --grep=NPU-CP-003` find every application of the pattern acro
 - Code patterns: `NPU-CP-001` ... `NPU-CP-007` (7 entries)
 - Platform bugs: `NPU-BUG-001` ... `NPU-BUG-004` (4 entries)
 - Environment/config: `NPU-ENV-001` ... `NPU-ENV-004` (4 entries)
-- Operational: `NPU-OPS-001` ... `NPU-OPS-008` (8 entries)
+- Operational: `NPU-OPS-001` ... `NPU-OPS-009` (9 entries)
 
-**Total: 23 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
+**Total: 24 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.

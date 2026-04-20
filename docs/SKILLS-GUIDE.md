@@ -194,7 +194,7 @@ bash scripts/run-npu-container.sh --chips 0,1 \
 ```
 
 **每级 fail 怎么办**：
-1. **第一件事 grep `npu-patterns.md`**（23 条 stable ID 命中率非常高）
+1. **第一件事 grep `npu-patterns.md`**（24 条 stable ID 命中率非常高）
 2. 没命中 → 写新的 stable ID，按 `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema 加一条
 3. 修复 → commit → push personal → NPU host pull → 重跑
 
