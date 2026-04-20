@@ -14,11 +14,12 @@
 
 ---
 
-## 1. 7 个 skill 一览
+## 1. 8 个 skill 一览
 
 | Skill | 一句话说明 | 适用频率 |
 |---|---|---|
 | `npu-image-inspect` | 给一个 Ascend NPU docker image，抽出它装了啥（CANN、python、torch_npu、transformers 等），emit `knowledge/images/<slug>.md` | 每个新目标 image 一次 |
+| `dep-gap-detect` | 给定 requirements.txt + 目标 image inventory，**自动判断** 所有依赖的 A/B/C/D/E 分级。D=0 → 场景 P1 走标准升级；D≥1 → 场景 P2，必须先完成 NPU 适配 | 新 EasyR1 commit / 新 target image 之前先跑这个 |
 | `npu-code-path-sweep` | 扫一个 Python 源码树找所有 GPU-only 调用点（`torch.cuda.*` / `"cuda"` / `flash_attn` / `nccl`），emit `docs/code-path-sweep-<repo>.md` | 每个新移植目标一次，或大版本升级后 |
 | `npu-container-runner` | 启动 NPU 容器，设备 passthrough + bind mount + chip 占用检查 + HCCL 环境变量 | 每次跑 smoke 都用 |
 | `upstream-branch-hygiene` | 纪律规范：所有上游修改走 `ascend-port` 分支 + 本地 push + NPU host pull，**绝不**在容器内直接改 site-packages | 贯穿始终 |
@@ -85,6 +86,27 @@ bash scripts/inspect-ascend-image.sh quay.io/ascend/verl:verl-X.Y.Z-a3-...
 **输出**：`knowledge/images/<slug>.md`，包含 CANN 版本、torch_npu、transformers、vllm_ascend、triton_ascend、完整 pip freeze、NPU-BUG-001 triton 完整性检测。
 
 **决策点**：检查输出的 `## Triton-ascend integrity check` —— 如果有 warning，你的 Dockerfile 必须加 `pip install --force-reinstall --no-deps triton-ascend==<version>`。
+
+### Step 1.5 — 自动判断场景 P1 vs P2（skill: `dep-gap-detect`）
+
+这一步**必跑**。判断新 EasyR1 / 新 image 组合是否引入了需要 NPU 额外开发的依赖（场景 P2），还是只需要标准升级（场景 P1）。
+
+```bash
+# 提取 EasyR1 master 的 requirements
+git -C ../upstream/EasyR1 show main:requirements.txt > /tmp/easyr1-reqs.txt
+
+# 跑检测
+bash scripts/dep-gap-detect.sh \
+  --reqs /tmp/easyr1-reqs.txt \
+  --image-inventory knowledge/images/<slug>.md \
+  --out /tmp/gap-report.md
+```
+
+**决策点**：
+- 退出码 0（**D = 0，场景 P1**）→ 继续 Step 2 的 drill 流程
+- 退出码 1（**D ≥ 1，场景 P2**）→ **停下来**。对每个 D 类依赖按 tier 1/2/3 在 [`docs/npu-adaptation-tasks.md`](npu-adaptation-tasks.md) 建任务，完成适配后再回到本 workflow
+
+这个 skill 的内置 PACKAGE_RULES 就是 NPU 生态知识库的编码。识别出新 pattern 要更新它（见 `skills/dep-gap-detect/SKILL.md`）。
 
 ### Step 2 — 基础设施预检（skill 里 `image-upgrade-drill` Step 2；新项目也要做）
 

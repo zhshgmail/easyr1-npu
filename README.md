@@ -24,7 +24,7 @@
 | # | 你想要 | 路径 | 读哪本 |
 |---|---|---|---|
 | 1 | **只想在 A3 上把 EasyR1 跑起来** | 用 v1 已验证发布路径（`ascend-port` 分支 + CANN 8.5.0 image） | [`docs/PORT-GUIDE.md`](docs/PORT-GUIDE.md) |
-| 2 | **复现 / 自动化 EasyR1 移植** | 从 0 跑移植流程（用 7 个 skill + `fetch-upstream.sh`） | [`docs/SKILLS-GUIDE.md`](docs/SKILLS-GUIDE.md) |
+| 2 | **复现 / 自动化 EasyR1 移植** | 从 0 跑移植流程（用 8 个 skill + `fetch-upstream.sh`） | [`docs/SKILLS-GUIDE.md`](docs/SKILLS-GUIDE.md) |
 | 3 | **用带新依赖（transformers 5 / CANN 8.5.1）的 EasyR1** | 看 drill 演练当前状态 + 自行验证 | [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md) |
 | 4 | **复现"把 EasyR1 + 新依赖一起移植到 NPU"的自动流程** | 走 `image-upgrade-drill` skill 7 步流程 | [`docs/SKILLS-GUIDE.md`](docs/SKILLS-GUIDE.md) §8 + [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md) |
 
@@ -185,19 +185,21 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 │   ├── PORT-SUMMARY.md               ← 早期 playbook（被 PORT-GUIDE + SKILLS-GUIDE 取代）
 │   ├── handoff-2026-04-19.md         ← (旧) 初版 handoff，被 HANDOVER.md 替代
 │   └── codex-*.md                    ← codex 独立 review 存档
-├── skills/                           ← 7 个可复用 skill
+├── skills/                           ← 8 个可复用 skill
 │   ├── npu-image-inspect/
 │   ├── npu-code-path-sweep/
 │   ├── npu-container-runner/
 │   ├── upstream-branch-hygiene/
 │   ├── ray-npu-shim/
 │   ├── image-upgrade-drill/
+│   ├── dep-gap-detect/               ← 自动判断新依赖是否需要 NPU 适配（P1 vs P2）
 │   └── codex-review/
 ├── scripts/
 │   ├── install-skills.sh             ← 部署 skills 到 ~/.claude/skills/
 │   ├── fetch-upstream.sh             ← 拉 upstream 库（路径 2 用）
 │   ├── run-npu-container.sh          ← NPU 容器 launcher（路径 1 + 2 都用）
 │   ├── inspect-ascend-image.sh       ← image 体检（skill 内部）
+│   ├── dep-gap-detect.sh             ← 依赖 A/B/C/D/E 自动分级（skill 内部）
 │   ├── code-path-sweep.sh            ← CUDA-only 扫描（skill 内部）
 │   ├── smoke_v11_device.py           ← V1.1/V1.2 smoke
 │   ├── smoke_v13_rollout.py          ← V1.3 smoke
