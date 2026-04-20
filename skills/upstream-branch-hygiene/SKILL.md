@@ -17,7 +17,7 @@ Also invoke it when **reviewing** someone else's proposed change to an upstream,
 
 ## When NOT to use
 
-- Changes that live entirely in this repo (our own project source-of-truth — `easyr1-npu` itself, not the things under `upstream/`). Those push straight to `gitcode.com/zhengshencn_hwca/easyr1-npu`, no `personal` dance.
+- Changes that live entirely in this repo (our own project source-of-truth — `easyr1-npu` itself, not the things under `upstream/`). Those push straight to `github.com/zhshgmail/easyr1-npu`, no `personal` dance.
 - One-shot debug edits on the remote that are expected to be thrown away within the same SSH session (the user called these out as "非常小的 debug，不需要记录的" — "very small debugs don't need recording"). Still keep those short; never let them accumulate.
 
 ## The rule

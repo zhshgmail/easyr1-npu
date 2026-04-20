@@ -27,10 +27,7 @@
 
 **你不需要**：clone 任何 upstream 库（`torch-npu` / `transformers` 等）。image 里全有。
 
-**⚠️ Access 注意**：`zhshgmail/EasyR1` fork 目前是 **private**。如果你没 access：
-- 联系项目 owner（Discord 联系人：zzcn2422）请求加 collaborator
-- 或等待我们决定转 public / 镜像到 gitcode
-- 或用 patch 方式分发（本仓 `git log personal..ascend-port --patch` 导出）
+**仓库**：本仓（`zhshgmail/easyr1-npu`）和 EasyR1 fork（`zhshgmail/EasyR1`）都是 **public**，直接 clone 即可。
 
 ```bash
 # 1. Pull 镜像（国内走 NJU mirror；国外直接 quay.io/ascend）
@@ -40,7 +37,7 @@ docker tag quay.nju.edu.cn/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest \
 
 # 2. Clone 本仓（拿 runner 脚本）+ EasyR1 fork 的 ascend-port 分支
 mkdir -p "$HOME/workspace" && cd "$HOME/workspace"
-git clone https://gitcode.com/zhengshencn_hwca/easyr1-npu.git
+git clone https://github.com/zhshgmail/easyr1-npu.git
 git clone -b ascend-port https://github.com/zhshgmail/EasyR1.git
 
 # 3. Build 层叠 image（~3 分钟）
@@ -71,7 +68,7 @@ bash scripts/run-npu-container.sh --chips 0,1 \
 
 ```bash
 # 1. Clone 本仓
-git clone https://gitcode.com/zhengshencn_hwca/easyr1-npu.git
+git clone https://github.com/zhshgmail/easyr1-npu.git
 cd easyr1-npu
 
 # 2. 部署 skills 到 Claude Code（在本地开发机上，不是 A3）
@@ -145,7 +142,7 @@ Fork 上有 4 个分支，每个用途不同。**用户只切 `ascend-port`**，
 ## 仓库布局
 
 ```
-easyr1-npu/                           ← 本仓（gitcode.com/zhengshencn_hwca/easyr1-npu）
+easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-npu）
 ├── README.md                         ← 你在这里
 ├── CLAUDE.md                         ← 项目指令（给 Claude Code 用）
 ├── docs/

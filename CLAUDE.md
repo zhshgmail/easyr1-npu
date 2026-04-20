@@ -25,7 +25,7 @@ EasyR1 is a slimmed-down fork of veRL. veRL has already been ported to NPU (see 
 ```
 ~/workspace/
 ├── easyr1-npu/                        # our git-tracked deliverable
-│                                      # (gitcode.com/zhengshencn_hwca/easyr1-npu)
+│                                      # (github.com/zhshgmail/easyr1-npu)
 │   ├── README.md                      # entry point — start here
 │   ├── CLAUDE.md                      # this file
 │   ├── docs/
