@@ -40,7 +40,7 @@
 | triton_ascend | 3.2.0 | 3.2.0 |
 
 **通过了**：
-- ✅ drill 2-step smoke：`entropy_loss=1.434` **精确匹配** v1 的 V1.4 基准
+- ✅ drill 2-step smoke：`entropy_loss` 在 V1.4 / V2.2 基准 band 内。注意：v1（8.5.0 image）上 V1.4 实测 step1 = **0.991**；drill（8.5.2 image）上实测 step1 = **1.434**。两者都被当时的 V1.4/V2.2 run 确认为各自的 image 基准（一次对比 baseline 之所以是 1.434 而非 0.991，是因为 drill 报告里做的 v2↔v2 比较，不是 v2↔v1 比较；transformers-upgrade-drill.md §results 明确说明）
 - ✅ drill 20-step smoke：全 20 步稳定（entropy_loss ∈ [1.31, 1.83]，grad_norm max ~3.2，no HCCL / vector core 错误）
 
 **代价**：

@@ -27,6 +27,11 @@
 
 **你不需要**：clone 任何 upstream 库（`torch-npu` / `transformers` 等）。image 里全有。
 
+**⚠️ Access 注意**：`zhshgmail/EasyR1` fork 目前是 **private**。如果你没 access：
+- 联系项目 owner（Discord 联系人：zzcn2422）请求加 collaborator
+- 或等待我们决定转 public / 镜像到 gitcode
+- 或用 patch 方式分发（本仓 `git log personal..ascend-port --patch` 导出）
+
 ```bash
 # 1. Pull 镜像（国内走 NJU mirror；国外直接 quay.io/ascend）
 docker pull quay.nju.edu.cn/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest
@@ -94,7 +99,17 @@ bash scripts/fetch-upstream.sh --include-optional
 
 ## 路径 4：复现"EasyR1 + 新依赖自动移植"的流程
 
-适合：NPU 软件栈升级（CANN 9.x、torch_npu 2.10、transformers 6 之类）发布后，你要评估 "我们的 EasyR1 port 能不能跟上"。
+适合：NPU 软件栈升级（CANN 9.x、torch_npu 2.10、transformers 6 之类）发布后，你要评估 "我们的 EasyR1 port 能不能跟上新 image"。
+
+**明确的 scope**（路径 4 能做的）：
+- 验证新 image 里的一整套新依赖（torch_npu、vllm_ascend、triton_ascend、transformers 等）跟我们的 EasyR1 `ascend-port` 分支是否兼容
+- 修复 EasyR1 自己源码里的版本 compat 问题（e.g. transformers 5 改了 import 路径 → EasyR1 里加 try/except）
+- 换 base image + rebuild 层叠 image
+
+**不在 scope**（路径 4 不能做的）：
+- ❌ **改 NPU 上游库的源码**（torch-npu C++ 层、vllm-ascend / triton-ascend 的 Python/C++）。这些库本项目**只消费 base image 的版本**，不 patch。要改，是 CANN / Ascend 团队或相关 upstream 项目的工作，见 [`SKILLS-GUIDE.md §6 "什么时候这些 skill 不够用"`](docs/SKILLS-GUIDE.md)
+- ❌ **同时协调多个 NPU 上游库分支 commit 到 NPU 生态**。本项目的 `upstream-branch-hygiene` skill 只管 EasyR1 fork 的分支
+- ❌ **改 CANN 本身**
 
 用 [`image-upgrade-drill`](skills/image-upgrade-drill/SKILL.md) skill 的 7 步演练流程。产物：
 - 一份带数字的 drill report（预测 vs 实际成本、LOC 变动、bug probe 结果）
@@ -102,7 +117,7 @@ bash scripts/fetch-upstream.sh --include-optional
 - 新 stable ID 条目加到 `knowledge/npu-patterns.md`
 - PASS / BLOCKED 决策依据
 
-**注意**：这个 skill 的"自动化复现能力"**还没完全证明** —— 2026-04-19 首次用 isolated agent 走完 7 步时卡住了（见 [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md) §3）。skill 本身内容可用，但"一个命令交给 agent 就出结果"的 end-to-end 自动化还在迭代。
+**注意**：这个 skill 的"自动化复现能力"**还没完全证明** —— 2026-04-19 首次用 isolated agent 走完 7 步时卡住了（见 [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md) §3）。skill 本身内容可用（人 + agent 协作跑过），但"一条命令交给 agent 就出结果"的 end-to-end 自动化还在迭代。
 
 完整 skill 说明 → [`skills/image-upgrade-drill/SKILL.md`](skills/image-upgrade-drill/SKILL.md)
 v2 drill 的首次实证报告 → [`docs/transformers-upgrade-drill.md`](docs/transformers-upgrade-drill.md)

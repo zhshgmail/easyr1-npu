@@ -197,13 +197,15 @@ bash scripts/run-npu-container.sh \
   | tee "/tmp/$USER/easyr1-logs/V1.4.log"
 ```
 
-**期望结果**：
+**期望结果（在 v1 CANN 8.5.0 image 上跑 V1.4 的基准）**：
 - 走完 2 step
 - `entropy_loss` step 1 ≈ **0.991**，step 2 ≈ **1.263**
-- `grad_norm` ≈ **1.43**
+- `grad_norm` step 1 ≈ **1.43**
 - checkpoint 写在 `/tmp/$USER/easyr1_smoke_ckpt/`
 
 如果 `entropy_loss` step 1 漂移超过 **±5%**（< 0.94 或 > 1.04），说明依赖 drift 了，停下来用 `skills/npu-image-inspect/` 对比一下 image 是不是你预期的那个。
+
+**注意**：上面的数值是**在 CANN 8.5.0 image（本手册推荐）上**的基准。如果你跑在别的 image（e.g. CANN 8.5.1 drill image），基准会**不同**（V1.4 在 8.5.2 drill image 上 step 1 是 ~1.434，是正常的，不是 regression）—— 见 [`knowledge/smoke-ladder-convention.md`](../knowledge/smoke-ladder-convention.md) 的分 image 基准表。
 
 ### 5.7 继续走 smoke 梯子（可选）
 

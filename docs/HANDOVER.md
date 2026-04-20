@@ -139,7 +139,7 @@ v1 的两个修复（`1f716ea` + `ecce71d`）已经 cherry-pick 到 `ascend-port
 | V1.1 | ✅ | device 基本可用 |
 | V1.2 | ✅ | ray + fsdp 初始化 |
 | V1.3 | ✅ | rollout (vllm-ascend) |
-| V1.4 | ✅ | 完整 GRPO 2-step 训练，entropy_loss=1.434 成为**基准** |
+| V1.4 | ✅ | 完整 GRPO 2-step 训练，step1 entropy_loss=0.991 → step2 1.263（8.5.0 image 基准） |
 | V1.5 | ✅ | 4-chip multi-card HCCL |
 | V2.1 | ✅ | padding_free=True on NPU（通过 transformers 的 `npu_flash_attention` integration） |
 | V2.2 | ✅ | 4-chip + ulysses_size=2 + padding_free 全绿 |
@@ -148,7 +148,7 @@ v1 的两个修复（`1f716ea` + `ecce71d`）已经 cherry-pick 到 `ascend-port
 
 | Smoke | 状态 | 含义 |
 |---|---|---|
-| drill 2-step | ✅ | **entropy_loss=1.434 完全匹配 V1.4 基准** |
+| drill 2-step | ✅ | 8.5.2 image 上 step1 entropy_loss=1.434（注意：8.5.2 基准 ≠ 8.5.0 基准——drill 报告里做 v2 自己的内部一致性比较，不是 v2↔v1 数值对比） |
 | drill 20-step | ✅ | 全 20 步稳定（entropy_loss ∈ [1.31, 1.83]，grad_norm max ~3.2，no HCCL/vector core 错误） |
 | BUG-003 probe | 挂 | 确认 BUG-003 在 CANN 8.5.1 **没修**（inductor 路径返回数值错误 + delayed crash） |
 
