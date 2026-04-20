@@ -1,11 +1,11 @@
 ---
 name: ray-npu-shim
-description: A drop-in Python module that handles the Ray-specific integration points for Ascend NPU (custom resource, actor options, placement bundles, RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO, VLLM_ASCEND_ENABLE_NZ). Necessary but not sufficient — a real port ALSO needs the NPU-CP-001 sweep over the framework's own CUDA-named calls (see repo/skills/npu-code-path-sweep). Use this shim when porting any Ray-based trainer; pair it with the sweep. Covers NPU-CP-003 + NPU-BUG-002 + NPU-ENV-002 only.
+description: A drop-in Python module that handles the Ray-specific integration points for Ascend NPU (custom resource, actor options, placement bundles, RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO, VLLM_ASCEND_ENABLE_NZ). Necessary but not sufficient — a real port ALSO needs the NPU-CP-001 sweep over the framework's own CUDA-named calls (see skills/npu-code-path-sweep). Use this shim when porting any Ray-based trainer; pair it with the sweep. Covers NPU-CP-003 + NPU-BUG-002 + NPU-ENV-002 only.
 ---
 
 # ray-npu-shim
 
-> **Scope**: this shim only handles the **Ray↔NPU** integration points (resource registration, actor options, runtime_env defaults). It does NOT port the framework's own CUDA-named code (`torch.cuda.*`, `"cuda"` device strings, `nccl` backend). For that, run `repo/scripts/code-path-sweep.sh <source>` separately and apply the `NPU-CP-001` fix family. The shim + the sweep together are what a second Ray-based port needs.
+> **Scope**: this shim only handles the **Ray↔NPU** integration points (resource registration, actor options, runtime_env defaults). It does NOT port the framework's own CUDA-named code (`torch.cuda.*`, `"cuda"` device strings, `nccl` backend). For that, run `scripts/code-path-sweep.sh <source>` separately and apply the `NPU-CP-001` fix family. The shim + the sweep together are what a second Ray-based port needs.
 
 ## Why
 
@@ -43,7 +43,7 @@ Public API:
 
 ## Integration recipe
 
-This shim covers the **Ray-specific** integration points only. A framework port that uses CUDA-named APIs in its own code (`torch.cuda.*`, `"cuda"` device strings, nccl backend) still needs the `NPU-CP-001` sweep — see `repo/knowledge/npu-patterns.md` and run `repo/scripts/code-path-sweep.sh <source>` to find those sites. The shim + the sweep together are what a second Ray-based port needs.
+This shim covers the **Ray-specific** integration points only. A framework port that uses CUDA-named APIs in its own code (`torch.cuda.*`, `"cuda"` device strings, nccl backend) still needs the `NPU-CP-001` sweep — see `knowledge/npu-patterns.md` and run `scripts/code-path-sweep.sh <source>` to find those sites. The shim + the sweep together are what a second Ray-based port needs.
 
 Copy `ray_npu_shim.py` somewhere importable (e.g. `verl/utils/ray_npu_shim.py`), then:
 
@@ -74,7 +74,7 @@ Copy `ray_npu_shim.py` somewhere importable (e.g. `verl/utils/ray_npu_shim.py`),
    bundles = [placement_bundle(num_cpus=c, num_accel=1) for _ in range(world_size)]
    ```
 
-5. Run `repo/scripts/code-path-sweep.sh <your-source-tree>` to find the framework's own CUDA-named call sites — `torch.cuda.device_count()`, `torch.cuda.is_available()`, `backend="nccl"`, etc. Those are `NPU-CP-001` and need the `verl/utils/device.py`-style helper (separate from this Ray shim). Typical order: apply this shim first, then do the `NPU-CP-001` sweep, then test.
+5. Run `scripts/code-path-sweep.sh <your-source-tree>` to find the framework's own CUDA-named call sites — `torch.cuda.device_count()`, `torch.cuda.is_available()`, `backend="nccl"`, etc. Those are `NPU-CP-001` and need the `verl/utils/device.py`-style helper (separate from this Ray shim). Typical order: apply this shim first, then do the `NPU-CP-001` sweep, then test.
 
 ## Validation
 
@@ -98,5 +98,5 @@ This shim is pinned to **Ray 2.55+** (tested on 2.55.0 in the verl-8.5.0-a3 imag
 
 ## Related
 
-- `repo/knowledge/npu-patterns.md` — `NPU-CP-003`, `NPU-BUG-002`, `NPU-ENV-002`.
+- `knowledge/npu-patterns.md` — `NPU-CP-003`, `NPU-BUG-002`, `NPU-ENV-002`.
 - Reference implementation in the EasyR1 port: commit `fb1a223` (resource registration + placement bundles) + `59641d4` (RAY_ACCEL env) + `cc8e794` (VLLM_ASCEND_ENABLE_NZ). The shim merges those.

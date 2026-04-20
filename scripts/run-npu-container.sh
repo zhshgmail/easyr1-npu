@@ -13,7 +13,11 @@
 # Defaults:
 #   --chips 0,1 (one A3 card).
 #   --image easyr1-npu:ascend-port.
-#   --live-source = env LIVE_EASYR1 or /home/z00637938/workspace/easyr1-npu/upstream/EasyR1.
+#   --live-source = env LIVE_EASYR1 or $HOME/workspace/easyr1-npu/upstream/EasyR1.
+#
+# User identity: derived from $USER; override with --user or env NPU_USER if
+# the shell user differs from the one owning the three bind-mounted trees
+# (/home/<user>, /data/<user>, /tmp/<user>).
 #
 # Operational rules this encodes (see repo/skills/npu-container-runner/SKILL.md
 # for the full rationale and checklist):
@@ -32,7 +36,8 @@ set -euo pipefail
 
 IMAGE="easyr1-npu:ascend-port"
 CHIPS="0,1"
-LIVE_EASYR1="${LIVE_EASYR1:-/home/z00637938/workspace/easyr1-npu/upstream/EasyR1}"
+NPU_USER="${NPU_USER:-$USER}"
+LIVE_EASYR1="${LIVE_EASYR1:-$HOME/workspace/easyr1-npu/upstream/EasyR1}"
 SKIP_CHIP_CHECK=0
 
 while [[ $# -gt 0 ]]; do
@@ -40,10 +45,18 @@ while [[ $# -gt 0 ]]; do
     --chips) CHIPS="$2"; shift 2 ;;
     --image) IMAGE="$2"; shift 2 ;;
     --live-source) LIVE_EASYR1="$2"; shift 2 ;;
+    --user) NPU_USER="$2"; shift 2 ;;
     --skip-chip-check) SKIP_CHIP_CHECK=1; shift ;;
     --) shift; break ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
+done
+
+for d in "/home/${NPU_USER}" "/data/${NPU_USER}" "/tmp/${NPU_USER}"; do
+  if [[ ! -d "$d" ]]; then
+    echo "WARN: bind-mount source $d does not exist; creating empty dir so docker doesn't auto-create as root." >&2
+    mkdir -p "$d" || { echo "ERROR: cannot mkdir $d" >&2; exit 4; }
+  fi
 done
 
 IFS=',' read -ra CHIP_ARR <<< "$CHIPS"
@@ -98,14 +111,14 @@ docker run --rm \
   -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
   -v /usr/bin/msnpureport:/usr/bin/msnpureport \
   -v /etc/hccn.conf:/etc/hccn.conf \
-  -v /home/z00637938:/home/z00637938 \
-  -v /data/z00637938:/data/z00637938 \
-  -v /tmp/z00637938:/tmp/z00637938 \
+  -v "/home/${NPU_USER}:/home/${NPU_USER}" \
+  -v "/data/${NPU_USER}:/data/${NPU_USER}" \
+  -v "/tmp/${NPU_USER}:/tmp/${NPU_USER}" \
   -v "${LIVE_EASYR1}:/opt/easyr1" \
   --network=host --ipc=host --shm-size=64g \
   -e ASCEND_RT_VISIBLE_DEVICES="${CHIPS}" \
   -e HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}" \
-  -e HF_HOME="${HF_HOME:-/data/z00637938/hf-cache}" \
+  -e HF_HOME="${HF_HOME:-/data/${NPU_USER}/hf-cache}" \
   -e VLLM_ASCEND_ENABLE_NZ="${VLLM_ASCEND_ENABLE_NZ:-0}" \
   -e PYTHONDONTWRITEBYTECODE="${PYTHONDONTWRITEBYTECODE:-1}" \
   "${IMAGE}" \

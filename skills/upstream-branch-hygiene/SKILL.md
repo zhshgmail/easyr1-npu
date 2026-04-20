@@ -17,7 +17,7 @@ Also invoke it when **reviewing** someone else's proposed change to an upstream,
 
 ## When NOT to use
 
-- Changes that live entirely in `repo/` (our own project source-of-truth). Those push straight to `github.com/zhshgmail/easyr1-npu`, no `personal` dance.
+- Changes that live entirely in this repo (our own project source-of-truth — `easyr1-npu` itself, not the things under `upstream/`). Those push straight to `gitcode.com/zhengshencn_hwca/easyr1-npu`, no `personal` dance.
 - One-shot debug edits on the remote that are expected to be thrown away within the same SSH session (the user called these out as "非常小的 debug，不需要记录的" — "very small debugs don't need recording"). Still keep those short; never let them accumulate.
 
 ## The rule
@@ -63,7 +63,7 @@ For each upstream repo we may modify, on the **local workstation**:
    git remote -v
    ```
 
-3. Record the upstream+personal pair in `repo/knowledge/upstream-refs.md` under the "Private forks" section so future sessions see it.
+3. Record the upstream+personal pair in `knowledge/upstream-refs.md` under the "Private forks" section so future sessions see it.
 
 ## Working flow (every change)
 
@@ -75,7 +75,7 @@ From the **local workstation**, inside `upstream/<repo>/`:
 4. **Push**: `git push personal <branch>`.
 5. **Pull on NPU host** (from a cold shell, or via `ssh`):
    ```bash
-   cd /home/z00637938/workspace/easyr1-npu/upstream/<repo>
+   cd "$HOME/workspace/easyr1-npu/upstream/<repo>"
    GITHUB_TOKEN=$(gh auth token) GIT_ASKPASS=/root/.git-askpass-github.sh \
      git pull --ff-only personal <branch>
    ```
@@ -84,14 +84,14 @@ From the **local workstation**, inside `upstream/<repo>/`:
 
 ## Handling the NPU host's "don't edit directly" rule
 
-The NPU host has a full git checkout at `/home/z00637938/workspace/easyr1-npu/upstream/<repo>/`. It is **read-only in spirit** — we use it for `git pull` and nothing else.
+The NPU host has a full git checkout at `$HOME/workspace/easyr1-npu/upstream/<repo>/`. It is **read-only in spirit** — we use it for `git pull` and nothing else.
 
 If a change is needed urgently and you're already on the NPU host:
 
 1. Make the edit.
 2. **Before closing the session**, push it from the NPU host to `personal`:
    ```bash
-   cd /home/z00637938/workspace/easyr1-npu/upstream/<repo>
+   cd "$HOME/workspace/easyr1-npu/upstream/<repo>"
    git diff                  # review
    git add -A && git commit -m "..."
    GITHUB_TOKEN=... GIT_ASKPASS=/root/.git-askpass-github.sh git push personal <branch>
@@ -103,9 +103,11 @@ This is a **last resort**, not the default. Prefer local edit → push → pull.
 ## Container discipline
 
 All NPU containers run with the three user-scoped bind mounts so source is preserved:
-- `/home/z00637938:/home/z00637938`
-- `/data/z00637938:/data/z00637938`
-- `/tmp/z00637938:/tmp/z00637938`
+- `/home/${NPU_USER}:/home/${NPU_USER}`
+- `/data/${NPU_USER}:/data/${NPU_USER}`
+- `/tmp/${NPU_USER}:/tmp/${NPU_USER}`
+
+(`NPU_USER` defaults to `$USER` — see `scripts/run-npu-container.sh`.)
 
 Containers are created with `--rm` so they go away on exit. Source must live outside — either via bind mount (for iterative work) or baked into the image via `COPY` (for reproducible layers). **Never** leave an edited file in an unmounted container path.
 
@@ -125,6 +127,6 @@ When reviewing a proposed upstream change:
 - [ ] Does `git log personal/<branch>` show the commit?
 - [ ] Does the NPU host's checkout show the commit after `git pull personal <branch>`?
 - [ ] Has any downstream image rebuild happened if the change touches the Dockerfile layer?
-- [ ] Is the change documented in `repo/docs/porting-journal.md` if it's non-trivial?
+- [ ] Is the change documented in `docs/porting-journal.md` if it's non-trivial?
 
 If any box is unchecked, the change is not properly landed yet.

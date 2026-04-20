@@ -1,5 +1,29 @@
+# Local editor/IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
 __pycache__/
 *.pyc
-.venv/
-*.log
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Secrets (never commit)
+*.env
+*.key
+*.pem
+.env.*
+
+# Local Claude Code state
+.claude/
+
+# Install manifest (written by install-skills.sh)
+.install_manifest

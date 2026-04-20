@@ -32,10 +32,10 @@ Don't use for:
 
 ## The script
 
-`repo/scripts/run-npu-container.sh` is the implementation. Invoked as:
+`scripts/run-npu-container.sh` is the implementation. Invoked as:
 
 ```bash
-bash repo/scripts/run-npu-container.sh \
+bash scripts/run-npu-container.sh \
     [--chips 0,1] \
     [--image easyr1-npu:ascend-port] \
     [--live-source /home/$USER/workspace/easyr1-npu/upstream/EasyR1] \
@@ -70,6 +70,6 @@ The script:
 
 ## Related knowledge / skills
 
-- `repo/knowledge/npu-patterns.md` — the 7+ NPU-specific findings this runner encodes defaults for.
-- `repo/knowledge/a3_server.md` (in agent memory) — host-specific paths and shared-host etiquette.
-- `repo/skills/upstream-branch-hygiene/SKILL.md` — the "edit locally, push, A3 pull" flow that this runner assumes.
+- `knowledge/npu-patterns.md` — the 7+ NPU-specific findings this runner encodes defaults for.
+- `knowledge/a3_server.md` (in agent memory) — host-specific paths and shared-host etiquette.
+- `skills/upstream-branch-hygiene/SKILL.md` — the "edit locally, push, A3 pull" flow that this runner assumes.

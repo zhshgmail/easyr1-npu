@@ -93,7 +93,7 @@ Mechanism: a proposal to write a substantial new adapter / shim / backend for a 
 
 Codex can fact-check these claims, but only if they're in the prompt. If the prompt says "we need to build X from scratch" without referencing those two places, that's usually a red flag — ask codex to check both before designing.
 
-Concrete incident (2026-04-18): v2 proposal estimated 2 days to write an `npu_fusion_attention` adapter. User asked "how does verl do it?" before authorizing. veRL does it with a 4-line import swap from `transformers.integrations.npu_flash_attention` (which ships `npu_flash_attn_varlen_func` already). Total work dropped from ~2 days to ~1 hour. See `repo/knowledge/npu-patterns.md::NPU-OPS-005`.
+Concrete incident (2026-04-18): v2 proposal estimated 2 days to write an `npu_fusion_attention` adapter. User asked "how does verl do it?" before authorizing. veRL does it with a 4-line import swap from `transformers.integrations.npu_flash_attention` (which ships `npu_flash_attn_varlen_func` already). Total work dropped from ~2 days to ~1 hour. See `knowledge/npu-patterns.md::NPU-OPS-005`.
 
 ## Version-aware reviews
 

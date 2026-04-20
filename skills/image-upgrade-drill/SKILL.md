@@ -7,9 +7,9 @@ description: Rehearse a major base-image / framework upgrade (e.g. CANN 8.5.0→
 
 ## What it does
 
-Takes a candidate image/framework upgrade target and runs it through a structured rehearsal on a throwaway branch. Output is a drill report (`repo/docs/<target>-upgrade-drill.md`) that either clears the upgrade to ship or documents why it's blocked. Along the way any new recurring pits land as stable IDs in `npu-patterns.md`.
+Takes a candidate image/framework upgrade target and runs it through a structured rehearsal on a throwaway branch. Output is a drill report (`docs/<target>-upgrade-drill.md`) that either clears the upgrade to ship or documents why it's blocked. Along the way any new recurring pits land as stable IDs in `npu-patterns.md`.
 
-The first concrete instance of this playbook is the transformers-upgrade drill on 2026-04-19 — `repo/docs/transformers-upgrade-drill.md`. Read that before touching this skill; it's the ground truth for how the pieces fit.
+The first concrete instance of this playbook is the transformers-upgrade drill on 2026-04-19 — `docs/transformers-upgrade-drill.md`. Read that before touching this skill; it's the ground truth for how the pieces fit.
 
 ## When to use
 
@@ -29,7 +29,7 @@ The first concrete instance of this playbook is the transformers-upgrade drill o
 - Working V1.4 + V2.2 smokes on the current (pre-upgrade) image as your **baseline reference** — you cannot evaluate drift without one.
 - Access to the target image (pulled or available via a CN mirror per NPU-OPS-006).
 - A3 host reachable with the user's chip quota.
-- `repo/docs/PORT-SUMMARY.md` up to date — step 6 of this skill feeds back into it.
+- `docs/PORT-SUMMARY.md` up to date — step 6 of this skill feeds back into it.
 
 ## How to invoke
 
@@ -112,7 +112,7 @@ If any criterion fails, **the upgrade is blocked** regardless of how clean step-
 
 ### Step 7 — Report + close-out
 
-Write `repo/docs/<target>-upgrade-drill.md` following the transformers drill's structure:
+Write `docs/<target>-upgrade-drill.md` following the transformers drill's structure:
 - Result (PASS/BLOCKED) + the numeric evidence (step-1 entropy_loss vs baseline; 20-step band).
 - Actual vs predicted cost table (wall-clock phases + LOC changed + iteration count).
 - What broke vs what the playbook predicted, with ✅/⚠️/❌ per risk class.
@@ -144,12 +144,12 @@ Then:
 
 ## Related
 
-- `repo/docs/transformers-upgrade-drill.md` — the first instance; treat as the reference implementation.
-- `repo/docs/PORT-SUMMARY.md` §5-6 — the upstream playbook this skill operationalizes.
-- `repo/knowledge/npu-patterns.md` — where new findings from a drill land.
-- `repo/knowledge/smoke-ladder-convention.md` — baseline smoke levels (V1.1 → V2.2) referenced by Step 1.
-- `repo/skills/npu-image-inspect/` — Step 1's input.
-- `repo/skills/npu-container-runner/` — Step 4's harness (`run-npu-container.sh`).
-- `repo/skills/upstream-branch-hygiene/` — how the drill branch integrates with git remotes.
-- `repo/skills/codex-review/` — optional sign-off for Step 7's report.
+- `docs/transformers-upgrade-drill.md` — the first instance; treat as the reference implementation.
+- `docs/PORT-SUMMARY.md` §5-6 — the upstream playbook this skill operationalizes.
+- `knowledge/npu-patterns.md` — where new findings from a drill land.
+- `knowledge/smoke-ladder-convention.md` — baseline smoke levels (V1.1 → V2.2) referenced by Step 1.
+- `skills/npu-image-inspect/` — Step 1's input.
+- `skills/npu-container-runner/` — Step 4's harness (`run-npu-container.sh`).
+- `skills/upstream-branch-hygiene/` — how the drill branch integrates with git remotes.
+- `skills/codex-review/` — optional sign-off for Step 7's report.
 - memory `a3_docker_proxy.md` — recovery if NPU-OPS-006 bites in Step 2.

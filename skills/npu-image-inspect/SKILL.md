@@ -39,11 +39,11 @@ Given a docker image reference, produces `knowledge/images/<slug>.md` containing
 From the repo root:
 
 ```bash
-bash repo/scripts/inspect-ascend-image.sh \
+bash scripts/inspect-ascend-image.sh \
   quay.io/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest
 ```
 
-Default output path: `repo/knowledge/images/<slug>.md` where `<slug>` is the image ref with `/`, `:`, `+` replaced with `-`.
+Default output path: `knowledge/images/<slug>.md` where `<slug>` is the image ref with `/`, `:`, `+` replaced with `-`.
 
 Override output: `--out path/to/file.md`.
 Keep the temp dir (for debugging or running `grep` on pip-freeze): `--keep-tmp`.
@@ -73,6 +73,6 @@ The two hand-written examples in `knowledge/images/verl-8.5.0-a3.md` and `knowle
 
 ## Related
 
-- `repo/knowledge/npu-patterns.md` — `NPU-BUG-001` is the triton-ascend integrity one.
-- `repo/knowledge/images/` — where outputs land.
-- `repo/knowledge/upstream-refs.md` — pairs image versions with matching upstream refs; this skill's output feeds it.
+- `knowledge/npu-patterns.md` — `NPU-BUG-001` is the triton-ascend integrity one.
+- `knowledge/images/` — where outputs land.
+- `knowledge/upstream-refs.md` — pairs image versions with matching upstream refs; this skill's output feeds it.

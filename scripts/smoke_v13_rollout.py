@@ -14,7 +14,8 @@ print("torch:", torch.__version__, "torch.npu.is_available():", torch.npu.is_ava
 
 from vllm import LLM, SamplingParams
 
-MODEL_PATH = os.environ.get("MODEL_PATH", "/data/z00637938/models/Qwen2-0.5B-Instruct")
+_user = os.environ.get("NPU_USER", os.environ.get("USER", "nobody"))
+MODEL_PATH = os.environ.get("MODEL_PATH", f"/data/{_user}/models/Qwen2-0.5B-Instruct")
 print("loading:", MODEL_PATH)
 
 # vllm_ascend is registered as a platform plugin; `LLM(...)` should find it.

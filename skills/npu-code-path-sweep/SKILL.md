@@ -7,7 +7,7 @@ description: Scan a Python source tree for GPU-only / CUDA-specific call sites t
 
 ## What it does
 
-Greps a source tree for a **curated pattern set** of GPU-only code and emits `repo/docs/code-path-sweep-<repo-name>.md`. Each hit becomes a row in a table under its pattern's section:
+Greps a source tree for a **curated pattern set** of GPU-only code and emits `docs/code-path-sweep-<repo-name>.md`. Each hit becomes a row in a table under its pattern's section:
 
 ```
 ### NPU-CP-001 — torch.cuda.*
@@ -17,7 +17,7 @@ Greps a source tree for a **curated pattern set** of GPU-only code and emits `re
 | verl/workers/fsdp_workers.py | 319 | device_id=torch.cuda.current_device(), | get_device_module().current_device() |
 ```
 
-Sections are indexed by the stable IDs from `repo/knowledge/npu-patterns.md` (`NPU-CP-NNN`, `NPU-BUG-NNN`). Hitting a section in the sweep report is a fix-this-with-that-pattern signal.
+Sections are indexed by the stable IDs from `knowledge/npu-patterns.md` (`NPU-CP-NNN`, `NPU-BUG-NNN`). Hitting a section in the sweep report is a fix-this-with-that-pattern signal.
 
 ## When to use
 
@@ -33,14 +33,14 @@ Sections are indexed by the stable IDs from `repo/knowledge/npu-patterns.md` (`N
 ## How to invoke
 
 ```bash
-bash repo/scripts/code-path-sweep.sh <source-tree>
+bash scripts/code-path-sweep.sh <source-tree>
 # or with explicit output:
-bash repo/scripts/code-path-sweep.sh \
-  /home/z00637938/workspace/easyr1-npu/upstream/EasyR1 \
-  --out repo/docs/code-path-sweep-EasyR1.md
+bash scripts/code-path-sweep.sh \
+  "$HOME/workspace/easyr1-npu/upstream/EasyR1" \
+  --out docs/code-path-sweep-EasyR1.md
 ```
 
-Default output path: `repo/docs/code-path-sweep-<basename-of-tree>.md`.
+Default output path: `docs/code-path-sweep-<basename-of-tree>.md`.
 
 Exit codes:
 - 0: sweep completed (may have hits).
@@ -99,5 +99,5 @@ Total hits: <N>
 
 ## Related
 
-- `repo/knowledge/npu-patterns.md` — the catalog the IDs point to.
-- `repo/docs/dep-matrix.md` §Code-path blockers — manual analog; eventually this skill should feed that section directly.
+- `knowledge/npu-patterns.md` — the catalog the IDs point to.
+- `docs/dep-matrix.md` §Code-path blockers — manual analog; eventually this skill should feed that section directly.
