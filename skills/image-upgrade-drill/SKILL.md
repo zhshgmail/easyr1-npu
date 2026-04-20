@@ -83,12 +83,19 @@ The `[drill]` commit prefix is part of the contract — it's how the cherry-pick
 
 Run your V2.2 smoke against the new image inside the drill branch. **Expect 1-3 real API breaks** per major upgrade. Each one: read the traceback, find the moved symbol via `grep` in the new upstream source (which you should have checked out locally to match the new image's version — see NPU-version-aware-reviews memory), write a backward-compatible fix (`try/except` on imports, `hasattr` gates on attributes, `isinstance(descriptor, property) and descriptor.fset is None` for read-only properties), commit without the `[drill]` prefix.
 
-Concrete examples from the transformers drill:
+For the **method** — how to identify, grep, and fix breaks — follow this pattern:
+1. Read the traceback; note the module + symbol that failed to import or attribute that failed to set
+2. Grep the new upstream source (at the ref matching the new image, per `knowledge/upstream-refs.md`) for where that symbol now lives
+3. Write the backward-compat fix. Common patterns:
+   - **Import moved**: `try/except ImportError` with both old and new paths
+   - **Attribute removed / gated**: `hasattr(obj, "attr")` before reading
+   - **Field became read-only `@property`**: `isinstance(cls_attr, property) and cls_attr.fset is None` before setattr
+   - **API renamed**: `try` new name, `except AttributeError/ImportError` fall back to old
+4. Commit without the `[drill]` prefix
 
-- `transformers.modeling_utils.no_init_weights` moved to `transformers.initialization` in 5.0 → try/except both paths.
-- `vllm.SamplingParams.eos_token_id` became a read-only `@property` in 0.18 → filter out read-only descriptors in the contextmanager that setattr's them.
+Worked example: **`repo/docs/transformers-upgrade-drill.md`** is the 2026-04 drill's full report — includes both API breaks, both diffs, and the reasoning. **Do not open it during a dry-run skill test** — it's the answer key. Open it only after you've attempted the drill yourself (or for a post-mortem).
 
-Both are tiny (1-13 LOC) and 8.5.0-safe. The cost ratio matters: **1-3 commits, 2-20 LOC** is typical for a major bump when the helper-layer is doing its job; if you find yourself writing 100+ LOC you're probably also refactoring, stop and narrow scope.
+Expected size: **1-3 commits, 2-20 LOC** is typical for a major bump when the helper-layer is doing its job; if you find yourself writing 100+ LOC you're probably also refactoring, stop and narrow scope.
 
 ### Step 5 — Probe any carried-forward bugs (NPU-BUG-00*)
 

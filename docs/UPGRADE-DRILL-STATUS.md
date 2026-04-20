@@ -31,13 +31,31 @@
 
 **Drill image**：`quay.io/ascend/verl:verl-8.5.2-a3-ubuntu22.04-py3.11-qwen3-5`（24 GB）
 
-| 组件 | v1（生产） | v2（drill） |
+### 精确版本表 — 实测 vs 推理兼容
+
+**本次 drill 实测运行的版本**（在 8.5.2 image 上跑通 2-step + 20-step smoke 的版本）：
+
+| 组件 | v1 生产（实测） | v2 drill（实测） |
 |---|---|---|
 | CANN | 8.5.0 | **8.5.1** |
 | torch_npu | 2.8.0 | **2.9.0** |
 | transformers | 4.57.6 | **5.3.0.dev0** |
-| vllm_ascend | 0.13.1.dev18 | **0.17.0rc2.dev109** |
+| vllm_ascend | 0.13.1.dev18+g2e5f72f92 | **0.17.0rc2.dev109+g54879467c** |
+| vllm（框架） | 0.13.0+empty | （0.17 的 empty placeholder） |
 | triton_ascend | 3.2.0 | 3.2.0 |
+| triton（upstream） | — | 3.6.0（image 额外带的） |
+
+**注意**：`ascend-port` 分支**源码**里针对 vllm **0.18** 的 backward-compat fix（`ecce71d`）**是为 0.18 的 `SamplingParams.eos_token_id` 只读 property 设计的**。但我们**实测运行**的是 vllm_ascend **0.17**（上表）。对 0.18 的兼容性来自：
+
+1. 从 0.17 → 0.18 的 `SamplingParams` 源码 diff 看，eos_token_id 的 property 化在 0.17 就引入了（drill 实测中 bug 真的触发了）
+2. 我们的 fix 用 `isinstance(cls_attr, property) and cls_attr.fset is None` **泛化**到任何未来只读 property
+
+**因此对 vllm 0.18 的支持属于"推理兼容"（inferred compat），不是实测验证**。如果你要用 vllm 0.18，建议自己跑 V1.4 smoke 验证。
+
+**推理兼容**（源码 backward-compat 写法覆盖，未实测）：
+- transformers >= 5.0（任何 5.x、6.x，只要 `no_init_weights` 还在 `modeling_utils` 或 `initialization` 之一）
+- vllm >= 0.18（只要 `SamplingParams` 保持 `@property` 风格只读字段）
+- 任何介于 drill image 和未来 image 之间的 CANN 小版本
 
 **通过了**：
 - ✅ drill 2-step smoke：`entropy_loss` 在 V1.4 / V2.2 基准 band 内。注意：v1（8.5.0 image）上 V1.4 实测 step1 = **0.991**；drill（8.5.2 image）上实测 step1 = **1.434**。两者都被当时的 V1.4/V2.2 run 确认为各自的 image 基准（一次对比 baseline 之所以是 1.434 而非 0.991，是因为 drill 报告里做的 v2↔v2 比较，不是 v2↔v1 比较；transformers-upgrade-drill.md §results 明确说明）
