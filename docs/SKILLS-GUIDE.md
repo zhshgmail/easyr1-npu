@@ -229,23 +229,42 @@ cat /tmp/review-prompt.txt | \
 
 ---
 
-## 6. 什么时候这些 skill 需要配合外部协作
+## 6. 当 skill 自己不写代码时 —— 三档责任划分
 
-**第一性原则**：本项目目标是让 EasyR1 master 跑在 A3 上。遇到 NPU 生态还没覆盖的 gap 时，**必须识别 + 驱动解决**，不能用 "不在 scope" 绕过。
+**第一性原则**：本项目目标是让 EasyR1 master 跑在 A3 上。遇到 NPU 生态 gap 时**必须识别 + 驱动解决**，不能用 "不在 scope" 绕过。但"驱动解决"不意味着本仓直接写所有代码；下面是三档责任划分：
 
-以下情况 skill **自己不能直接写代码修复**，但**仍然要识别问题 + 建任务 + 推动落地**：
+### 档 1：本仓直接做
 
-- **新融合算子 NPU 上不存在** —— 本项目 skill 不实现 kernel，但要**识别 gap** + **建任务**（要么自己按姐妹项目 `ascend-fused-accuracy-probe` 的 kernel 编写流程实现，要么向 Ascend 团队提需求）。记入 `docs/npu-adaptation-tasks.md`（待建）
-- **EasyR1 依赖的某个 Python 包没有 NPU 版本** —— skill 要识别 gap + 评估替代方案（shim / fork / 向上游提 PR）+ 建任务。Python 层 shim / fork 是**在 scope** 的工作
-- **vllm-ascend / triton-ascend / torch_npu 的 Python 层有 bug 或缺少 API** —— 向上游提 issue + 建 workaround + track 修复进展。workaround 在 scope，上游 Python 层 PR 在 scope（只是可能走他们的 review 流程）
-- **多节点 / 跨 host HCCL 调优** —— 本项目目前只单节点，多节点是已标的 known debt（`DELIVERABLE.md`）；需要时要建任务扩 skill
+- EasyR1 自己的源码改动（device 路由、版本 compat shim、Ray 集成、Dockerfile）
+- Python 层 shim / fork 来桥接 CUDA-only 包 → NPU 替代（e.g. flash_attn → `transformers.integrations.npu_flash_attention`）
+- 向 vllm-ascend / triton-ascend / torch_npu 的 **Python 层**提 issue 或 PR
+- 识别 NPU 适配 gap，记入 `docs/npu-adaptation-tasks.md`（待建）
 
-以下情况**真的超出本项目能力范围**（识别了也只能向外上报）：
+### 档 2：委托给姐妹项目 / 独立仓（本仓 track 适配，实现在别的仓）
 
-- **CANN 底层 C++ / kernel 实现**（kernel math、HCCL C 层、ACL runtime）—— 专属 CANN / Ascend 团队
-- **torch_npu C++ 扩展层的 ATen dispatcher 实现** —— 专属 Ascend PyTorch 团队
+- **新 CANN 算子（kernel math）的实现**：
+  - A3 kernel 精度验证 → 委托给 [`ascend-fused-accuracy-probe`](https://gitcode.com/zhengshencn_hwca/ascend-fused-accuracy-probe)
+  - A5 kernel 生成 → 委托给 [`a5_ops`](https://gitcode.com/zhengshencn_hwca/a5_ops)
+  - A3 kernel 生成 → 有类似的独立仓（按需调用）
+  - **本仓做的事**：识别 "EasyR1 需要某个 fused op 但没现成 NPU 实现" → 建 `docs/npu-adaptation-tasks.md` 任务 → 协调姐妹项目完成 → 接回 EasyR1 使用
 
-**但对这两类，skill 仍然要做**：识别 + 向上游提 issue + 记录到 `docs/npu-adaptation-tasks.md` + 给出本项目的 workaround（关 feature、用替代 API、等待 upstream）。**不是置之不理**。
+- **torch_npu C++ 扩展层的 op 实现**：同上，委托给 Ascend PyTorch 团队 / 相关 kernel 项目。本仓 track
+
+- **多节点 / 跨 host HCCL 调优**：超出单节点 scope 的部分，建任务；可能委托给专门的 HCCL 调优项目或内部团队
+
+### 档 3：只能向 Ascend 团队提需求（我们做不了 workaround 的情况）
+
+- **CANN runtime 框架级的 bug**（ACL C 层本身 crash、HCCL C 协议层冲突、driver 层问题）—— 这类我们没权限改 runtime 代码，能做的是**提 issue + 写 workaround + 记录进 `npu-patterns.md` stable ID + 等 Ascend 团队修**
+
+---
+
+**关键**：档 2 和档 3 的"委托"和"提需求"**不是推卸**。每一条 gap 都要：
+1. 识别并记录（哪个功能需要、当前状态、blocker 在哪）
+2. 建对应任务到 `docs/npu-adaptation-tasks.md`（谁来做、预计什么时间、怎么 track）
+3. Track 进度到完成
+4. 完成后接回 EasyR1 使用
+
+"不在 scope" 不是可接受的结束状态。
 
 ---
 

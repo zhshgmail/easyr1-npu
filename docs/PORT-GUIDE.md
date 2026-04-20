@@ -253,8 +253,10 @@ v1 只 smoke 过 Qwen2-0.5B + context ≤ 2k，单节点。更大 scale 是 [`DE
 
 如果新 EasyR1 或新模型**要求**某个版本还没被我们验证过的依赖：
 1. 先用 `skills/image-upgrade-drill/` 走演练流程评估 —— 产出 drill report 判断是否能切
-2. 如果该依赖 NPU 生态还没适配（没有 NPU 版本、或 NPU 版本有 bug、或 NPU 完全没跟进），**这是需要驱动的 NPU 适配任务**，不是"不在 scope" —— 建任务到 `docs/npu-adaptation-tasks.md`（待建），可能的动作包括：Python 层 shim、提 issue / PR 到 vllm-ascend / triton-ascend / torch_npu、向 Ascend 团队提适配需求
-3. 只有 CANN C++ 底层 / torch_npu ATen 层的修改**真的**需要 Ascend 团队做，我们能做的是提需求 + 做 workaround
+2. 如果该依赖 NPU 生态还没适配（没有 NPU 版本、或 NPU 版本有 bug、或 NPU 完全没跟进），**这是需要驱动的 NPU 适配任务**，不是"不在 scope" —— 建任务到 `docs/npu-adaptation-tasks.md`（待建）。按三档责任划分：
+   - **档 1**（本仓直接做）：Python 层 shim / fork、向 vllm-ascend / triton-ascend / torch_npu 的 Python 层 提 issue / PR
+   - **档 2**（委托姐妹项目）：kernel 实现 → `ascend-fused-accuracy-probe` / `a5_ops` / A3 kernel 仓。本仓识别 + track
+   - **档 3**（只能提需求）：CANN runtime C 层框架 bug —— 提 issue 给 Ascend 团队 + 做 workaround
 
 详见 [`SKILLS-GUIDE.md §6`](SKILLS-GUIDE.md)。
 

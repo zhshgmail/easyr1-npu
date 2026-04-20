@@ -6,13 +6,14 @@
 1. **EasyR1 在 A3 上能跑** —— 代码改动在 [`zhshgmail/EasyR1`](https://github.com/zhshgmail/EasyR1) 的 **`ascend-port`** 分支（20 个 commit）
 2. **一套可复用的移植 skills** —— 下一次 EasyR1 版本升级 / CANN 升级 / 别的 RL 框架（OpenRLHF / TRL）移植都能套用
 
-> **📣 2026-04-20 Scope 说明（勘误）**：之前版本的 README / SKILLS-GUIDE 把"改 NPU 上游库"打成 ❌ 不在 scope 是**错误的表述**。
+> **📣 2026-04-20 Scope 说明（勘误）**：之前版本的 README / SKILLS-GUIDE 把"改 NPU 上游库"和"改 CANN / torch_npu C++ 层"都打成 ❌ 不在 scope 是**错误的表述**。
 >
-> 正确的区分是：
-> - ❌ **改 CANN C++ 底层 / torch_npu ATen 扩展层** —— 这确实是 Ascend 团队专属
-> - ✅ **识别 NPU 生态 gap + 驱动适配任务落地** —— 这是本项目**核心工作的一部分**。包括：Python 层 shim / fork、向 vllm-ascend / triton-ascend / torch_npu 上游提 issue 或 PR、向 Ascend 团队提适配需求、记录和 track 适配进度
+> 正确的区分（按"谁来做"分三档）：
+> - ✅ **本仓直接做**：EasyR1 源码改动、Python 层 shim / fork、向 vllm-ascend / triton-ascend / torch_npu 上游提 issue 或 PR、识别 NPU 适配 gap 并 track
+> - 🤝 **委托给姐妹项目 / 独立仓**：CANN 算子实现、kernel 数值精度验证 —— 用 `ascend-fused-accuracy-probe`（A3 kernel 验证）和 `a5_ops`（A5 kernel 生成，A3 有类似的独立仓）这些专门的项目做。本仓**识别 gap + 建接口 + track 适配**，不把 kernel commit 放本仓
+> - 📣 **提需求给 Ascend 团队**：CANN runtime 框架级的 bug（ACL C 层本身的 crash、HCCL C 层协议问题）—— 这类我们做 workaround + 提 issue，修是 Ascend 团队的事
 >
-> 如果新 EasyR1 版本依赖一个 NPU 还没覆盖的包，"不在 scope" 不是可接受答案 —— 项目目标就死了。**必须建任务推动适配**，见路径 4 + `docs/npu-adaptation-tasks.md`（待建）。
+> **关键原则**：如果新 EasyR1 版本依赖一个 NPU 还没覆盖的包 / 算子，"不在 scope" 不是可接受答案 —— 项目目标就死了。**必须建任务推动适配**，哪怕具体 commit 落到别的仓。见路径 4 + `docs/npu-adaptation-tasks.md`（待建）。
 
 ---
 
@@ -115,11 +116,13 @@ bash scripts/fetch-upstream.sh --include-optional
 - **识别 NPU 适配 gap**：新 EasyR1 依赖某个 CUDA-only 包、或某个包的 NPU 移植还没跟上 → 建任务 track。见 [`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)（待建）
 - **协调 NPU 适配工作落地**：比如需要给 vllm-ascend / triton-ascend 提 issue 或 PR、或跟 Ascend 团队提适配需求、或自己写 shim/fork
 
-**本路径不在 scope 的**（真的做不到的事，非常窄）：
-- ❌ **改 CANN 本身的 C++ 底层**（kernel 实现、HCCL C 层等）—— 那是 CANN / Ascend 团队的专属范围。我们能做的是**提 issue / 提需求 / 做 workaround**
-- ❌ **改 torch_npu C++ 扩展层的底层实现** —— 同上
+**本路径的工作委托给姐妹项目**（本仓识别 + 建接口 + track，具体实现在别的仓）：
+- 🤝 **新 CANN 算子实现 / kernel 精度验证** → 委托给 `ascend-fused-accuracy-probe`（A3 kernel 验证）、`a5_ops`（A5 kernel 生成，A3 有类似的独立项目）这类专门 kernel 项目。本仓识别 "EasyR1 在 A3 上需要某个 fused attention / fused softmax 但没有现成 NPU 实现"，建 NPU 适配任务，协调姐妹项目完成
 
-**至于 Python 层的 shim、上游库的 issue、vllm-ascend 的移植协调、triton-ascend 的 wheel 整理 —— 这些都在 scope，都是我们要驱动的工作**（哪怕具体 commit 是别的仓 merge 的）。
+**真正上报给 Ascend 团队**（只有这一档是我们做不了 workaround 就只能等的）：
+- 📣 **CANN runtime 的 C 层框架 bug**（ACL runtime 本身 crash、HCCL C 协议层问题）—— 我们能做的是提 issue + 做 workaround + 等修复
+
+**Python 层的 shim、上游库的 issue、vllm-ascend 的移植协调、triton-ascend 的 wheel 整理 —— 都直接在本仓驱动**（哪怕具体 commit 是别的仓 merge 的）。
 
 用 [`image-upgrade-drill`](skills/image-upgrade-drill/SKILL.md) skill 的 7 步演练流程。产物：
 - 一份带数字的 drill report（预测 vs 实际成本、LOC 变动、bug probe 结果）

@@ -27,18 +27,23 @@
 
 从一个已有 ML/RL 框架（EasyR1、veRL、OpenRLHF、TRL、其他），把它从 **GPU (CUDA/NCCL/flash-attn/vllm)** 移植到 **Ascend NPU (910C A3, CANN 8.5+, torch_npu, HCCL, vllm-ascend, triton-ascend)** 上。
 
-> **scope 的第一性原则**：目标是"让 EasyR1 在 A3 上跑"。遇到 NPU 生态 gap 必须**识别 + 驱动解决**，不用"不在 scope" 绕过。
+> **scope 的第一性原则**：目标是"让 EasyR1 在 A3 上跑"。遇到 NPU 生态 gap 必须**识别 + 驱动解决**，不用"不在 scope" 绕过。"驱动"≠"自己写 commit"，但每一条 gap 都要 track 到完成。
 >
-> 直接做的事：
+> **档 1 — 本仓直接做**：
 > - EasyR1 / 其他 RL 框架 **自己源码的改动**（device 路由、版本 compat shim、Ray 集成、Dockerfile 等）
-> - 识别 **NPU 适配 gap**（某个依赖包没有 NPU 版本 / NPU 版本有 bug / NPU API 缺失），记到 `docs/npu-adaptation-tasks.md`（待建）
-> - Python 层的 shim / fork / 上游 PR / 向 Ascend 团队提需求，都**在 scope**
+> - Python 层 shim / fork 桥接 CUDA-only 包
+> - 向 vllm-ascend / triton-ascend / torch_npu 的 **Python 层** 提 issue 或 PR
+> - 识别 **NPU 适配 gap**，记到 `docs/npu-adaptation-tasks.md`（待建）
 >
-> **委托**（但仍然要识别 + 建任务 + 跟进）：
-> - NPU kernel 实现 —— 技术上委托 `ascend-fused-accuracy-probe` 的 kernel 编写流程，或提需求给 Ascend 团队；本项目要 track 进度
-> - CANN C++ 底层 / torch_npu C++ 扩展层 —— 提 issue 给 Ascend 团队，提供 workaround
+> **档 2 — 委托给姐妹项目 / 独立仓（本仓识别 + track，commit 在别的仓）**：
+> - A3 kernel 精度验证 → [`ascend-fused-accuracy-probe`](https://gitcode.com/zhengshencn_hwca/ascend-fused-accuracy-probe)
+> - A5 kernel 生成 → [`a5_ops`](https://gitcode.com/zhengshencn_hwca/a5_ops)；A3 有类似独立仓
+> - torch_npu C++ ATen op 实现 → Ascend PyTorch 团队或专门 kernel 项目
 >
-> 真正不碰：
+> **档 3 — 只能提需求给 Ascend 团队**（本仓没权限改的底层）：
+> - CANN runtime 框架 bug（ACL / HCCL C 层、driver）—— 提 issue + 写 workaround + 记 stable ID + 等修
+>
+> **真正不碰**：
 > - RL 算法本身的改动（reward shaping、loss 公式、模型结构）。我们只做"让它在 NPU 上跑"，不碰算法层
 
 ---
