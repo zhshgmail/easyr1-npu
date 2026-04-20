@@ -28,7 +28,9 @@
 
 ---
 
-## 2. 部署 skills 到 Claude Code
+## 2. 部署 skills + 拉 upstream 参考代码
+
+**2.1 部署 skills 到 Claude Code**
 
 本仓的 skills 不是 Python 包，是 markdown + shell 脚本。让 Claude Code 看到它们：
 
@@ -43,17 +45,36 @@ bash scripts/install-skills.sh --undeploy
 
 部署后在 Claude Code 里 `/` 能看到 `npu-image-inspect`、`ray-npu-shim` 等。详见 `install-skills.sh --help`。
 
+**2.2 拉 upstream 参考代码**
+
+移植过程中 skill 和人都要 grep 上游库的源码（找 CUDA-only 调用、比对 API 改名、查 upstream bug 是否已修）。`fetch-upstream.sh` 做这件事：
+
+```bash
+# 只拉 essential（EasyR1 fork）
+bash scripts/fetch-upstream.sh
+
+# 拉全部 essential + optional（verl/transformers/torch-npu/vllm-ascend/triton-ascend）
+bash scripts/fetch-upstream.sh --include-optional
+```
+
+默认拉到 `../upstream/`（跟 `easyr1-npu/` 同级）。已存在就 `git fetch` 刷新；否则 `git clone`。idempotent，安全重跑。
+
+**要 clone 哪些**：
+- **essential**：`EasyR1`（你的 port 目标；fork 到自己 namespace 才能 push）
+- **optional**：其它参考库。磁盘紧就不拉；skill 的 `Step 3 (version-align upstream refs)` 需要 `upstream/torch-npu/` 等 ref 源码时再拉
+
 ---
 
-## 3. 从 0 开始移植的 7 步 workflow
+## 3. 从 0 开始移植的 9 步 workflow
 
 假设你拿到一个**新的 EasyR1 commit**（或另一个 RL 框架）+ **一个候选目标 image**，下面是推荐的调用顺序。
 
-### Step 0 — 前置（读文档，15 分钟）
+### Step 0 — 前置（读文档 + 拉代码，20 分钟）
 
-- 读 `PORT-GUIDE.md` 了解我们做过什么
+- 读 `PORT-GUIDE.md` §1-§4 了解我们做过什么（尤其 §1 "为什么不需要改 upstream 库"）
 - 读 `knowledge/npu-patterns.md` 的 23 个 stable ID 标题（不用细读，标题就够，遇到 bug 能回来 grep）
 - 读 `knowledge/upstream-refs.md` 了解 upstream ref 怎么对齐（**不能默认 review master**）
+- 跑 `bash scripts/fetch-upstream.sh --include-optional` 把 upstream 参考代码拉下来（上面 §2.2）
 
 ### Step 1 — 摸清目标 image（skill: `npu-image-inspect`）
 
