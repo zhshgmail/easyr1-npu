@@ -105,9 +105,24 @@ for c in "${CHIP_ARR[@]}"; do
 done
 
 # --- docker run --------------------------------------------------------------
+# Driver bind strategy: bind `lib64` subdir + `version.info` + DCMI userspace
+# separately, NOT the whole /usr/local/Ascend/driver tree.
+#
+# Binding the entire driver tree trips container-level NPU init on A3: dcmi
+# initialization fails (`dcmi model initialized failed, because the device is
+# used. ret is -8020` → `npu get board type failed. ret is -9005`). Symptom
+# surfaces as dmesg `[ascend] [uda] [ERROR] uda_occupy_dev_by_ns Conflict open
+# udevid`, which misdirects to an "Ascend UDA namespace leak" diagnosis
+# (NPU-OPS-009). The real cause is missing `/usr/local/dcmi` bind and binding
+# too much of the driver tree. First diagnosed 2026-04-21 by diffing against
+# a working sibling container (roll_npu_new) — see NPU-OPS-009 + the
+# porting-journal 2026-04-21 entry.
 docker run --rm \
   "${DEVICE_FLAGS[@]}" \
-  -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+  -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 \
+  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+  -v /usr/local/dcmi:/usr/local/dcmi \
+  -v /etc/ascend_install.info:/etc/ascend_install.info \
   -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
   -v /usr/bin/msnpureport:/usr/bin/msnpureport \
   -v /etc/hccn.conf:/etc/hccn.conf \
