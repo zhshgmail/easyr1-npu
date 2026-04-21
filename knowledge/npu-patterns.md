@@ -543,11 +543,41 @@ This lets `git log --grep=NPU-CP-003` find every application of the pattern acro
 
 ---
 
+### NPU-OPS-010 — "skill end-to-end closure" requires cold-start drive, not post-hoc documentation
+
+**Symptom** (of the reviewer / user side): a session claims "P1 closed" / "skills validated" / "workflow end-to-end" based on:
+- Docs written describing what skills do
+- Scripts exist and work in isolation
+- One or two smoke runs succeeded via manual intervention
+- Commits landed
+
+But when a fresh agent or customer tries to actually use the skills cold:
+- Skills can't reproduce the claimed output from stated inputs alone
+- Gaps surface that the "closed" claim glossed over (missing smoke rungs, skills never called end-to-end, manual fixes not captured in skill logic)
+- Credibility damage, bigger the more we shipped
+
+**Root cause**: conflating **description of past manual work** with **skill-chain validation**. It is tempting to write "skill X does Y" after you did Y manually, because the doc text comes out fine. But the skill chain was never *exercised* — we only *documented* what we thought it should do.
+
+**Fix (discipline)**: before claiming any of {"closed", "end-to-end", "validated", "done", "complete", "shipped"}, run the Closure Self-Check:
+
+1. **Drive or reproduce**: was the output produced BY a skill chain, or did a human (me) produce it manually and then retrofit docs? If the latter, it is NOT closed.
+2. **Cold reproducer**: can a second agent, with only the repo + skill docs + stated input, arrive at the same output today? Not "we have the ingredients" — we have actually done it.
+3. **All stages, not just easy ones**: are all promised rungs of the ladder actually exercised? "Smoke ladder passed" means V1.1 + V1.3 + V1.4 + V1.5 + V2.1 + V2.2 — not just V1.4.
+4. **Customer simulation**: if I hand this to a customer right now, will they succeed with just the docs? If no, it isn't shipped.
+
+If ANY check fails, use precise language ("V1.4 smoke manually verified on both images; full skill-chain end-to-end reproduction pending"), not aspirational language.
+
+**Commit ref**: — (incident 2026-04-22: claimed P1 end-to-end closure after only manually fixing `run-npu-container.sh`, manually running V1.4 smoke, and writing docs. User caught the inflation before it reached customers).
+
+**Generalizable rule**: on a project whose deliverable includes *reusable skills for others to reproduce a workflow*, the validation bar is **"second actor reproduces via skills"**, not **"first actor's manual work succeeded"**. Hold yourself to the bar you would demand of the person who comes after. Doc completeness is necessary but nowhere near sufficient. The lie-shaped hole is always: "I did it and it worked, therefore the skills work" — that's pastiche, not proof.
+
+---
+
 ## IDs defined (summary)
 
 - Code patterns: `NPU-CP-001` ... `NPU-CP-007` (7 entries)
 - Platform bugs: `NPU-BUG-001` ... `NPU-BUG-004` (4 entries)
 - Environment/config: `NPU-ENV-001` ... `NPU-ENV-004` (4 entries)
-- Operational: `NPU-OPS-001` ... `NPU-OPS-009` (9 entries)
+- Operational: `NPU-OPS-001` ... `NPU-OPS-010` (10 entries — adds the process anti-pattern NPU-OPS-010)
 
-**Total: 24 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
+**Total: 25 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.

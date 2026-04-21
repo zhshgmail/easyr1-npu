@@ -146,7 +146,9 @@ catalog 每一条都有**统一 schema**：`Symptom / Root cause / Fix / Commit 
 2. 或者判决复现实验失败，在 `skills/image-upgrade-drill/SKILL.md` 补一条"**不要把全部 7 步丢给单个 isolated agent**，harness 会超时，要拆成人+agent 接力或分段子 agent"的 note
 3. **不要清 `/tmp/z00637938/reproduce/` 和 `easyr1-npu-852:drill-reproduce`**——留着给下一次复现用
 
-### 6.2 `ascend-port` 的两个 cherry-pick — ✅ **2026-04-22 实测 PASS 8.5.0 + 8.5.2 两套 image**
+### 6.2 `ascend-port` 的两个 cherry-pick — 🟡 **2026-04-22 V1.4 smoke manually PASS on 8.5.0 + 8.5.2（这是一根 rung，不是完整 ladder）**
+
+> 这个 section 的历史版本一度标成 "P1 端到端闭环 ✅"。**那是误导性表述**：我们只手工跑了 V1.4 一根 rung，没跑 V1.1 / V1.3 / V1.5 / V2.1 / V2.2，也没让 skill chain 冷启动驱动。真正的"端到端闭环"要 second actor 从 skill docs 复现出同样结果，那个 bar 还没到。见 `knowledge/npu-patterns.md#npu-ops-010` 和 memory `end_to_end_vs_described.md`。
 
 `1f716ea` + `ecce71d` 两个 fix 在 **8.5.0 image 上 V1.4 smoke 实测 PASS**：
 - entropy_loss step1 = **0.991**（exact match baseline）
@@ -168,7 +170,7 @@ catalog 每一条都有**统一 schema**：`Symptom / Root cause / Fix / Commit 
 - **round 2 false positive**：smoke 从 #26 留下的 checkpoint 续跑（`Found latest checkpoint: .../global_step_2, will resume from it`），没做新训练。`rm -rf /tmp/z00637938/easyr1_smoke_ckpt` 再跑 round 3 OK
 - **chips 2,3 + drill image 组合失败**（原因未查，chips 0,1 OK）—— 写进 HANDOVER 防下次
 
-**复跑闭环命令**（v1 image）：
+**复跑命令**（v1 image）：
 ```bash
 cd /home/z00637938/workspace/easyr1-npu
 rm -rf /tmp/z00637938/easyr1_smoke_ckpt

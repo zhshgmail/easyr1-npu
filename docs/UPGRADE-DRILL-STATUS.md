@@ -60,12 +60,11 @@
 **通过了**：
 - ✅ drill V2.2 2-step smoke（原 drill 报告）：`entropy_loss` step1 = **1.434** on 8.5.2 image（V2.2 config：padding_free=True, ulysses=2, 4-chip）
 - ✅ drill V2.2 20-step smoke（原 drill 报告）：全 20 步稳定（entropy_loss ∈ [1.31, 1.83]，grad_norm max ~3.2，no HCCL / vector core 错误）
-- ✅ **2026-04-22 回归 V1.4 实测 on `ascend-port` HEAD `ecce71d`**：
+- 🟡 **2026-04-22 V1.4 smoke 单 rung 手动 PASS（on both images）**：
   - **v1 image（8.5.0）**：step1 entropy_loss = **0.991**（exact match V1.4 baseline），step2 = **1.263**（exact match）
   - **v2 drill image（8.5.2）**：step1 entropy_loss = **1.275**，step2 = **0.895**（grad_norm 2.07，非 all-reward-tied）
-  - v1 ↔ v2 的 V1.4 数值不完全相等（0.991 vs 1.275）但都在合理区间，checkpoint 保存干净、无 error。8.5.2 的 V1.4 baseline 以前没记录，今天是首次建立
-  - 这证明 `ascend-port` 的两个 backward-compat cherry-pick（`1f716ea` + `ecce71d`）**不破坏 8.5.0**，**且仍能在 8.5.2 正确跑 V1.4**
-- ✅ v1 的 V1.4 + v2 drill 的 V1.4 现都**实测**过 —— "理论 backward-compat" → "实测 backward-compat"
+  - 这**没有**证明"P1 端到端闭环"。只证明了 V1.4 这一根 rung 能在两个 image 上跑出合理数值。V1.1 / V1.3 / V1.5 / V2.1 / V2.2 都**没跑过**；skill chain 也**没被冷启动驱动**。真正的"端到端闭环"要 second actor 仅凭 SKILLS-GUIDE + 仓库产物复现出同样结果
+  - 见 `knowledge/npu-patterns.md#npu-ops-010` 和 memory `end_to_end_vs_described.md`
 
 **代价**：
 - 2 个代码级 backward-compat fix（`no_init_weights` import try/except + `SamplingParams.eos_token_id` 只读 property 跳过）—— **已 cherry-pick 到 `ascend-port`**
@@ -112,7 +111,7 @@
 
 ## 5. 已知 caveat
 
-**`1f716ea` + `ecce71d` 两个 backward-compat cherry-pick 在 8.5.0 生产 image 上还没跑过回归测**。理论上 backward-compat 写法（`try/except` + `hasattr`）在 transformers 4 / vllm 0.13 上不改变行为，但**我们没实测证明**。
+**2026-04-22 更新**：`1f716ea` + `ecce71d` 两个 backward-compat cherry-pick 在 8.5.0 image 上已跑过 **V1.4 smoke**（step1 0.991 exact match）。但**完整 smoke ladder（V1.1/V1.3/V1.5/V2.1/V2.2）没跑过**，skill chain 也没端到端驱动过。所以"理论上 backward-compat"这句话目前**只在 V1.4 这一根 rung 上被验证**，不是在完整 workload 上。
 
 如果你担心：
 - 把 `ascend-port` revert 到 `6f8197f`（V2.2 smoke 那个 commit）用，跳过两个 cherry-pick

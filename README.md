@@ -132,7 +132,7 @@ bash scripts/fetch-upstream.sh --include-optional
 - PASS / BLOCKED 决策依据（区分"EasyR1 代码 compat 完成" vs "NPU 适配 gap 完成"两件事）
 
 **当前状态**：
-- ✅ **`ascend-port` 分支两套 image 兼容性已实测验证**（2026-04-22）：V1.4 smoke PASS on 8.5.0 (step1=0.991 exact) + 8.5.2 (step1=1.275)。见 [`docs/HANDOVER.md §6.2`](docs/HANDOVER.md) + [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md)
+- 🟡 **`ascend-port` V1.4 smoke 单 rung PASS on 两套 image**（2026-04-22，手动跑）：step1=0.991 exact on 8.5.0；step1=1.275 on 8.5.2（新 baseline）。**没**跑 V1.1/V1.3/V1.5/V2.1/V2.2 完整 ladder；**没**让 skill chain 端到端冷启动驱动。见 [`docs/HANDOVER.md §6.2`](docs/HANDOVER.md) + `knowledge/npu-patterns.md#npu-ops-010`（针对"skill 闭环"的诚实定义）
 - ✅ **NPU 适配 gap 清单已建立**：[`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)。EasyR1 master 当前 D 类 blocker 为 0（见 [`docs/easyr1-dep-chain-audit.md`](docs/easyr1-dep-chain-audit.md)），所以 tier-2 active 任务为空；tier-3 有 2 条（BUG-003/004）等上游修
 - ✅ **P2 端到端 workflow 已设计**：[`docs/P2-WORKFLOW.md`](docs/P2-WORKFLOW.md)（"EasyR1 需要 NPU 没覆盖的东西时怎么闭环"）。但**尚未在真实 D ≥ 1 场景下实测**（当前 D = 0 还没真的触发过）—— 下次遇到时按 workflow 跑 + 修文档
 - 🟡 **"skill 自动化端到端复现" 没充分证明**：2026-04-20 dry-run 发现当时 SKILL.md 直接写了答案（已修 commit `66c5ce9`）。agent 能否在**真未知 break** 下独立发现 gap 未验证。等下次真升级做 clean test

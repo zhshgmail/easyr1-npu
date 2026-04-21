@@ -1,4 +1,10 @@
-# P2 场景工作流 — EasyR1 引入"NPU 生态未覆盖"依赖时的端到端闭环
+# P2 场景工作流 — EasyR1 引入"NPU 生态未覆盖"依赖时的端到端流程设计
+
+> **⚠️ 本文档是"设计"，不是"已验证可用"**。
+>
+> 以下所有 workflow 都**尚未在真实 D ≥ 1 的场景下端到端执行过**（目前 D = 0）。tier-1 的子步骤大部分有历史先例（flash-attn shim、liger-kernel gate、try/except imports 等都真做过），但把它们当作"跟 skill 驱动的链路"端到端跑通**从未发生**。对一个需要 tier-2 kernel 委托的 gap 更是连单次实测都没有。
+>
+> 不要把本文档的存在当作 "P2 场景已闭环" 的证据。它只是**下次真遇到 D ≥ 1 时的出发点**。
 
 **本文档回答**：当 `dep-gap-detect` skill 返回 **D ≥ 1**（有 CUDA-only dep 没有 NPU 替代）时，怎么从"发现 gap"推到"接回 EasyR1 能跑"。
 

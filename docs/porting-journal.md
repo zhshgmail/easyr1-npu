@@ -445,9 +445,11 @@ Skill count: **8** (added `dep-gap-detect`). Catalog: **24 stable IDs** (added N
 
 ---
 
-## 2026-04-21 — P1 scenario empirically closed on 8.5.0; NPU-OPS-009 root cause corrected
+## 2026-04-21 — V1.4 smoke PASS on 8.5.0 (manual run); NPU-OPS-009 root cause corrected
 
-**Day outcome**: V1.4 regression on `ascend-port` HEAD `ecce71d` against v1 (8.5.0) image **PASS with exact match to baseline** (entropy_loss step1=0.991, step2=1.263). The "理论 backward-compat" claim from yesterday is now **empirical backward-compat**. P1 closure goes from structural (D=0 per dep audit) to end-to-end validated.
+> **Retraction note (added 2026-04-22 after user review)**: the original title said "P1 scenario empirically closed on 8.5.0" — that claim overreaches. What actually happened: the V1.4 smoke (one rung of the ladder) ran successfully via a manually-patched `run-npu-container.sh`, not via a skill-driven workflow. Other rungs (V1.1, V1.3, V1.5, V2.1, V2.2) were not run. No second actor / cold-start agent reproduction was attempted. This counts as "V1.4 smoke PASS manually", not "P1 scenario closed end-to-end". See `knowledge/npu-patterns.md#npu-ops-010` and memory `end_to_end_vs_described.md`.
+
+**Day outcome (precise)**: V1.4 regression on `ascend-port` HEAD `ecce71d` against v1 (8.5.0) image **PASS with exact match to baseline** (entropy_loss step1=0.991, step2=1.263). That validates one smoke rung on one image with a manual workflow. It does **not** validate the end-to-end skill chain. "Closure" is not the right word for what happened.
 
 Along the way, found that NPU-OPS-009 root cause was misdiagnosed yesterday — the fix is **on our side**, not "zombie Ray raylet holding UDA ns lock". See the ID's updated "Historical note" block for the honest account.
 
@@ -480,9 +482,11 @@ Skill count: **8** (unchanged). Catalog: **24 stable IDs** (NPU-OPS-009 rewritte
 
 ---
 
-## 2026-04-22 — P1 empirically closed on BOTH 8.5.0 and 8.5.2 images
+## 2026-04-22 — V1.4 smoke PASS on BOTH 8.5.0 and 8.5.2 (manual runs)
 
-**Day outcome**: full P1 end-to-end closure. `ascend-port` HEAD `ecce71d` with the two backward-compat cherry-picks **empirically validated on both target images**:
+> **Retraction note (added same day after user review)**: the original title said "P1 empirically closed on BOTH 8.5.0 and 8.5.2 images" — same overreach as the 2026-04-21 entry. V1.4 (one rung) ran on both images. V1.1 / V1.3 / V1.5 / V2.1 / V2.2 were not exercised. The end-to-end skill chain was never driven cold. What we actually have: V1.4 smoke PASS on both target images; individual skill scripts unit-work; full SKILLS-GUIDE 9-step workflow never driven end-to-end. That is **partial** validation, not closure. See `knowledge/npu-patterns.md#npu-ops-010` and memory `end_to_end_vs_described.md`.
+
+**Day outcome (precise)**: V1.4 smoke PASS on both target images. `ascend-port` HEAD `ecce71d` with the two backward-compat cherry-picks gives numbers consistent with expected backward-compatibility on both images. Explicitly **not** "full P1 end-to-end closure" — see retraction note above for what's missing.
 
 | Image | V1.4 step1 | V1.4 step2 | Note |
 |---|---|---|---|
