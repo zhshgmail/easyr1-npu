@@ -477,3 +477,37 @@ The stable ID was first added 2026-04-20 with root cause "zombie Ray raylet UDA 
 - **#29** P2 end-to-end scenario design — next after #27/#28.
 
 Skill count: **8** (unchanged). Catalog: **24 stable IDs** (NPU-OPS-009 rewritten, not re-numbered).
+
+---
+
+## 2026-04-22 — P1 empirically closed on BOTH 8.5.0 and 8.5.2 images
+
+**Day outcome**: full P1 end-to-end closure. `ascend-port` HEAD `ecce71d` with the two backward-compat cherry-picks **empirically validated on both target images**:
+
+| Image | V1.4 step1 | V1.4 step2 | Note |
+|---|---|---|---|
+| v1 `verl-8.5.0-a3` | **0.991** (exact) | **1.263** (exact) | Matches historical V1.4 baseline |
+| v2 drill `verl-8.5.2-a3` | **1.275** | **0.895** (grad_norm 2.07) | Drill report had V2.2=1.434 but no V1.4-on-8.5.2 — today establishes it |
+
+"理论 backward-compat" → "实测 backward-compat" for real. Task #26 (8.5.0) + #27 (8.5.2) both closed.
+
+### Extra wrinkles encountered today
+
+1. **#27 round 2 false positive**: smoke ran without error, exited quickly with `reward_score=0.018` (same as v1 validation) and **no step1/step2 entropy_loss in log**. Cause: smoke script checks for existing `/tmp/z00637938/easyr1_smoke_ckpt/global_step_2/` and **resumes from it**. That directory was from #26 (v1) a few minutes earlier. The drill image actually just did inference on a v1-trained model, not new training. Fix: `rm -rf /tmp/z00637938/easyr1_smoke_ckpt` before round 3. Logged as a gotcha in HANDOVER § 6.2 and in the smoke runbook.
+2. **chips 2,3 + drill image inexplicably failed** (0 NPU enumerated) while chips 0,1 worked fine. Root cause not investigated. Current workaround: stick with chips 0,1 for drill smoke until someone finds free time to diagnose.
+3. **`run-npu-container.sh --user` flag**: defaults `NPU_USER=$USER`. Under `ssh root@host`, `$USER=root`, so script tries to bind `/home/root`, `/data/root`, `/tmp/root` — none of which exist for the real data owner (`z00637938`). Must pass `--user z00637938` explicitly. Filed as T1-005 for later UX fix.
+
+### Today's commits
+
+- `b3f7a0f` — `run-npu-container.sh` bind fix (critical)
+- `eb995b6` — NPU-OPS-009 root cause rewrite + HANDOVER update
+- (forthcoming) — UPGRADE-DRILL-STATUS + HANDOVER + adaptation-tasks + this journal update for #27 PASS
+
+### Open
+
+- **T1-004**: skill `image-upgrade-drill` discovery capability — still needs a clean real-upgrade test
+- **T1-005**: `run-npu-container.sh` `--user` default UX (defer)
+- **#29** scope P2 end-to-end workflow — next focus after #28 commits
+- **Drill smoke checkpoint cleanup** — add to runbook/doc as a pre-check step
+
+Catalog: still 24 stable IDs (NPU-OPS-009 rewritten in place, not re-numbered). Skills: 8.

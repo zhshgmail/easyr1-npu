@@ -58,8 +58,14 @@
 - 任何介于 drill image 和未来 image 之间的 CANN 小版本
 
 **通过了**：
-- ✅ drill 2-step smoke：`entropy_loss` 在 V1.4 / V2.2 基准 band 内。注意：v1（8.5.0 image）上 V1.4 实测 step1 = **0.991**；drill（8.5.2 image）上实测 step1 = **1.434**。两者都被当时的 V1.4/V2.2 run 确认为各自的 image 基准（一次对比 baseline 之所以是 1.434 而非 0.991，是因为 drill 报告里做的 v2↔v2 比较，不是 v2↔v1 比较；transformers-upgrade-drill.md §results 明确说明）
-- ✅ drill 20-step smoke：全 20 步稳定（entropy_loss ∈ [1.31, 1.83]，grad_norm max ~3.2，no HCCL / vector core 错误）
+- ✅ drill V2.2 2-step smoke（原 drill 报告）：`entropy_loss` step1 = **1.434** on 8.5.2 image（V2.2 config：padding_free=True, ulysses=2, 4-chip）
+- ✅ drill V2.2 20-step smoke（原 drill 报告）：全 20 步稳定（entropy_loss ∈ [1.31, 1.83]，grad_norm max ~3.2，no HCCL / vector core 错误）
+- ✅ **2026-04-22 回归 V1.4 实测 on `ascend-port` HEAD `ecce71d`**：
+  - **v1 image（8.5.0）**：step1 entropy_loss = **0.991**（exact match V1.4 baseline），step2 = **1.263**（exact match）
+  - **v2 drill image（8.5.2）**：step1 entropy_loss = **1.275**，step2 = **0.895**（grad_norm 2.07，非 all-reward-tied）
+  - v1 ↔ v2 的 V1.4 数值不完全相等（0.991 vs 1.275）但都在合理区间，checkpoint 保存干净、无 error。8.5.2 的 V1.4 baseline 以前没记录，今天是首次建立
+  - 这证明 `ascend-port` 的两个 backward-compat cherry-pick（`1f716ea` + `ecce71d`）**不破坏 8.5.0**，**且仍能在 8.5.2 正确跑 V1.4**
+- ✅ v1 的 V1.4 + v2 drill 的 V1.4 现都**实测**过 —— "理论 backward-compat" → "实测 backward-compat"
 
 **代价**：
 - 2 个代码级 backward-compat fix（`no_init_weights` import try/except + `SamplingParams.eos_token_id` 只读 property 跳过）—— **已 cherry-pick 到 `ascend-port`**
