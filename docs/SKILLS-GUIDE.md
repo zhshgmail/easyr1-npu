@@ -104,7 +104,7 @@ bash scripts/dep-gap-detect.sh \
 
 **决策点**：
 - 退出码 0（**D = 0，场景 P1**）→ 继续 Step 2 的 drill 流程
-- 退出码 1（**D ≥ 1，场景 P2**）→ **停下来**。对每个 D 类依赖按 tier 1/2/3 在 [`docs/npu-adaptation-tasks.md`](npu-adaptation-tasks.md) 建任务，完成适配后再回到本 workflow
+- 退出码 1（**D ≥ 1，场景 P2**）→ **停下来**。按 [`P2-WORKFLOW.md`](P2-WORKFLOW.md) 的端到端流程走（识别 gap → 分档 tier 1/2/3 → 建任务 → 执行 → 验证 → 接回 P1）。task 登记在 [`docs/npu-adaptation-tasks.md`](npu-adaptation-tasks.md)
 
 这个 skill 的内置 PACKAGE_RULES 就是 NPU 生态知识库的编码。识别出新 pattern 要更新它（见 `skills/dep-gap-detect/SKILL.md`）。
 

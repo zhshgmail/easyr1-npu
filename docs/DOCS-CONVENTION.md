@@ -26,6 +26,7 @@
 | **smoke 梯子命名约定 + 基准数值** | `knowledge/smoke-ladder-convention.md` + `scripts/smoke/README.md` | README → scripts/smoke/ |
 | **EasyR1 依赖链分级** | `docs/easyr1-dep-chain-audit.md` | README → PORT-GUIDE.md §依赖 → audit |
 | **NPU 适配 task 清单（档 1/2/3）** | `docs/npu-adaptation-tasks.md` | README 路径 4 → 直接链接 |
+| **P2 端到端 workflow**（D ≥ 1 时怎么闭环） | `docs/P2-WORKFLOW.md` | README 路径 4 + SKILLS-GUIDE Step 1.5 引用 |
 | **"怎么跑起来" 手册** | `docs/PORT-GUIDE.md` | README 路径 1 |
 | **"怎么重做移植" 手册** | `docs/SKILLS-GUIDE.md` | README 路径 2 |
 | **升级演练当前状态（v2/新 image）** | `docs/UPGRADE-DRILL-STATUS.md` | README 路径 3 |

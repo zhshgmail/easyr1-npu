@@ -107,13 +107,13 @@ bash scripts/fetch-upstream.sh --include-optional
 
 适合：NPU 软件栈升级（CANN 9.x、torch_npu 2.10、transformers 6 之类）发布后，你要评估 "我们的 EasyR1 port 能不能跟上新 image"，**以及**识别出哪些新依赖是 NPU 生态还没适配的，驱动相应的 NPU 适配任务。
 
-**第一性原则重申**：本项目的目标是"让 EasyR1 master 在 A3 上跑"。如果新 EasyR1 版本或新 image 引入一个 NPU 还没适配的依赖，**我们不能说"不在 scope" 就结束** —— 那等于放弃项目目标。正确的做法是**识别这个 gap，建 NPU 适配任务，推动它完成**（可能是我们自己做，可能是协调 Ascend / upstream 团队做）。见 [`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)（**待建**，见本文档 §下一步）。
+**第一性原则重申**：本项目的目标是"让 EasyR1 master 在 A3 上跑"。如果新 EasyR1 版本或新 image 引入一个 NPU 还没适配的依赖，**我们不能说"不在 scope" 就结束** —— 那等于放弃项目目标。正确的做法是**识别这个 gap，建 NPU 适配任务，推动它完成**（可能是我们自己做，可能是协调 Ascend / upstream 团队做）。见 [`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)（live task registry）+ [`docs/P2-WORKFLOW.md`](docs/P2-WORKFLOW.md)（端到端 P2 workflow 设计）。
 
 **本路径明确在 scope**：
 - 验证新 image 的一整套新依赖（torch_npu、vllm_ascend、triton_ascend、transformers 等）跟我们的 EasyR1 `ascend-port` 分支是否兼容，做数值 smoke 验证
 - 修复 EasyR1 自己源码里的版本 compat 问题（e.g. transformers 5 改了 import 路径 → EasyR1 里加 try/except）
 - 换 base image + rebuild 层叠 image
-- **识别 NPU 适配 gap**：新 EasyR1 依赖某个 CUDA-only 包、或某个包的 NPU 移植还没跟上 → 建任务 track。见 [`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)（待建）
+- **识别 NPU 适配 gap**：新 EasyR1 依赖某个 CUDA-only 包、或某个包的 NPU 移植还没跟上 → 用 `dep-gap-detect` skill 自动识别，建任务 track。见 [`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)（live registry）+ [`docs/P2-WORKFLOW.md`](docs/P2-WORKFLOW.md)（端到端 workflow）
 - **协调 NPU 适配工作落地**：比如需要给 vllm-ascend / triton-ascend 提 issue 或 PR、或跟 Ascend 团队提适配需求、或自己写 shim/fork
 
 **本路径的工作委托给姐妹项目**（本仓识别 + 建接口 + track，具体实现在别的仓）：
@@ -131,10 +131,11 @@ bash scripts/fetch-upstream.sh --include-optional
 - 新 stable ID 条目加到 `knowledge/npu-patterns.md`
 - PASS / BLOCKED 决策依据（区分"EasyR1 代码 compat 完成" vs "NPU 适配 gap 完成"两件事）
 
-**当前状态警告**：
-- 2026-04-19 的 transformers 升级 drill 在 **drill 分支 + 8.5.2 image 上 PASS**（2-step 数值匹配 + 20-step 稳定），但 drill 的 fix cherry-pick 到 `ascend-port` 后**还没在 8.5.0 image 上跑过回归测**（HANDOVER §6.2 标的 P1）。所以 README / PORT-GUIDE 里说 "ascend-port 兼容 v1/v2 两套 image" 是**理论 backward-compat 写法，不是实测结论**
-- "skill 自动化端到端复现" **没有证明**。2026-04-19 首次用 isolated agent 走完 7 步时卡住了（见 [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md) §3）；2026-04-20 的 dry-run 验证发现当时的 SKILL.md 直接写了答案，agent 本质是"看着答案做"，**不是独立发现**（见 [`docs/skill-dry-run-2026-04-20.md`](docs/skill-dry-run-2026-04-20.md)）。已更新 SKILL.md 隐藏答案，但新版本还没真实场景测过
-- **NPU 适配 gap 清单未建立** —— 下一步要做的事。目前 v1 (8.5.0) 上 EasyR1 master 能跑，说明在 v1 基线下 D 类 blocker 为 0；drill 在 v2 (8.5.2) 上能跑说明 v2 也没 D 类 blocker。但对未来 EasyR1 或更新 image 做了系统性分类 gap
+**当前状态**：
+- ✅ **`ascend-port` 分支两套 image 兼容性已实测验证**（2026-04-22）：V1.4 smoke PASS on 8.5.0 (step1=0.991 exact) + 8.5.2 (step1=1.275)。见 [`docs/HANDOVER.md §6.2`](docs/HANDOVER.md) + [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md)
+- ✅ **NPU 适配 gap 清单已建立**：[`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)。EasyR1 master 当前 D 类 blocker 为 0（见 [`docs/easyr1-dep-chain-audit.md`](docs/easyr1-dep-chain-audit.md)），所以 tier-2 active 任务为空；tier-3 有 2 条（BUG-003/004）等上游修
+- ✅ **P2 端到端 workflow 已设计**：[`docs/P2-WORKFLOW.md`](docs/P2-WORKFLOW.md)（"EasyR1 需要 NPU 没覆盖的东西时怎么闭环"）。但**尚未在真实 D ≥ 1 场景下实测**（当前 D = 0 还没真的触发过）—— 下次遇到时按 workflow 跑 + 修文档
+- 🟡 **"skill 自动化端到端复现" 没充分证明**：2026-04-20 dry-run 发现当时 SKILL.md 直接写了答案（已修 commit `66c5ce9`）。agent 能否在**真未知 break** 下独立发现 gap 未验证。等下次真升级做 clean test
 
 完整 skill 说明 → [`skills/image-upgrade-drill/SKILL.md`](skills/image-upgrade-drill/SKILL.md)
 v2 drill 的首次实证报告 → [`docs/transformers-upgrade-drill.md`](docs/transformers-upgrade-drill.md)
@@ -168,8 +169,9 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 ├── CLAUDE.md                         ← 项目指令（给 Claude Code 用）
 ├── docs/
 │   ├── PORT-GUIDE.md                 ← 路径 1：怎么跑起来
-│   ├── SKILLS-GUIDE.md               ← 路径 2 & 4：怎么用 skill 自动化移植
+│   ├── SKILLS-GUIDE.md               ← 路径 2 & 4：怎么用 skill 自动化移植（P1 workflow）
 │   ├── UPGRADE-DRILL-STATUS.md       ← 路径 3：升级演练当前状态
+│   ├── P2-WORKFLOW.md                ← 路径 4 补充：EasyR1 需要 NPU 没覆盖的依赖时的端到端 workflow
 │   ├── HANDOVER.md                   ← 当前状态 + 未结工作（**session 起手必读**）
 │   ├── DOCS-CONVENTION.md            ← **文档组织 convention + 归属 map**（贡献者 / agent 必读）
 │   ├── DELIVERABLE.md                ← 正式 sign-off 文档

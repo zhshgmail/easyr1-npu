@@ -4,6 +4,8 @@
 
 **归属**：见 [`DOCS-CONVENTION.md`](DOCS-CONVENTION.md) —— 任何识别出的 NPU gap 必须登记在这里，track 到完成。
 
+**完整 P2 workflow 流程设计**：[`P2-WORKFLOW.md`](P2-WORKFLOW.md) —— "EasyR1 需要 NPU 没覆盖的东西时怎么端到端闭环"的可执行指南。本文档是 registry（状态快照），P2-WORKFLOW.md 是方法论。
+
 **责任档划分**（见 [`SKILLS-GUIDE.md §6`](SKILLS-GUIDE.md)）：
 - **档 1** = 本仓直接做（EasyR1 源码 / Python shim / 上游 Python 层 PR）
 - **档 2** = 委托姐妹项目（kernel 实现 → `ascend-fused-accuracy-probe` / `a5_ops` / A3 kernel 项目；torch_npu C++ ATen op → Ascend PyTorch 团队）

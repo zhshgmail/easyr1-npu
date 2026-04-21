@@ -511,3 +511,26 @@ Skill count: **8** (unchanged). Catalog: **24 stable IDs** (NPU-OPS-009 rewritte
 - **Drill smoke checkpoint cleanup** — add to runbook/doc as a pre-check step
 
 Catalog: still 24 stable IDs (NPU-OPS-009 rewritten in place, not re-numbered). Skills: 8.
+
+---
+
+## 2026-04-22 (continued) — P2 workflow 设计（task #29）
+
+After closing P1 end-to-end (tasks #26+#27 PASS on both images), designed the P2 workflow — "what to do when EasyR1 requires something NPU ecosystem hasn't covered".
+
+**New doc**: [`P2-WORKFLOW.md`](P2-WORKFLOW.md). Covers:
+
+- Trigger conditions (dep-gap-detect D ≥ 1, or runtime ImportError backtrack)
+- Decision tree to classify a gap into tier 1/2/3
+- Per-tier step-by-step (tier 1 this-repo-shim pattern with 5 concrete examples from existing work; tier 2 delegation to ascend-fused-accuracy-probe / a5_ops / A3 kernel repo; tier 3 escalation to Ascend team with bug-probe + workaround discipline)
+- Multi-tier DAG (shim-first then kernel-replace)
+- Skill support matrix (what's covered today, what's a future skill)
+- Explicit "尚未验证" section — the workflow is designed but untested on a real D ≥ 1 scenario (current D=0)
+
+**Wired into**:
+- README path 4: updated "NPU 适配 gap 清单未建立" → "已建立"; added P2-WORKFLOW link alongside adaptation-tasks
+- DOCS-CONVENTION §1 place-of-record map: added row for P2-WORKFLOW
+- SKILLS-GUIDE §3 Step 1.5 D ≥ 1 decision point: link to P2-WORKFLOW
+- npu-adaptation-tasks.md head: link to P2-WORKFLOW as methodology companion
+
+Leaves task #29 complete. Next upgrade cycle (new CANN / transformers 6 / new EasyR1 commit with GPU-only new deps) will exercise and revise P2-WORKFLOW.
