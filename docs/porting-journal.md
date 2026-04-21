@@ -442,3 +442,38 @@ Harness handoff is now credible per the reviewer's verdict.
 - Task #29 (scope P2 end-to-end workflow) — next up once A3 unblocked.
 
 Skill count: **8** (added `dep-gap-detect`). Catalog: **24 stable IDs** (added NPU-OPS-009).
+
+---
+
+## 2026-04-21 — P1 scenario empirically closed on 8.5.0; NPU-OPS-009 root cause corrected
+
+**Day outcome**: V1.4 regression on `ascend-port` HEAD `ecce71d` against v1 (8.5.0) image **PASS with exact match to baseline** (entropy_loss step1=0.991, step2=1.263). The "理论 backward-compat" claim from yesterday is now **empirical backward-compat**. P1 closure goes from structural (D=0 per dep audit) to end-to-end validated.
+
+Along the way, found that NPU-OPS-009 root cause was misdiagnosed yesterday — the fix is **on our side**, not "zombie Ray raylet holding UDA ns lock". See the ID's updated "Historical note" block for the honest account.
+
+### Timeline
+
+1. **A3 recovery attempt** — tried to diagnose "container can't see NPU while host can". dmesg showed `uda_occupy_dev_by_ns Conflict open udevid`, read it as Ascend driver / ns-refcount leak. Ran `device_hot_reset.sh` on a healthy host to "fix" the hypothetical leak → rmmod succeeded but PCI re-enumeration stuck → required full host reboot.
+2. **After reboot + port 443 NAT re-established**: NPU back up. But our container still failed (same error). "Fix" didn't fix anything because diagnosis was wrong.
+3. **Correct diagnosis**: `docker inspect` a sibling container (`roll_npu_new`) that was working fine on the same host today. Three bind-mount differences vs ours stood out: `/usr/local/dcmi`, narrowed `/usr/local/Ascend/driver/lib64` instead of whole tree, and `/etc/ascend_install.info`. Applied them → container `torch_npu.npu.device_count() = 2` immediately.
+4. **Fix shipped in `b3f7a0f`**. Scp'd to A3 (A3 is firewalled, direct `git pull` from github times out). Relaunched smoke, hit second issue: `$USER=root` under ssh meant `run-npu-container.sh` defaulted `NPU_USER=root`, didn't bind `/data/z00637938`, so container couldn't find the Qwen2-0.5B model at the expected path. HF validator rejected the path. Added `--user z00637938` explicit flag and relaunched.
+5. **V1.4 smoke PASS**: step1 entropy_loss=0.991 exactly, step2=1.263 exactly. Validation + checkpoint all clean.
+6. **`run-npu-container.sh` still has a UX bug** (defaulting NPU_USER to $USER means ssh-as-root gives wrong data/home binds). Follow-up to either detect this or require `--user` for owners-other-than-current-shell-user. Not critical tonight.
+
+### NPU-OPS-009 correction
+
+The stable ID was first added 2026-04-20 with root cause "zombie Ray raylet UDA ns leak". That was wrong. Correction shipped in this session with a dated "Historical note" block keeping the misdiagnosis record so future readers see the anti-pattern explicitly ("dmesg line X therefore X is root cause" is seductive but often wrong for Ascend NPU; diff a working sibling container's run args first).
+
+### Took away from today
+
+1. **Sibling-container diff is the best first step for NPU container issues.** Not dmesg, not strace, not driver hacking. `docker inspect <working>` vs `docker inspect <broken>` finds config mismatches in 30 seconds.
+2. **Do not run `device_hot_reset.sh` on a healthy host** to fix a hypothetical driver issue. It can wedge PCI enumeration and force a reboot. We did this yesterday and paid the cost of a full reboot + subsequent NAT-gateway-re-establishment wait.
+3. **Port 443 on A3 is NAT'd from outside** — see today's Discord conversation + new HANDOVER §2.x entry. Not a host-side sshd config, not something we can change. Re-establishes a few minutes after host reboot.
+
+### Still open
+
+- **#27** (V1.4 on 8.5.2 drill image) — second smoke launched at 04:08 UTC, chips 0,1 (chips 2,3 inexplicably failed on the drill image; chips 0,1 worked for v1 smoke). Monitoring.
+- **#28** propagate "empirical PASS" language to PORT-GUIDE / UPGRADE-DRILL-STATUS / HANDOVER §6.2 — pending #27 outcome.
+- **#29** P2 end-to-end scenario design — next after #27/#28.
+
+Skill count: **8** (unchanged). Catalog: **24 stable IDs** (NPU-OPS-009 rewritten, not re-numbered).

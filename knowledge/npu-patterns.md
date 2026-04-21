@@ -465,9 +465,11 @@ Keep huaweicloud as a documented fallback in a bash `||` chain, but put aliyun f
 
 ---
 
-### NPU-OPS-009 — container NPU access blocked by another namespace's UDA lock
+### NPU-OPS-009 — container NPU init fails when bind-mount set misses `/usr/local/dcmi` (or binds entire driver tree)
 
-**Symptom**: Every container on the host — ours (`easyr1-npu:ascend-port`) and unrelated ones (`afap-cann9`, vanilla `quay.io/ascend/verl`) — fails to enumerate NPU devices. Inside container: `torch_npu.npu.device_count()` returns 0 with:
+> **Historical note**: an earlier version of this entry attributed the cause to an "Ascend UDA namespace refcount leak from a zombie Ray raylet". That was **wrong** (misread of dmesg symptoms). The correct root cause was re-diagnosed 2026-04-21 by diffing container run args against a working sibling container on the same host. Keeping the misdiagnosis narrative below for posterity — it's a genuine anti-pattern ("dmesg shows error X therefore X is the cause") and worth recording.
+
+**Symptom**: Our container (`easyr1-npu:ascend-port`) fails to enumerate NPU devices. Inside container: `torch_npu.npu.device_count()` returns 0 with:
 
 ```
 dcmi model initialized failed, because the device is used. ret is -8020
@@ -477,30 +479,51 @@ rtGetDeviceCount:ErrCode=507899, desc=[driver error:internal error]
 UserWarning: Can't get ascend_hal device count
 ```
 
-From the host directly (outside any container), `npu-smi info` works fine. 16 chips show 0% AICore, no processes in `npu-smi info -t proc-mem`, device files exist with wide permissions.
+Host `npu-smi info` works fine. Same host **other containers (not ours) also work fine** — this is crucial: if our container fails while a sibling container on the same host succeeds, it's a **config mismatch on our side**, not a platform-level issue.
 
-The **smoking gun** is in `dmesg` (keeps scrolling as each container retries):
+`dmesg` shows (keeps scrolling as each retry fires):
 
 ```
 [ascend] [uda] [ERROR] [uda_occupy_dev_by_ns 932] <npu-smi:PID> Conflict open udevid.
 (udevid=0; access_ns=00000000XXXXXXXX; ns=00000000YYYYYYYY)
 ```
 
-`uda_occupy_dev_by_ns` is Ascend UDA (User Device Access) cross-namespace conflict. Some process on the host has exclusively registered the NPU for its user-namespace (`access_ns`), and any container (different user-namespace `ns`) gets denied.
+**Tempting-but-wrong diagnosis**: treat the dmesg line as the root cause. It reads like "Ascend UDA cross-namespace conflict → another process holds the NPU exclusively in a different user-ns". This is a reasonable hypothesis but **does not fit the evidence** — sibling containers in *different* user-namespaces still work.
 
-**Root cause — first real observation (2026-04-20)**: a **zombie Ray raylet** on the host. Someone's previous Ray session (conda env `chj_roll`, PID `3546648`, running 1 day 16+ hours) launched with `--static_resource_list "NPU,16,accelerator_type:Ascend910_9382"`, which makes raylet open all NPU devices and register them into its user-namespace. The Ray session directory `/tmp/ray/session_2026-04-18_*` was gone (Ray treated the session as done), but the raylet process was orphaned and continued to hold the UDA namespace lock.
+**Actual root cause (diagnosed 2026-04-21)**: our `run-npu-container.sh` was bind-mounting **the entire `/usr/local/Ascend/driver` tree** into the container and was missing **three critical binds** that Ascend's containerized DCMI initialization requires:
 
-`npu-smi info` on the host (same user-ns as raylet) works because their namespaces match. Any container gets a fresh user-ns at `docker run` time, so UDA rejects.
+1. `/usr/local/dcmi` — DCMI userspace state / config
+2. `/usr/local/Ascend/driver/lib64` — should be bound as a specific subdir, **not** the whole driver tree
+3. `/etc/ascend_install.info` — DCMI uses this to resolve install paths at startup
 
-**Fix**:
-1. Identify the process holding the NPU user-ns: `dmesg | grep uda_occupy_dev_by_ns | tail` to see the PID that conflicted with yours, then `ps -ef | grep 'raylet\|ray start\|torch\|python3'` to find host-side long-runners that might hold NPU. Cross-reference `access_ns` against owners.
-2. **If the process is yours or a known-abandoned zombie**: `kill <PID>` — the UDA lock releases immediately and containers can access NPU.
-3. **If the process belongs to another user**: coordinate with them before killing. Never unilaterally kill other users' workloads on a shared host.
-4. **If nobody admits to it and the session dir is missing**: strong signal it's a zombie — safe to kill after confirming with host admin.
+Without these, `dcmi_init()` inside the container fails with `-8020`. The `uda_occupy_dev_by_ns` dmesg line is a **downstream side effect** of dcmi failing mid-init (while it still has a partial device handle open), not the primary cause.
 
-**Commit ref**: — (first root-caused 2026-04-20 while attempting V1.4 regression on `ascend-port` HEAD `ecce71d`; could not kill because raylet belonged to another user)
+**Discovery method**: `docker inspect another-working-container` and diff the run args against ours. The differences in `.HostConfig.Binds` jumped out immediately.
 
-**Generalizable rule**: on a shared NPU host, before filing a "port regression" bug, run the isolation test (vanilla container, bare `--device` passthrough, `python3 -c "import torch_npu; print(torch_npu.npu.device_count())"`). If that also fails, `dmesg | grep 'uda_occupy_dev_by_ns\|Conflict open udevid' | tail` **immediately** — it tells you whether another namespace is holding the NPU exclusively. If yes, it's coordination, not debugging. Never start suspect driver-reset commands before confirming namespace conflict — those don't fix UDA-ns conflicts and can destabilize other users' running workloads.
+**Fix** — `run-npu-container.sh` bind set (minimal working set on A3):
+
+```bash
+docker run \
+  --device /dev/davinci_manager --device /dev/devmm_svm --device /dev/hisi_hdc \
+  --device /dev/davinciN  # one per chip
+  -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 \
+  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+  -v /usr/local/dcmi:/usr/local/dcmi \
+  -v /etc/ascend_install.info:/etc/ascend_install.info \
+  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+  ...
+```
+
+Do **not** bind `/usr/local/Ascend/driver` as a whole; do the `lib64` subdir + `version.info` specifically.
+
+**Commit ref**: `b3f7a0f` in `easyr1-npu` (adds the three missing binds, narrows the driver bind). Verified 2026-04-21 with container `torch_npu.npu.device_count() = 2` and V1.4 regression smoke passing on 8.5.0 image (entropy_loss step1 = 0.991 exact match to baseline).
+
+**Generalizable rules**:
+
+1. **When a container can't see NPU but host `npu-smi info` can: first run a sibling working container on the same host**. Bind diff > dmesg grep. `docker inspect <working>` + `docker inspect <broken>` and diff the `HostConfig.Binds` / `.Devices` before anything else.
+2. **Do not trust a single dmesg line as root cause**. `uda_occupy_dev_by_ns` reads like a definitive lock error, but it's actually emitted on many failure paths downstream of `dcmi_init` failure.
+3. **NPU containerization on Ascend requires more than device passthrough**: DCMI userspace (`/usr/local/dcmi`), driver `lib64` (not whole tree), and install metadata (`/etc/ascend_install.info`) must be bound. Ascend's official doc names these explicitly; if you don't see them in your harness, suspect config.
+4. **Do not run driver reset commands until you've confirmed bind set is correct**. Running `device_hot_reset.sh` on an otherwise-healthy host because you misread the dmesg symptom (as we did 2026-04-20) can wedge PCI enumeration and force a full host reboot.
 
 ---
 

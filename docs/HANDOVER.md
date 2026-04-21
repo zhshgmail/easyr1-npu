@@ -146,42 +146,32 @@ catalog 每一条都有**统一 schema**：`Symptom / Root cause / Fix / Commit 
 2. 或者判决复现实验失败，在 `skills/image-upgrade-drill/SKILL.md` 补一条"**不要把全部 7 步丢给单个 isolated agent**，harness 会超时，要拆成人+agent 接力或分段子 agent"的 note
 3. **不要清 `/tmp/z00637938/reproduce/` 和 `easyr1-npu-852:drill-reproduce`**——留着给下一次复现用
 
-### 6.2 `ascend-port` 的两个 cherry-pick — **未能实测**（阻塞：僵尸 Ray raylet 锁 NPU namespace）
+### 6.2 `ascend-port` 的两个 cherry-pick — ✅ **2026-04-21 实测 PASS 8.5.0；8.5.2 进行中**
 
-`1f716ea` + `ecce71d` 两个 fix 是在 drill image 上写的，backward-compat 理论上 8.5.0 也 ok——但 **没在 8.5.0 container 里跑过 V1.4 回归确认没 regression**。
+`1f716ea` + `ecce71d` 两个 fix 在 **8.5.0 image 上 V1.4 smoke 实测 PASS**：
+- entropy_loss step1 = **0.991**（exact match baseline）
+- entropy_loss step2 = **1.263**（exact match baseline）
+- Validation + checkpoint 都干净完成
+- **"backward-compat 理论" → "backward-compat 实测"** ✅
 
-**2026-04-20 闭环尝试**：V1.4 smoke 失败在容器 NPU 枚举（`drvRetCode=87`、`dcmi device is used`、Ray 报 `Total available GPUs 0`）。深挖 dmesg **找到真正 root cause**：
+实测过程中发现（也修了）两个 bug：
 
-```
-[ascend] [uda] [ERROR] [uda_occupy_dev_by_ns] <npu-smi> Conflict open udevid
-(udevid=0; access_ns=XXX; ns=YYY)
-```
+1. **`run-npu-container.sh` bind 配置漏了** —— 缺 `/usr/local/dcmi`、bind 整个 `/usr/local/Ascend/driver` 而不是 `lib64` 子目录、缺 `/etc/ascend_install.info`。Container DCMI 初始化失败，`dcmi model initialized failed -8020` → `npu get board type failed -9005` → Ray 报 `Total available GPUs 0`。修复见 commit **`b3f7a0f`**。
+2. **2026-04-20 对 NPU-OPS-009 的 root cause 诊断是错的** —— 当时读 dmesg 里 `uda_occupy_dev_by_ns Conflict open udevid` 得出"僵尸 Ray raylet 锁 UDA namespace"结论，跑了 `device_hot_reset.sh` 试图修"驱动泄漏"，结果把 PCI 卡掉到 BIOS 都 enumerate 不回来，被迫 reboot。**真正的 root cause 是我们自己容器 bind 缺三个文件**（见上一条）。NPU-OPS-009 已重写，保留错误诊断作为 anti-pattern 教训。
+3. **`--user` flag 必须显式传 `z00637938`**（ssh as root 时 `$USER=root`，script 不会自动 bind `/data/z00637938`）。文档补丁作为 UX TODO。
 
-**不是驱动坏**，是 **host 上有一个僵尸 Ray raylet（PID `3546648`，conda env `chj_roll`，不是我们的进程）独占了 NPU 的 user-namespace**。它从 Apr 18 运行 1 天多，`--static_resource_list` 里声明了 `NPU,16` 独占。它的 session dir `/tmp/ray/session_2026-04-18_21-05-49_338731_3545605` **已经不存在了**（Ray 自己认为 session 已完）—— 但 raylet 还在跑，NPU UDA namespace 不释放。host-side `npu-smi info` 能用是因为 raylet 跟 host 同 ns；容器在独立 user-ns 所以被 UDA 拒绝。
+**2026-04-22 03:43 UTC** V1.4 on 8.5.0 PASS，log `/tmp/z00637938/easyr1-logs/v14_regression_fixed2_20260422-034304.log`。
 
-**记录到 stable ID `NPU-OPS-009`** in `knowledge/npu-patterns.md`。
+**V1.4 on 8.5.2 drill image 仍进行中**（task #27）。第一次尝试用 chips 2,3 失败（drill image 跟 chips 2,3 的组合枚举 0 NPU，chips 0,1 正常 —— 原因未查）。第二次用 chips 0,1 重跑，PID `3312238`，log `/tmp/z00637938/easyr1-logs/v14_drill_852_ch01_20260422-040802.log`。
 
-**恢复路径**（按风险从低到高）：
-1. **最简单**：`kill 3546648`（僵尸 process，session dir 都没了，几乎无风险）。需要 user 确认才能动别人的 process
-2. 机器 reboot
-3. 等它自己 OOM / 崩
-
-**2026-04-20 user 决定**：等 A3 host 恢复后再跑（不擅自杀别人的进程）。
-
-**恢复后的闭环步骤**（一键）：
+**恢复后的闭环命令**（**如果** backward-compat 在 8.5.2 上也 PASS）：
 ```bash
-ssh -p 443 root@115.190.166.102
 cd /home/z00637938/workspace/easyr1-npu
-bash repo/scripts/run-npu-container.sh --chips 0,1 \
+bash repo/scripts/run-npu-container.sh --chips 0,1 --user z00637938 \
   --image easyr1-npu:ascend-port \
   --live-source /home/z00637938/workspace/easyr1-npu/upstream/EasyR1 \
-  -- bash /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh \
-  2>&1 | tee /tmp/z00637938/easyr1-logs/v14_regression_ecce71d_retry.log
+  -- bash /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh
 ```
-
-期望：`entropy_loss` step1 ≈ 0.991（±5% = 0.94-1.04），step2 ≈ 1.263，`grad_norm` ≈ 1.43。
-
-A3 准备就绪的状态：`upstream/EasyR1/` 已经 ff 到 `ecce71d`；`easyr1-npu:ascend-port` image 已 build；16 chip 全 idle；log 目录已建；今日失败的 log 存档在 `/tmp/z00637938/easyr1-logs/v14_regression_ecce71d_20260420-053059.log`。
 
 ### 6.3 A3 上易踩坑：`build_ascendc.py` 的 SoC 字符串 ≠ `acl.get_soc_name()`
 
