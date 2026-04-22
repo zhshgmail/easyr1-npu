@@ -1,0 +1,121 @@
+# dep-analysis workflow state machine.
+
+version: 1
+schema_version: "0.1"
+workflow_name: dep-analysis
+stage: 0
+last_updated: "2026-04-22"
+
+global_invariants:
+
+  - id: G1
+    description: "Agent MUST NOT Edit/Write anywhere except workspace/dep-analysis-{SESSION_TAG}/. This expert is pure analysis."
+    check: "PreToolUse on Edit|Write|MultiEdit: reject any path outside the workspace dir."
+    rationale: "A misbehaving analysis expert could silently corrupt consumer code or Dockerfiles. G1 is maximally strict here — read-only outside workspace."
+    severity: BLOCKING
+
+  - id: G2
+    description: "Consumer repo at CONSUMER_REF must be syntactically valid (py_compile + dry-import) BEFORE classification runs; otherwise classification reads into a broken source tree."
+    check: "Stop hook invokes static_check.py on consumer's top-level package. If it fails, the analysis run is REJECTED."
+    rationale: "Catches the case where the orchestrator passed a consumer ref that's on a dirty branch or mid-merge."
+    severity: BLOCKING
+
+  - id: G3
+    description: "Any 'D=0' / 'P1' / 'no blockers' / 'analysis green' language MUST reference the dep-gap-report.md path AND cite at least one specific dep's classification line (e.g. 'flash-attn: C (bypass via transformers NPU FA)')."
+    check: "Stop hook greps PROGRESS/RESULTS for claim keywords and requires both references."
+    rationale: "Bald claims without evidence are the exact NPU-OPS-010 antipattern, even in analysis context."
+    severity: BLOCKING
+
+phases:
+
+  P0_parse_args:
+    order: 1
+    description: "Parse CLI; resolve consumer/reqs/image paths"
+    preconditions: []
+    required_actions:
+      - "Determine CONSUMER_REPO (default upstream/EasyR1)"
+      - "Determine CONSUMER_REF (required)"
+      - "Determine CANDIDATE_IMAGE (required)"
+      - "Determine REQS_FILE (default requirements.txt)"
+      - "Create workspace/dep-analysis-{SESSION_TAG}/"
+    required_artifacts:
+      - path: "workspace/dep-analysis-{SESSION_TAG}/PROGRESS.md"
+        must_exist: true
+        content_must_contain: ["MODE:", "CONSUMER_REF:", "CANDIDATE_IMAGE:"]
+    invariants: []
+    prohibited_actions: []
+    next: [P1_image_inventory]
+
+  P1_image_inventory:
+    order: 2
+    description: "Get or produce a pip-freeze inventory of CANDIDATE_IMAGE. Prefer cached knowledge/images/<slug>.md; generate via docker run if missing."
+    preconditions: [P0_parse_args]
+    required_actions:
+      - "Check if knowledge/images/<slug>.md exists for CANDIDATE_IMAGE"
+      - "If missing: docker run --rm <image> pip freeze > workspace/.../image-freeze.txt"
+    required_artifacts:
+      - path: "workspace/dep-analysis-{SESSION_TAG}/image-freeze.txt"
+        must_exist: true
+    invariants:
+      - "Inventory must have at least torch_npu row (sanity check it's an NPU image)"
+    prohibited_actions: []
+    next: [P2_reqs_fetch]
+
+  P2_reqs_fetch:
+    order: 3
+    description: "Read consumer's requirements.txt at CONSUMER_REF"
+    preconditions: [P1_image_inventory]
+    required_actions:
+      - "cd $CONSUMER_REPO && git show $CONSUMER_REF:$REQS_FILE > workspace/.../reqs.txt"
+      - "Sanity: file non-empty + contains at least one recognizable framework dep (torch/transformers)"
+    required_artifacts:
+      - path: "workspace/dep-analysis-{SESSION_TAG}/reqs.txt"
+        must_exist: true
+    invariants: []
+    prohibited_actions: []
+    next: [P3_classify]
+
+  P3_classify:
+    order: 4
+    description: "Spawn dep-analysis-worker → runs scripts/dep-gap-detect.sh + post-processes into classification + task plan"
+    preconditions: [P2_reqs_fetch]
+    required_actions:
+      - "Spawn Agent(subagent_type=Explore, brief=agent.md + env)"
+      - "Worker runs scripts/dep-gap-detect.sh with reqs.txt + image-freeze.txt"
+      - "Worker converts raw gap output into task_plan JSON"
+    required_artifacts:
+      - path: "workspace/dep-analysis-{SESSION_TAG}/dep-gap-report.md"
+        must_exist: true
+        content_must_contain:
+          - "Classification"
+          - "Scenario"   # P1 or P2
+      - path: "workspace/dep-analysis-{SESSION_TAG}/task-plan.json"
+        must_exist: true
+        content_must_contain:
+          - "scenario"
+          - "task_plan"
+    invariants:
+      - "Every dep from reqs.txt MUST have a classification (no skipped rows)"
+      - "Each D-class entry MUST name a specific upgrade-expert that can fix it (or be explicitly marked 'unsupported: requires manual port')"
+    prohibited_actions:
+      - "Reading docs/easyr1-dep-chain-audit.md (OL-03; answer-key)"
+    next: [P4_report]
+
+  P4_report:
+    order: 5
+    description: "Final report + cleanup (trivial for this expert)"
+    preconditions: [P3_classify]
+    required_actions:
+      - "Write RESULTS.md with classification summary + task plan preview"
+      - "Run cleanup_session.sh (this expert: always 'clean' — no docker artifacts created)"
+    required_artifacts:
+      - path: "workspace/dep-analysis-{SESSION_TAG}/RESULTS.md"
+        must_exist: true
+        content_must_contain:
+          - "scenario:"
+          - "Cleanup: clean"
+    invariants:
+      - "produced_by: dep-analysis-worker (OL-09)"
+      - "Cleanup: clean (this expert never creates docker images or containers)"
+    prohibited_actions: []
+    next: []  # terminal
