@@ -1,0 +1,277 @@
+# /easyr1-port workflow state machine — canonical spec
+#
+# Read by src/scripts/workflow/workflow_critic.py.
+# Any change here MUST be mirrored in src/skills/easyr1-port/SKILL.md
+# (pre-commit hook enforces drift check).
+#
+# Modeled on a5_ops's docs/workflow/opgen_state_machine.yaml (V3.2). Scope
+# adapted: we port RL frameworks (EasyR1, OpenRLHF, TRL) to Ascend NPU, not
+# kernel generation. But the pipeline-criticism pattern is the same.
+#
+# Authority: if SKILL.md prose disagrees with this YAML, YAML wins at
+# critic-runtime. Two-way binding prevents drift.
+
+version: 1
+schema_version: "0.1"
+workflow_name: easyr1-port
+last_updated: "2026-04-22"
+
+# ---------------------------------------------------------------------------
+# Global rules — apply to every phase unconditionally.
+# ---------------------------------------------------------------------------
+# Each rule has: id / description / check (what critic looks at) / rationale /
+# severity (BLOCKING or WARNING) / [exception].
+# ---------------------------------------------------------------------------
+global_invariants:
+  - id: G1
+    description: "Orchestrator MUST NOT Edit files under upstream/EasyR1/verl/, upstream/EasyR1/examples/, or upstream/EasyR1/Dockerfile* directly. All port-code edits must go through port-worker agent."
+    check: "PreToolUse on Edit: path under upstream/EasyR1/{verl,examples}/ or Dockerfile* rejected unless invoker is port-worker agent"
+    rationale: "Orchestrator editing port code bypasses port-worker's Stop hook (which checks py_compile + structural invariants). Analogous to a5_ops G1 where orchestrator editing kernel caused OL-85 (hidden invariant violations) on op#11. Orchestrator's job is scheduling + artifact reading, not writing port code."
+    severity: BLOCKING
+
+  - id: G2
+    description: "Port code MUST pass static checks (py_compile + dry import) before any phase advances past code-generation."
+    check: "Stop hook on port-worker: invoke src/scripts/static_check.py on all files edited this session; reject if any file has SyntaxError or ImportError at module load"
+    rationale: "2026-04-22 round 2 cold-drive: agent produced `from ..utils.device import ...` inserted INSIDE an unclosed `from ..utils.torch_functional import (` block. Docker build passed (pip install -e . doesn't validate Python) but runtime would crash at first verl import. Without this hook, customer agents ship invalid code."
+    severity: BLOCKING
+
+  - id: G3
+    description: "'Port PASS' / 'smoke PASS' / 'end-to-end closed' claims MUST be backed by concrete log evidence of the actual smoke run."
+    check: "PostToolUse after any agent report: grep agent's PROGRESS.md / report for strings 'PASS', 'closed', 'complete'. If present, require nearby evidence: entropy_loss value in known range, or smoke log path that exists and contains the expected markers"
+    rationale: "NPU-OPS-010 anti-pattern: prior session called P1 'end-to-end closed' after only manually running V1.4. Every 'PASS' must be traceable to numeric evidence. Skill discipline is to refuse PASS claims without numbers."
+    severity: BLOCKING
+
+  - id: G4
+    description: "A3 shared-host etiquette: before any smoke launch, check chip occupancy. Kill no one else's processes, steal no one else's chips."
+    check: "Stop hook on smoke launch scripts: require a chip-occupancy check log from npu-smi right before docker run"
+    rationale: "A3 is shared (see knowledge/npu-patterns.md NPU-OPS-003). Previously we've had our container wrecked by someone else's zombie raylet (NPU-OPS-009 precursor). Running a smoke without chip check produces infra failures we then blame on port code."
+    severity: BLOCKING
+
+  - id: G5
+    description: "Smoke ladder verification covers ALL rungs claimed; claiming 'ladder PASS' with missing rungs is a violation."
+    check: "PostToolUse on agent report: if 'ladder PASS' in text, verify presence of per-rung entries for V1.1, V1.3, V1.4, V1.5, V2.1, V2.2 — each with numeric or explicit 'SKIPPED_BY_USER' note"
+    rationale: "2026-04-22 retraction: prior session ran only V1.4 and called 'P1 closed'. V1.1/V1.3/V1.5/V2.1/V2.2 unrun. The 'ladder' is six rungs, not one. Cold-drive agents must produce the whole ladder or explicitly stop."
+    severity: BLOCKING
+
+  - id: G6
+    description: "Skill-driven, not human-driven. Reports MUST distinguish 'skill chain produced this artifact' from 'human did this manually then described it'."
+    check: "Report schema requires per-artifact field 'produced_by: port-worker | smoke-probe | orchestrator | human-intervention'. human-intervention artifacts disqualify the run from 'end-to-end closed' status"
+    rationale: "NPU-OPS-010 lesson: conflation of 'I did X manually and wrote docs claiming skill Y does X' with 'skill Y does X end-to-end' was the root sin. Provenance tracking on every artifact. If human stepped in mid-stream, this run is not closure, it's partial."
+    severity: BLOCKING
+
+# ---------------------------------------------------------------------------
+# Workflow phases — sequential state machine.
+# ---------------------------------------------------------------------------
+phases:
+
+  # -------------------------------------------------------------------------
+  P0_parse_args:
+    order: 1
+    description: "Parse CLI, determine MODE and target"
+    preconditions: []
+    required_actions:
+      - "Determine MODE: reproduce (re-run existing port) | new-commit (port new EasyR1 commit) | upgrade (new target image) | new-framework (port OpenRLHF/TRL)"
+      - "Determine: EASYR1_REF (commit hash or branch) + TARGET_IMAGE (docker tag)"
+      - "Create workspace/port-{timestamp}/"
+      - "Load .easyr1_env via easyr1-preflight skill (if missing, spawn preflight)"
+    required_artifacts:
+      - path: "workspace/port-{timestamp}/PROGRESS.md"
+        must_exist: true
+        content_must_contain:
+          - "MODE:"
+          - "EASYR1_REF:"
+          - "TARGET_IMAGE:"
+    invariants:
+      - "MODE in [reproduce, new-commit, upgrade, new-framework]"
+    prohibited_actions: []
+    next: [P1_dep_audit]
+
+  # -------------------------------------------------------------------------
+  P1_dep_audit:
+    order: 2
+    description: "Run dep-gap-detect. Branch: P1 (D=0, continue) or P2 (D>=1, stop + adaptation tasks)"
+    preconditions: [P0_parse_args]
+    required_actions:
+      - "Invoke scripts/dep-gap-detect.sh with EASYR1_REF's requirements.txt + TARGET_IMAGE's inventory"
+      - "Record exit code + per-dep classification in PROGRESS.md"
+      - "If exit 1 (D>=1): halt, write needs-adaptation-tasks.md referencing P2-WORKFLOW.md"
+    required_artifacts:
+      - path: "workspace/port-{timestamp}/dep-gap-report.md"
+        must_exist: true
+      - path: "workspace/port-{timestamp}/PROGRESS.md"
+        content_must_contain:
+          - "Dep-gap exit code:"
+    invariants:
+      - "dep-gap-detect has been invoked with BOTH --reqs and --image-inventory flags"
+    prohibited_actions:
+      - "Skipping dep-gap-detect with 'looks fine' rationale"
+    next: [P2_image_inventory, P1_stop_for_adaptation]
+
+  # -------------------------------------------------------------------------
+  P1_stop_for_adaptation:
+    order: 2.5
+    description: "P2 scenario branch — halt, register adaptation tasks, wait for external completion"
+    condition: "dep-gap-detect exit code == 1"
+    preconditions: [P1_dep_audit]
+    required_actions:
+      - "Write needs-adaptation-tasks.md naming each D-tier dep"
+      - "Append entries to docs/npu-adaptation-tasks.md"
+    required_artifacts:
+      - path: "workspace/port-{timestamp}/needs-adaptation-tasks.md"
+        must_exist: true
+    invariants: []
+    prohibited_actions:
+      - "Advancing to P2+ with any D-tier dep unresolved"
+    next: []  # terminal
+
+  # -------------------------------------------------------------------------
+  P2_image_inventory:
+    order: 3
+    description: "Inspect target image; confirm triton-ascend integrity; record baseline inventory"
+    condition: "dep-gap-detect exit code == 0"
+    preconditions: [P1_dep_audit]
+    required_actions:
+      - "Invoke scripts/inspect-ascend-image.sh TARGET_IMAGE"
+      - "Check NPU-BUG-001 triton-ascend integrity"
+      - "Record inventory path in PROGRESS.md"
+    required_artifacts:
+      - path: "knowledge/images/{image-slug}.md"
+        must_exist: true
+    invariants: []
+    prohibited_actions: []
+    next: [P3_upstream_fetch]
+
+  # -------------------------------------------------------------------------
+  P3_upstream_fetch:
+    order: 4
+    description: "Fetch upstream repos needed for code-path-sweep + upstream ref grep"
+    preconditions: [P2_image_inventory]
+    required_actions:
+      - "Invoke scripts/fetch-upstream.sh --include-optional"
+      - "Verify upstream/{EasyR1,transformers,vllm-ascend,torch-npu,triton-ascend}/ exist"
+    required_artifacts: []
+    invariants: []
+    prohibited_actions:
+      - "Reading git log / commit content of existing ascend-port* branches of the EasyR1 fork (cheating vector — see DOCS-CONVENTION)"
+    next: [P4_code_path_sweep]
+
+  # -------------------------------------------------------------------------
+  P4_code_path_sweep:
+    order: 5
+    description: "Scan EasyR1 source for GPU-only callsites. Output hit table per NPU-CP-* ID."
+    preconditions: [P3_upstream_fetch]
+    required_actions:
+      - "Invoke scripts/code-path-sweep.sh upstream/EasyR1"
+      - "Review hits; mark per-hit disposition: fix-now | defer | N/A"
+    required_artifacts:
+      - path: "workspace/port-{timestamp}/code-path-sweep.md"
+        must_exist: true
+    invariants: []
+    prohibited_actions: []
+    next: [P5_port_worker]
+
+  # -------------------------------------------------------------------------
+  P5_port_worker:
+    order: 6
+    description: "Spawn port-worker agent — Phase A (KB load) → B (code) → C (build) → D (deploy + static check + smoke + assert). All iterations inside agent context."
+    preconditions: [P4_code_path_sweep]
+    required_actions:
+      - "Spawn Agent(subagent_type=Explore, prompt=src/agents/port-worker.md + brief)"
+      - "Worker returns PROGRESS.md handoff: done | @smoke-probe | @upstream-researcher"
+    required_artifacts:
+      - path: "workspace/port-{timestamp}/analysis.md"
+      - path: "workspace/port-{timestamp}/port-branch-commits.log"
+      - path: "workspace/port-{timestamp}/static-check-report.md"
+        content_must_contain:
+          - "py_compile"
+          - "dry-import"
+      - path: "workspace/port-{timestamp}/PROGRESS.md"
+        content_must_contain:
+          - "Handoff:"
+    invariants:
+      - "All edited Python files pass py_compile (G2)"
+      - "from verl import ...' dry-import succeeds (G2)"
+      - "Docker image tag is experiment-specific (not reusing easyr1-npu:ascend-port)"
+    prohibited_actions:
+      - "Claiming PASS without concrete entropy_loss / error log (G3)"
+      - "Using words 'oracle' or 'drift' — those are a5_ops regression-check vocabulary not applicable here"
+    next: [P6_smoke_ladder, P5_handoff_probe, P5_handoff_researcher]
+
+  # -------------------------------------------------------------------------
+  P5_handoff_probe:
+    order: 6.1
+    description: "Smoke stuck >=N iters same signature → spawn smoke-probe for minimal repro"
+    condition: "port-worker exits with @smoke-probe"
+    preconditions: [P5_port_worker]
+    required_actions:
+      - "Spawn Agent(smoke-probe) with the stuck rung + last N fail signatures"
+      - "Probe returns probe_report.md + probes/*.py"
+    required_artifacts:
+      - path: "workspace/port-{timestamp}/probe_report.md"
+    invariants: []
+    prohibited_actions: []
+    next: [P5_port_worker]  # loop back: worker consumes probe report, retries
+
+  # -------------------------------------------------------------------------
+  P5_handoff_researcher:
+    order: 6.2
+    description: "Upstream API / bug triage → spawn upstream-researcher"
+    condition: "port-worker exits with @upstream-researcher"
+    preconditions: [P5_port_worker]
+    required_actions:
+      - "Spawn Agent(upstream-researcher) with the suspect upstream package + version + symptom"
+      - "Researcher returns hypothesis_report.md"
+    required_artifacts:
+      - path: "workspace/port-{timestamp}/hypothesis_report.md"
+    invariants: []
+    prohibited_actions: []
+    next: [P5_port_worker]
+
+  # -------------------------------------------------------------------------
+  P6_smoke_ladder:
+    order: 7
+    description: "Walk the full smoke ladder V1.1 → V1.3 → V1.4 → V1.5 → V2.1 → V2.2. Each rung's PASS/FAIL verified by critic via log grep."
+    preconditions: [P5_port_worker]
+    required_actions:
+      - "For each rung, invoke scripts/smoke_validate.sh with expected numerics"
+      - "Record per-rung result in workspace/port-{timestamp}/smoke-ladder-results.md"
+      - "Expected numerics come from knowledge/smoke-ladder-convention.md per-image baseline table"
+    required_artifacts:
+      - path: "workspace/port-{timestamp}/smoke-ladder-results.md"
+        content_must_contain:
+          - "V1.1:"
+          - "V1.3:"
+          - "V1.4:"
+          - "V1.5:"
+          - "V2.1:"
+          - "V2.2:"
+    invariants:
+      - "Every rung has outcome PASS / FAIL / SKIPPED_BY_USER (G5)"
+      - "PASS rungs have numeric evidence (entropy_loss / grad_norm / validation reward) from actual smoke log (G3)"
+      - "No rung claimed PASS without corresponding /tmp/.../easyr1-logs/ file (G3)"
+    prohibited_actions:
+      - "Claiming ladder PASS with missing rungs (G5)"
+      - "Using cached results from prior smoke runs without re-execution"
+    next: [P7_report]
+
+  # -------------------------------------------------------------------------
+  P7_report:
+    order: 8
+    description: "Final report: provenance table, gap catalog, closure claim (if warranted)"
+    preconditions: [P6_smoke_ladder]
+    required_actions:
+      - "Write final report to workspace/port-{timestamp}/RESULTS.md"
+      - "Per-artifact provenance: produced_by: port-worker | smoke-probe | orchestrator | human-intervention"
+      - "Classify overall: CLOSED (all ladder green + zero human-intervention artifacts) | PARTIAL | FAILED"
+      - "If CLOSED, append line to docs/porting-journal.md"
+      - "Invoke self-critic skill for second-eye check"
+    required_artifacts:
+      - path: "workspace/port-{timestamp}/RESULTS.md"
+        content_must_contain:
+          - "Provenance table"
+          - "Closure classification"
+    invariants:
+      - "CLOSED requires every artifact produced_by in [port-worker, smoke-probe, orchestrator] — NOT human-intervention (G6)"
+    prohibited_actions:
+      - "Self-assigning CLOSED status when provenance table has human-intervention entries"
+    next: []  # terminal
