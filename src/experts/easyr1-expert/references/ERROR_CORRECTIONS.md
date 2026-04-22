@@ -337,6 +337,60 @@ The key is `--default-timeout=60` so pip will fail fast instead of hanging.
 
 ---
 
+## EC-11: V1.4 smoke_validate reports "no entropy_loss marker" even though training completed
+
+**Error pattern**:
+```
+❌ V1.4 FAIL: no 'entropy_loss:' marker in log — smoke probably errored before step 1
+```
+But the log shows step 1 + step 2 completed and a checkpoint was saved.
+
+**Root cause**: EasyR1 master writes per-step metrics ONLY to
+`<save_checkpoint_path>/experiment_log.jsonl` via the `FileLogger` in
+`verl/utils/logger/logger.py`. It does NOT print `entropy_loss:` to stdout.
+The historical v1 baseline of 0.991 was established against the `ascend-port`
+branch which had stdout printing patched in. Master `dd71bbd` does not.
+
+**Fix**:
+1. Smoke script's `trainer.logger` MUST include `'file'` (and `'console'` for
+   human-readability). Minimum: `trainer.logger=['console','file']`.
+2. `smoke_validate.sh` (post-2026-04-22 round 3 patch) reads jsonl by
+   default. On an older copy, pass `--metrics-jsonl <A3-side-path>`.
+
+**Verify**: rerun smoke. The assertion output should say
+`source: jsonl (...)` instead of `source: stdout grep (...)`.
+
+**Related**: Round 3 finding 2026-04-22; SMOKE_BASELINE.md §canonical config.
+
+---
+
+## EC-12: V1.4 entropy_loss ~1.27 (out of v1 band 0.94-1.04) even though port is correct
+
+**Error pattern**: Step-1 entropy_loss around 1.27 (close to v2-image 1.275
+baseline). All device / Ray / attention / vllm fixes applied. No Python
+errors. Training completes 2 steps cleanly.
+
+**Root cause**: Smoke config deviates from canonical
+`ascend-port/examples/qwen2_0_5b_math_grpo_npu_smoke.sh`. **Most likely**:
+KL term left on in master's defaults. Canonical smoke sets
+`algorithm.disable_kl=true` and `algorithm.use_kl_loss=false`; without
+those, the KL contribution raises entropy_loss substantially. Other
+sensitivity points (max_prompt_length, gradient_checkpointing, ref offload)
+also shift numerics.
+
+**Fix**: Copy the canonical smoke config verbatim. Do not omit:
+- `algorithm.disable_kl=true`
+- `algorithm.use_kl_loss=false`
+- `worker.actor.model.enable_gradient_checkpointing=true`
+- `worker.ref.fsdp.enable_cpu_offload=true`
+- `worker.ref.offload.offload_params=true`
+
+**Verify**: step-1 entropy_loss falls back to [0.94, 1.04] band.
+
+**Related**: Round 3 finding 2026-04-22; SMOKE_BASELINE.md §critical parameters.
+
+---
+
 ## Unclassified failure protocol
 
 If a Phase D failure doesn't match any EC:

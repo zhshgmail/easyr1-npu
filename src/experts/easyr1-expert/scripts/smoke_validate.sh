@@ -16,12 +16,23 @@
 #   --npu-user <USER>       default: z00637938
 #   --log-dir <DIR>         default: /tmp/${NPU_USER}/easyr1-logs/
 #   --timeout-min <N>       default: 15
+#   --metrics-jsonl <PATH>  optional A3-side path to experiment_log.jsonl.
+#                           When set, V1.4+ assertion reads entropy_loss from
+#                           jsonl (EasyR1 master's logging sink) instead of
+#                           grep-ing stdout. Defaults:
+#                           /home/$NPU_USER/workspace/easyr1-npu/upstream/EasyR1/
+#                             checkpoints/easy_r1/v14_smoke/experiment_log.jsonl
+#                           for V1.4; analogous per-rung for others.
 #
 # Workflow:
 #   1. Check chip availability on A3 (OL-05)
 #   2. ssh to A3, run run-npu-container.sh with the smoke script for the rung
 #   3. Tee log to {log-dir}/{rung-tag}-{session}.log
-#   4. On completion, grep entropy_loss (or equivalent marker per rung)
+#   4. On completion:
+#      - V1.1/V1.3 (marker assert): grep stdout log for expected marker.
+#      - V1.4+ (entropy_loss assert): read experiment_log.jsonl for step 1
+#        metric. Fall back to stdout grep if jsonl missing (pre-master port
+#        branches printed entropy_loss to stdout).
 #   5. Assert numeric in baseline band from references/SMOKE_BASELINE.md
 #
 # Exit codes:
@@ -46,21 +57,23 @@ IMAGE_FAMILY="v1"
 CHIPS=""
 LOG_DIR=""
 TIMEOUT_MIN=15
+METRICS_JSONL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --rung)         RUNG="$2"; shift 2 ;;
-    --image-tag)    IMAGE_TAG="$2"; shift 2 ;;
-    --image-family) IMAGE_FAMILY="$2"; shift 2 ;;
-    --chips)        CHIPS="$2"; shift 2 ;;
-    --a3-host)      A3_HOST="$2"; shift 2 ;;
-    --a3-port)      A3_PORT="$2"; shift 2 ;;
-    --a3-user)      A3_USER="$2"; shift 2 ;;
-    --npu-user)     NPU_USER="$2"; shift 2 ;;
-    --log-dir)      LOG_DIR="$2"; shift 2 ;;
-    --timeout-min)  TIMEOUT_MIN="$2"; shift 2 ;;
-    -h|--help)      grep '^#' "$0" | sed 's/^# \?//'; exit 0 ;;
-    *)              echo "ERROR: unknown arg $1" >&2; exit 2 ;;
+    --rung)           RUNG="$2"; shift 2 ;;
+    --image-tag)      IMAGE_TAG="$2"; shift 2 ;;
+    --image-family)   IMAGE_FAMILY="$2"; shift 2 ;;
+    --chips)          CHIPS="$2"; shift 2 ;;
+    --a3-host)        A3_HOST="$2"; shift 2 ;;
+    --a3-port)        A3_PORT="$2"; shift 2 ;;
+    --a3-user)        A3_USER="$2"; shift 2 ;;
+    --npu-user)       NPU_USER="$2"; shift 2 ;;
+    --log-dir)        LOG_DIR="$2"; shift 2 ;;
+    --timeout-min)    TIMEOUT_MIN="$2"; shift 2 ;;
+    --metrics-jsonl)  METRICS_JSONL="$2"; shift 2 ;;
+    -h|--help)        grep '^#' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *)                echo "ERROR: unknown arg $1" >&2; exit 2 ;;
   esac
 done
 
@@ -86,21 +99,25 @@ case "$RUNG" in
     SMOKE_CMD="bash /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh"
     DEFAULT_CHIPS="0,1"
     ASSERT_TYPE="entropy_loss"
+    DEFAULT_JSONL_NAME="v14_smoke"
     ;;
   V1.5)
     SMOKE_CMD="bash /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke_4chip.sh"
     DEFAULT_CHIPS="0,1,2,3"
     ASSERT_TYPE="entropy_loss"
+    DEFAULT_JSONL_NAME="v15_smoke"
     ;;
   V2.1)
     SMOKE_CMD="bash /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke_v2_1_padfree.sh"
     DEFAULT_CHIPS="0,1"
     ASSERT_TYPE="entropy_loss"
+    DEFAULT_JSONL_NAME="v21_smoke"
     ;;
   V2.2)
     SMOKE_CMD="bash /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke_v2_2_ulysses.sh"
     DEFAULT_CHIPS="0,1,2,3"
     ASSERT_TYPE="entropy_loss"
+    DEFAULT_JSONL_NAME="v22_smoke"
     ;;
   *)
     echo "ERROR: unknown rung '$RUNG'" >&2; exit 2 ;;
@@ -178,24 +195,71 @@ case "$ASSERT_TYPE" in
     fi
     ;;
   entropy_loss)
-    # Extract first entropy_loss (step 1)
-    VALUE=$($SSH_CMD "grep -m1 -oE 'entropy_loss:[[:space:]]*[0-9.]+' $LOG_FILE | head -1 | awk -F: '{print \$2}' | tr -d ' '" 2>/dev/null || echo "")
+    # Primary path: read EasyR1's experiment_log.jsonl (FileLogger writes
+    # {"step": N, "<category>": {"entropy_loss": ..., ...}, ...} — flattened/
+    # unflattened back to nested). We look for step==1 and find entropy_loss
+    # anywhere in the nested structure. Fall back to stdout grep if jsonl is
+    # missing (older port branches printed it directly to stdout).
+    JSONL_PATH="${METRICS_JSONL:-/home/$NPU_USER/workspace/easyr1-npu/upstream/EasyR1/checkpoints/easy_r1/${DEFAULT_JSONL_NAME:-v14_smoke}/experiment_log.jsonl}"
+    VALUE=""
+    SOURCE=""
+    if $SSH_CMD "[ -f $JSONL_PATH ]" 2>/dev/null; then
+      # Extract step-1 entropy_loss from jsonl. Python is on A3 via the base
+      # image; use -c to avoid temp files.
+      VALUE=$($SSH_CMD "python3 -c '
+import json, sys
+try:
+    with open(\"$JSONL_PATH\") as f:
+        for line in f:
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if rec.get(\"step\") != 1:
+                continue
+            # Walk nested dict looking for key entropy_loss
+            stack = [rec]
+            while stack:
+                node = stack.pop()
+                if isinstance(node, dict):
+                    for k, v in node.items():
+                        if k == \"entropy_loss\" and isinstance(v, (int, float)):
+                            print(v); sys.exit(0)
+                        if isinstance(v, (dict, list)):
+                            stack.append(v)
+                elif isinstance(node, list):
+                    stack.extend(node)
+except FileNotFoundError:
+    pass
+' 2>/dev/null" | head -1)
+      if [[ -n "$VALUE" ]]; then
+        SOURCE="jsonl ($JSONL_PATH)"
+      fi
+    fi
+    # Fallback: stdout grep (pre-master-port-branch behavior)
     if [[ -z "$VALUE" ]]; then
-      echo "❌ ${RUNG} FAIL: no 'entropy_loss:' marker in log — smoke probably errored before step 1"
+      VALUE=$($SSH_CMD "grep -m1 -oE 'entropy_loss[\"]?[:=][[:space:]]*[0-9.]+' $LOG_FILE 2>/dev/null | head -1 | grep -oE '[0-9.]+' | head -1")
+      [[ -n "$VALUE" ]] && SOURCE="stdout grep ($LOG_FILE)"
+    fi
+    if [[ -z "$VALUE" ]]; then
+      echo "❌ ${RUNG} FAIL: no entropy_loss found in either jsonl or stdout log"
+      echo "  jsonl probed:   $JSONL_PATH  (exists? $($SSH_CMD "[ -f $JSONL_PATH ] && echo yes || echo no"))"
+      echo "  stdout log:     $LOG_FILE"
       echo "  log tail (last 30 lines):"
       $SSH_CMD "tail -30 $LOG_FILE" | sed 's/^/    /'
       exit 1
     fi
     IFS=':' read -r LOW HIGH <<< "$EXPECTED_BAND"
-    # use awk for numeric comparison (bash can't do float)
     IN_BAND=$(awk -v v="$VALUE" -v l="$LOW" -v h="$HIGH" 'BEGIN { print (v >= l && v <= h) ? 1 : 0 }')
     if [[ "$IN_BAND" == "1" ]]; then
       echo "✅ ${RUNG} PASS: entropy_loss=$VALUE in band [$LOW, $HIGH]"
-      echo "  log: $LOG_FILE"
+      echo "  source: $SOURCE"
+      echo "  log:    $LOG_FILE"
       exit 0
     else
       echo "❌ ${RUNG} FAIL: entropy_loss=$VALUE OUT OF BAND [$LOW, $HIGH]"
-      echo "  log: $LOG_FILE"
+      echo "  source: $SOURCE"
+      echo "  log:    $LOG_FILE"
       exit 1
     fi
     ;;

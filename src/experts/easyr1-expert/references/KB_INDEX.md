@@ -60,6 +60,8 @@ Specific error patterns indexed:
 - **npu get board type failed. ret is -9005** → EC-08
 - **uda_occupy_dev_by_ns ... Conflict open udevid** → EC-09
 - **pip install triton-ascend hangs > 60s** → EC-10
+- **V1.4 smoke_validate "no entropy_loss marker" but training ran end-to-end** → EC-11
+- **V1.4 entropy_loss ≈ 1.27 (out of v1 band 0.94-1.04) despite correct port** → EC-12
 
 ---
 

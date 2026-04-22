@@ -44,17 +44,48 @@ Drill V2.2 20-step trajectory: entropy_loss ∈ `[1.31, 1.83]`, grad_norm max ~3
 
 ---
 
+## Reference smoke config for V1.4 (canonical baseline config)
+
+The 0.991 baseline is **only valid** if the smoke config matches these critical
+parameters. 2026-04-22 round 3 saw step1 entropy_loss=1.276 from a variant
+config — drift came from KL defaults, not the port logic.
+
+Critical parameters that shift entropy_loss numerics:
+
+| Parameter | Canonical value | Why it matters |
+|---|---|---|
+| `algorithm.disable_kl` | `true` | **Largest effect.** Master defaults KL on; KL term raises entropy_loss. |
+| `algorithm.use_kl_loss` | `false` | Same reason as above. |
+| `data.max_prompt_length` | `512` | Different truncation changes token mix. |
+| `data.max_response_length` | `256` | Same reason. |
+| `worker.rollout.n` | `2` | Smaller n = higher variance step 1. |
+| `worker.rollout.gpu_memory_utilization` | `0.4` | (≤0.5 OK; memory pressure doesn't change numerics but `enforce_eager`/`chunked_prefill` do.) |
+| `worker.rollout.enforce_eager` | `true` | Non-eager = vllm captures CUDA graphs, different NPU dispatch. |
+| `worker.rollout.enable_chunked_prefill` | `false` | Chunked prefill routes differently on NPU. |
+| `worker.actor.model.enable_gradient_checkpointing` | `true` | Slightly different fp accumulation order. |
+| `worker.ref.fsdp.enable_cpu_offload` | `true` | Ref model on CPU or NPU changes which kernel runs. |
+| `worker.ref.offload.offload_params` | `true` | Same reason. |
+| `data.rollout_batch_size` | `4` | Batch size interacts with group advantage math. |
+| `worker.actor.global_batch_size` | `4` | Same reason. |
+| `trainer.logger` | `['console', 'file']` | **Required for jsonl assertion**. `['console']` alone = no experiment_log.jsonl; `['file']` alone = no stdout summary. Best to include both. |
+
+Use `examples/qwen2_0_5b_math_grpo_npu_smoke.sh` from the `ascend-port` branch
+as the ground truth. Copy it verbatim — changes require re-establishing
+baseline (empirical run + journal entry).
+
 ## How to use these in assertions
 
-`scripts/smoke_validate.sh` reads this file via a simple ini-like parser:
+`scripts/smoke_validate.sh` V1.4+ first reads `experiment_log.jsonl` (written
+by EasyR1's `FileLogger`), falls back to stdout grep only if jsonl missing.
+See `--metrics-jsonl` flag.
 
 ```bash
 smoke_validate.sh \
   --rung V1.4 \
-  --image v1 \
-  --log /tmp/$USER/easyr1-logs/v14_{tag}.log
-# → exits 0 if log has "entropy_loss: X.XXX" in [0.94, 1.04]
-# → exits 1 with specific reason if out of band or log missing
+  --image-tag easyr1-npu:<SESSION_TAG> \
+  --image-family v1
+# → exits 0 if step-1 entropy_loss in [0.94, 1.04]
+# → exits 1 with specific reason if out of band or no entropy_loss found
 ```
 
 ---
