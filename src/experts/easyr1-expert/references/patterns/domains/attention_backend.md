@@ -94,9 +94,56 @@ from ...utils.device import get_default_attn_implementation
 model = AutoModelForCausalLM.from_pretrained(
     ...,
     attn_implementation=get_default_attn_implementation(),
-    # returns "sdpa" on NPU, "flash_attention_2" on CUDA
 )
 ```
+
+**Critical choice for `get_default_attn_implementation()` on NPU** (v1 image,
+torch 2.8.0+cpu + torch_npu 2.8.0):
+
+- Correct value: **`"flash_attention_2"`**, NOT `"sdpa"`.
+- Rationale: transformers 4.57+ ships an NPU-aware FA adapter under
+  `transformers.integrations.npu_flash_attention`. When `attn_implementation=
+  "flash_attention_2"` is requested AND `apply_ulysses_patch()` has been
+  called at init (see below), the model picks up the NPU fused kernel via
+  `ALL_ATTENTION_FUNCTIONS["flash_attention_2"]`. If you default to `"sdpa"`
+  instead, torch dispatches `scaled_dot_product_attention` through its own
+  math-backend on torch 2.8.0+cpu — it does NOT route to the NPU fused
+  kernel on this base image, so you get (a) ~400s/iter instead of ~30s/iter
+  and (b) different step-1 entropy_loss numerics (1.275 vs the 0.991 baseline).
+- Verified: 2026-04-22 round 3 iter2 + round 4 iter4 both hit the 1.275 OOB
+  number before switching default to `"flash_attention_2"`; round 4 iter7
+  with `"flash_attention_2"` + `apply_ulysses_patch` gave 0.958 in band.
+
+### Piece 4: `apply_ulysses_patch` must run on NPU even for `padding_free=False`
+
+The `apply_ulysses_patch(...)` call in `verl/models/monkey_patch.py` is the
+site that registers the NPU FA adapter into transformers'
+`ALL_ATTENTION_FUNCTIONS["flash_attention_2"]`. Historical NPU-CP-007 guidance
+says this only matters for the padding_free/ulysses path — **that is wrong
+for V1.4 specifically**. Even with `worker.actor.padding_free=False` and
+`worker.actor.ulysses_size=1`, the patch is what rewires `flash_attention_2`
+to the NPU kernel. Skip the patch → the wiring falls back to the CUDA-only
+flash-attn import → fails, and transformers silently degrades to another
+attention path whose numerics differ.
+
+Rule: **always call `apply_ulysses_patch()` on NPU**, regardless of
+padding_free or ulysses_size. Any guard like:
+```python
+if padding_free or ulysses_size > 1:
+    apply_ulysses_patch(model, ...)
+```
+must be unconditional on NPU. Two safe rewrites:
+```python
+# A: unconditional on NPU
+if is_npu_available() or padding_free or ulysses_size > 1:
+    apply_ulysses_patch(model, ...)
+
+# B: always-on (simpler; CUDA path is a no-op if flash-attn already wired)
+apply_ulysses_patch(model, ...)
+```
+
+Verified: 2026-04-22 round 4 iter4 (+iter5/6 still 1.275) → iter7 (passes
+patch + other fixes) lands step-1 at 0.958.
 
 ## NPU-CP-007 — padding_free + ulysses varlen on NPU
 

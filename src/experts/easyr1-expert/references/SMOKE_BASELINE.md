@@ -58,6 +58,7 @@ Critical parameters that shift entropy_loss numerics:
 | `algorithm.use_kl_loss` | `false` | Same reason as above. |
 | `data.max_prompt_length` | `512` | Different truncation changes token mix. |
 | `data.max_response_length` | `256` | Same reason. |
+| `data.filter_overlong_prompts` | `true` | **Verified decisive on 2026-04-22 round 4.** False lets overlong prompts into the step-1 batch; they get truncated at `max_prompt_length` and skew batch composition. With `=false` step-1 entropy_loss drifts from 0.958 to 1.275 on the v1 image — enough to fail the band. Canonical config has it true. |
 | `worker.rollout.n` | `2` | Smaller n = higher variance step 1. |
 | `worker.rollout.gpu_memory_utilization` | `0.4` | (≤0.5 OK; memory pressure doesn't change numerics but `enforce_eager`/`chunked_prefill` do.) |
 | `worker.rollout.enforce_eager` | `true` | Non-eager = vllm captures CUDA graphs, different NPU dispatch. |

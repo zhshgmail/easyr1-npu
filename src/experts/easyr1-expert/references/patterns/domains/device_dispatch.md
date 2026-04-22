@@ -58,10 +58,16 @@ def get_dist_backend() -> str:
 def get_default_attn_implementation() -> str:
     """HF `attn_implementation` name for the active accelerator.
 
-    On NPU, flash-attn CUDA kernels don't exist; use sdpa (torch_npu dispatches
-    scaled_dot_product_attention to NPU kernels). On CUDA, keep flash_attention_2.
+    On NPU we still pass "flash_attention_2": transformers 4.57+ registers
+    the NPU-aware FA adapter (from transformers.integrations.npu_flash_attention)
+    under ALL_ATTENTION_FUNCTIONS["flash_attention_2"] when
+    apply_ulysses_patch() has run. Passing "sdpa" does NOT route to the NPU
+    fused kernel on torch 2.8.0+cpu — it falls back to torch's math backend
+    and drifts step-1 entropy_loss off-baseline (observed 2026-04-22 round 3/4).
+
+    So: "flash_attention_2" on both CUDA and NPU.
     """
-    return "sdpa" if is_npu_available() else "flash_attention_2"
+    return "flash_attention_2"
 
 
 @lru_cache(maxsize=1)
@@ -107,6 +113,7 @@ if not is_npu_available():
 - `verl/utils/checkpoint/checkpoint_manager.py` — RNG state via device_module
 - `verl/utils/checkpoint/fsdp_checkpoint_manager.py` — same
 - `verl/utils/flops_counter.py` — device counter dispatch
+- `verl/utils/seqlen_balancing.py` — **hard-coded `device="cuda"` at :255 in `num_micro_batches`** (found 2026-04-22 round 4 iter2; not in initial sweep because it's inside a helper that only fires on dynamic batching; must be routed through `get_device_name()`)
 - `verl/utils/fsdp_utils.py` — init_device_mesh + nccl → hccl
 - `verl/utils/model_utils.py` — device_map
 - `verl/utils/seqlen_balancing.py` — device count

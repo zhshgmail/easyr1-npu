@@ -391,6 +391,52 @@ also shift numerics.
 
 ---
 
+## EC-13: V1.4 "no entropy_loss" on a rerun after a prior session left global_step_N
+
+**Error pattern**:
+```
+❌ V1.4 FAIL: no 'entropy_loss:' marker in log ...
+```
+But the smoke's own stdout/jsonl shows it ran only validation, no training
+step. Looking at the checkpoints dir you notice `global_step_2/` from an
+earlier session. Training was silently skipped.
+
+**Root cause**: EasyR1 master's trainer defaults `find_last_checkpoint=true`.
+When a prior session left `<save_checkpoint_path>/global_step_N/` and
+`checkpoint_tracker.json`, the trainer auto-resumes at `global_step=N`. If
+`max_steps` is also set to `N` (typical smoke), the training loop
+short-circuits — no step 1, no step 2, only the final validation is written
+to `experiment_log.jsonl`. Smoke assertion then sees "no entropy_loss" (EC-11
+symptom), but the underlying cause is NOT the stdout/jsonl contract — it's
+that training actually didn't run.
+
+**Fix**: two lines, both in the smoke script:
+
+```bash
+# 1. Clean the checkpoint dir at the start of every smoke run (belt).
+rm -rf /opt/easyr1/checkpoints/easy_r1/v14_smoke
+
+# 2. And disable auto-resume in case another dir is lingering (suspenders).
+python3 -m verl.trainer.main \
+    ... \
+    trainer.find_last_checkpoint=false
+```
+
+**Verify**: jsonl now has step 1 + step 2 rows with `actor.entropy_loss`.
+If training really ran, log shows `Running step: 100%|██████████| 2.00/2.00`
+and per-step metrics show up.
+
+**Why this isn't covered by EC-11**: EC-11's fix (switch assertion to jsonl
+reader) is necessary but insufficient here. Even a jsonl-aware assertion
+returns "no entropy_loss" because training literally didn't run — the jsonl
+only has a val row. Don't confuse the two: EC-11 is contract bug, EC-13 is
+trainer behavior + stale state.
+
+**Related**: Round 4 finding 2026-04-22 iter1 (commit `aa07f21`); EC-11
+(adjacent symptom, different root cause).
+
+---
+
 ## Unclassified failure protocol
 
 If a Phase D failure doesn't match any EC:

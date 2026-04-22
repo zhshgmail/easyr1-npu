@@ -111,7 +111,7 @@ See `patterns/domains/attention_backend.md`.
 
 | NPU-CP-ID | Files touched | Priority | See |
 |---|---|---|---|
-| 001 | 10+ (fsdp_workers.py, protocol.py, fsdp_utils.py, checkpoint_manager.py, etc.) | Critical | patterns/domains/device_dispatch.md |
+| 001 | 10+ (fsdp_workers.py, protocol.py, fsdp_utils.py, checkpoint_manager.py, seqlen_balancing.py:255, etc.) | Critical | patterns/domains/device_dispatch.md |
 | 002 | vllm_utils.py | High | patterns/domains/vllm_compat.md |
 | 003 | ray/base.py, ray_trainer.py, trainer/main.py | Critical | patterns/domains/ray_integration.md |
 | 004 | sharding_manager/fsdp_vllm.py | High | patterns/domains/vllm_compat.md |
