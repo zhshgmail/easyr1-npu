@@ -91,6 +91,10 @@ def get_ray_resource_name() -> str:
 | `torch.device("cuda", idx)` | `torch.device(get_device_name(), idx)` |
 | `dist.init_process_group(backend="nccl", ...)` | `dist.init_process_group(backend=get_dist_backend(), ...)` |
 | `os.environ["CUDA_VISIBLE_DEVICES"] = ...` | `os.environ[get_visible_devices_env()] = ...` |
+| `<any_call>(..., device="cuda", ...)` | `<any_call>(..., device=get_device_name(), ...)` |
+| `torch.empty_like(..., device="cuda")` / `torch.zeros(..., device="cuda")` etc. | swap `"cuda"` → `get_device_name()` |
+
+**Kwarg-form `device="cuda"`** is easy to miss with a naive `grep torch.cuda.`. Explicitly run `grep -n 'device="cuda"' verl/` in Phase A; every hit is a replacement site unless inside a comment or string literal. 2026-04-22 round 4 + wet-run both re-discovered this in `fsdp_workers.py` `get_init_fn(model, device="cuda")` and in `seqlen_balancing.py` `torch.tensor(..., device="cuda")`.
 
 ## NPU-CP-006 — guard `torch.backends.cuda` knobs
 
@@ -117,7 +121,7 @@ if not is_npu_available():
 - `verl/utils/fsdp_utils.py` — init_device_mesh + nccl → hccl
 - `verl/utils/model_utils.py` — device_map
 - `verl/utils/seqlen_balancing.py` — device count
-- `verl/workers/fsdp_workers.py` — multiple, including NPU-CP-006 knobs
+- `verl/workers/fsdp_workers.py` — multiple, including NPU-CP-006 knobs; **also a kwarg-form `device="cuda"` inside `FSDPWorker._build_fsdp_model` at `get_init_fn(model, device="cuda")` (~line 322)** (round 4 + wet-run both re-discovered this; fires whenever `worker.actor.fsdp.enable_rank0_init=true` which canonical V1.4 config DOES set. A naive `grep torch.cuda.` misses it because the literal is a keyword arg. Grep `device="cuda"` AND `get_init_fn` during Phase B.)
 
 Total ≈ 35 callsite edits across ~10 files.
 

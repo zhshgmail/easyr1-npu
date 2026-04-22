@@ -437,6 +437,43 @@ trainer behavior + stale state.
 
 ---
 
+## EC-14: V1.3 rollout smoke fails with HFValidationError or file-not-found on `/data/nobody/models/...`
+
+**Error pattern**: V1.3 smoke (e.g. `smoke_v13_rollout.py`) errors early with:
+- `HFValidationError: Repo id must be in the form 'repo_name' or 'namespace/repo_name'...`
+- or a plain `FileNotFoundError` on `/data/nobody/models/Qwen2-0.5B-Instruct`
+- or a `path is not a local folder and is not a valid model identifier` error
+
+**Root cause**: The smoke script computes `/data/${USER}/models/...` but inside
+the NPU container `$USER` resolves to `nobody` (container's default non-root
+user). The correct NPU-owned path is `/data/z00637938/models/...` (owner is
+the host user `$NPU_USER`, not the container's in-process `$USER`).
+
+**Fix**: smoke scripts must auto-discover `NPU_USER` from the host, not rely
+on container `$USER`. Either:
+1. Take it from an env var (orchestrator / `deploy_to_a3.sh` / `run-npu-container.sh`
+   already set `NPU_USER=z00637938`). The smoke script should use `${NPU_USER}`
+   rather than `${USER}`.
+2. Or walk `/data/` and pick the non-root owned dir: `NPU_USER=$(ls /data 2>/dev/null | head -1)`.
+
+Canonical smoke scripts (round 4, wet-run) use:
+```bash
+NPU_USER="${NPU_USER:-$(ls /data 2>/dev/null | grep -v '^$' | head -1)}"
+MODEL_PATH="${MODEL_PATH:-/data/${NPU_USER}/models/Qwen2-0.5B-Instruct}"
+```
+
+**Verify**: V1.3 log shows model loaded from `/data/z00637938/...` not
+`/data/nobody/...`.
+
+**Observed**: round 3 iter1, round 4 iter (commit `8c8dc40`), wet-run iter1
+(commit `d6acbc8`). Chronic — every cold-drive agent has to rediscover this
+unless the smoke template is pre-written with the fallback.
+
+**Related**: OL-06 (A3/GFW unrelated); NPU-CP-003 (Ray env; unrelated).
+This is purely a smoke-script input-plumbing issue.
+
+---
+
 ## Unclassified failure protocol
 
 If a Phase D failure doesn't match any EC:
