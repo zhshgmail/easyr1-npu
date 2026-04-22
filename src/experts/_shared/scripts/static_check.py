@@ -52,7 +52,7 @@ def py_compile_all(sources: list[Path]) -> tuple[bool, list[str]]:
 
 
 def dry_import(package: str, python_bin: str = sys.executable) -> tuple[bool, str]:
-    """Try `python -c 'import <package>'`. Return (ok, stderr_on_fail)."""
+    """Try `python -c 'import <package>'` locally. Return (ok, stderr_on_fail)."""
     try:
         result = subprocess.run(
             [python_bin, "-c", f"import {package}; print('OK')"],
@@ -65,6 +65,59 @@ def dry_import(package: str, python_bin: str = sys.executable) -> tuple[bool, st
         return (False, result.stderr or result.stdout)
     except subprocess.TimeoutExpired:
         return (False, f"import timed out after 60s — circular import or heavy module-load side effect?")
+
+
+def container_dry_import(
+    package: str,
+    image: str,
+    ssh_host: str,
+    ssh_port: str = "443",
+    ssh_user: str = "root",
+    live_source: str = None,
+    mount_target: str = "/opt/easyr1",
+) -> tuple[bool, str]:
+    """Run `python3 -c 'import <package>'` INSIDE a container on the target
+    A3 host. This catches import-time errors that bypass py_compile —
+    e.g. a dropped import statement whose consumers only fire when the
+    module initializes at runtime.
+
+    If `live_source` is given, bind-mount it over `mount_target` so the
+    container sees the latest port code (not what's baked into the image).
+
+    Return (ok, error_tail) where error_tail is trimmed stderr on failure.
+    """
+    mount_arg = ""
+    if live_source:
+        mount_arg = f"-v {live_source}:{mount_target}"
+    remote_cmd = (
+        f"docker run --rm {mount_arg} "
+        f"-w {mount_target} "
+        f"{image} "
+        f"python3 -c 'import {package}; print(\"OK:\", {package}.__name__)'"
+    )
+    ssh_cmd = [
+        "ssh", "-p", ssh_port, "-o", "ConnectTimeout=15",
+        f"{ssh_user}@{ssh_host}", remote_cmd,
+    ]
+    try:
+        result = subprocess.run(
+            ssh_cmd, capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode == 0 and "OK:" in result.stdout:
+            return (True, "")
+        # Trim noise from stderr (Authorized users banner, docker warnings)
+        stderr_lines = [
+            l for l in (result.stderr or "").splitlines()
+            if l.strip()
+            and "Authorized users" not in l
+            and "All activities" not in l
+            and "WARNING: Published ports" not in l
+        ]
+        return (False, "\n".join(stderr_lines[-30:]) or result.stdout[-800:])
+    except subprocess.TimeoutExpired:
+        return (False, "container dry-import timed out after 120s")
+    except FileNotFoundError:
+        return (False, "ssh binary not found on this host")
 
 
 def find_edited_py_files(edited_paths: list[str]) -> list[Path]:
@@ -97,6 +150,36 @@ def main() -> int:
         help="Python binary to use for dry-import (default: current interpreter)"
     )
     ap.add_argument(
+        "--container-import-image", default=None,
+        help=(
+            "When set, run the dry-import INSIDE a container on A3 using this "
+            "image tag. Catches import-time errors that bypass local py_compile "
+            "(e.g. dropped imports whose consumers only fire at module init). "
+            "Implies SSH to A3. Does NOT replace local --import-package — use "
+            "both for belt-and-suspenders."
+        ),
+    )
+    ap.add_argument(
+        "--container-import-live-source", default=None,
+        help="Host path to bind-mount at --container-import-mount during dry-import (to pick up freshly edited source instead of what's baked in the image).",
+    )
+    ap.add_argument(
+        "--container-import-mount", default="/opt/easyr1",
+        help="Mount point inside container for --container-import-live-source (default /opt/easyr1)",
+    )
+    ap.add_argument(
+        "--ssh-host", default=os.environ.get("A3_HOST", "115.190.166.102"),
+        help="A3 SSH host for --container-import-image",
+    )
+    ap.add_argument(
+        "--ssh-port", default=os.environ.get("A3_PORT", "443"),
+        help="A3 SSH port",
+    )
+    ap.add_argument(
+        "--ssh-user", default=os.environ.get("A3_USER", "root"),
+        help="A3 SSH user",
+    )
+    ap.add_argument(
         "--report", default=None,
         help="Write JSON report to path (for PROGRESS.md citation)"
     )
@@ -122,6 +205,12 @@ def main() -> int:
     report = {
         "py_compile": {"checked": 0, "failures": []},
         "dry_import": {"package": args.import_package, "ok": None, "error": None},
+        "container_dry_import": {
+            "package": args.import_package,
+            "image": args.container_import_image,
+            "ok": None,
+            "error": None,
+        },
     }
     exit_code = 0
 
@@ -140,14 +229,40 @@ def main() -> int:
             exit_code = 1
 
     if args.import_package and exit_code == 0:
-        print(f"\ndry-import: `python -c 'import {args.import_package}'`...")
+        print(f"\ndry-import (local): `python -c 'import {args.import_package}'`...")
         ok, err = dry_import(args.import_package, python_bin=args.python_bin)
         report["dry_import"]["ok"] = ok
         report["dry_import"]["error"] = err.strip() if not ok else None
         if not ok:
-            print(f"\n❌ dry-import FAILED for package '{args.import_package}':")
-            # trim error to last ~20 lines
-            err_tail = "\n".join(err.strip().splitlines()[-20:])
+            # Local dry-import is best-effort — on orchestrator host the full
+            # runtime stack (torch_npu etc.) isn't installed, so local failures
+            # are often "numpy missing" / "torch_npu missing" noise, not real
+            # regressions. Only escalate if --container-import-image is NOT
+            # provided (that's the authoritative check).
+            if not args.container_import_image:
+                print(f"\n❌ local dry-import FAILED for package '{args.import_package}':")
+                err_tail = "\n".join(err.strip().splitlines()[-20:])
+                print(err_tail)
+                exit_code = 2
+            else:
+                print(f"  (local dry-import failed — expected when orchestrator host lacks torch_npu etc. Deferring to container dry-import.)")
+
+    if args.container_import_image and args.import_package and exit_code == 0:
+        print(f"\ncontainer dry-import: docker run {args.container_import_image} python3 -c 'import {args.import_package}'")
+        ok, err = container_dry_import(
+            args.import_package,
+            image=args.container_import_image,
+            ssh_host=args.ssh_host,
+            ssh_port=args.ssh_port,
+            ssh_user=args.ssh_user,
+            live_source=args.container_import_live_source,
+            mount_target=args.container_import_mount,
+        )
+        report["container_dry_import"]["ok"] = ok
+        report["container_dry_import"]["error"] = err.strip() if not ok else None
+        if not ok:
+            print(f"\n❌ container dry-import FAILED for '{args.import_package}' in {args.container_import_image}:")
+            err_tail = "\n".join(err.strip().splitlines()[-30:])
             print(err_tail)
             exit_code = 2
 
