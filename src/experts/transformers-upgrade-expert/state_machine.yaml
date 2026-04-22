@@ -1,0 +1,170 @@
+# transformers-upgrade workflow state machine — canonical spec.
+#
+# Read by the workflow critic at runtime. Any change here MUST be mirrored in
+# SKILL.md.
+
+version: 1
+schema_version: "0.1"
+workflow_name: transformers-upgrade
+stage: 0
+last_updated: "2026-04-22"
+
+global_invariants:
+
+  - id: G1
+    description: "Orchestrator MUST NOT directly Edit files under upstream/<consumer>/. Worker is the only actor allowed to touch Dockerfile.npu-* and EasyR1 backcompat-shim files."
+    check: "PreToolUse on Edit: path matching upstream/<consumer>/(verl|Dockerfile|requirements*|examples)/ is rejected unless $CLAUDE_AGENT_NAME == 'transformers-upgrade-worker'"
+    rationale: "Orchestrator editing worker-owned paths bypasses Stop-hook enforcement. Same failure mode as NPU-OPS-010."
+    severity: BLOCKING
+
+  - id: G2
+    description: "Port/shim code MUST pass static checks (py_compile + dry-import of the consumer's top-level package, e.g. verl) before any phase advances past code-gen."
+    check: "Stop hook on transformers-upgrade-worker: invoke scripts/static_check.py on all .py files edited this session + dry-import <caller-package>. Reject if SyntaxError or ImportError."
+    rationale: "Round 2 easyr1 cold-drive produced invalid Python past a shallow build check; mechanical py_compile catches the class of hallucination errors."
+    severity: BLOCKING
+
+  - id: G3
+    description: "Any 'validated' / 'PASS' / 'green' language in agent artifacts MUST be backed by (a) the image tag for which the claim holds + (b) a concrete log file path + (c) a numeric entropy_loss value in the TARGET IMAGE's baseline band (NOT the source image's band — they differ)."
+    check: "Stop hook: grep PROGRESS/RESULTS for claim keywords; if present, require log path (exists) + entropy_loss numeric (inside target_band). Conflating v1 band with v2 band rejects."
+    rationale: "Largest silent-failure mode: applying v1 numerics gate to a v2 smoke will always pass (1.275 < 1.34) or always fail depending on config. Band must match target image."
+    severity: BLOCKING
+
+phases:
+
+  P0_parse_args:
+    order: 1
+    description: "Parse CLI, resolve source/target images, consumer repo/ref, session tag, A3 env"
+    preconditions: []
+    required_actions:
+      - "Determine SOURCE_IMAGE (default: v1 verl-8.5.0-a3)"
+      - "Determine TARGET_IMAGE (required, no default)"
+      - "Determine UPSTREAM_CONSUMER (default: EasyR1)"
+      - "Determine UPSTREAM_REF (default: last-known-green ref on source image)"
+      - "Determine SESSION_TAG"
+      - "Create workspace/transformers-upgrade-{SESSION_TAG}/"
+    required_artifacts:
+      - path: "workspace/transformers-upgrade-{SESSION_TAG}/PROGRESS.md"
+        must_exist: true
+        content_must_contain:
+          - "MODE:"
+          - "SOURCE_IMAGE:"
+          - "TARGET_IMAGE:"
+          - "UPSTREAM_CONSUMER:"
+          - "UPSTREAM_REF:"
+    invariants:
+      - "SOURCE_IMAGE != TARGET_IMAGE (a self-upgrade is a no-op)"
+    prohibited_actions: []
+    next: [P1_image_inspect]
+
+  P1_image_inspect:
+    order: 2
+    description: "Inspect target image pip-freeze + triton integrity; diff vs source image to produce the backcompat-break candidate list"
+    preconditions: [P0_parse_args]
+    required_actions:
+      - "Pull TARGET_IMAGE via docker (prefer quay.nju.edu.cn mirror when quay.io slow — NPU-OPS-006)"
+      - "docker create + copy /usr/local/python*/lib/python*/site-packages to inspect installed packages"
+      - "Pip freeze both source and target images; diff the package versions"
+      - "Check triton-ascend integrity on target (NPU-BUG-001 recurs across images)"
+      - "Check for upstream triton pollution on target (NPU-BUG-004 recurs)"
+      - "Record into knowledge/images/<target-slug>.md"
+    required_artifacts:
+      - path: "workspace/transformers-upgrade-{SESSION_TAG}/image-diff.md"
+        must_exist: true
+        content_must_contain:
+          - "transformers:"
+          - "vllm:"
+          - "torch_npu:"
+      - path: "knowledge/images/<target-slug>.md"
+        must_exist: true
+    invariants: []
+    prohibited_actions:
+      - "Skipping the triton-ascend integrity check (NPU-BUG-001 silently breaks build)"
+    next: [P2_upstream_branch]
+
+  P2_upstream_branch:
+    order: 3
+    description: "Checkout consumer repo at UPSTREAM_REF; create ascend-upg-{SESSION_TAG} branch"
+    preconditions: [P1_image_inspect]
+    required_actions:
+      - "cd upstream/<consumer> && git checkout $UPSTREAM_REF"
+      - "git checkout -b ascend-upg-{SESSION_TAG}"
+      - "Record the baseline smoke result on SOURCE_IMAGE (as the thing we must not regress) — pulled from SMOKE_BASELINE.md"
+    required_artifacts: []
+    invariants:
+      - "upstream checkout matches UPSTREAM_REF"
+    prohibited_actions:
+      - "Reading any branch listed in OL-03 denylist (ascend-port*, round{3,4}-* for this expert — but ascend-port-transformers-upgrade* IS this expert's own prior art, ALLOWED)"
+    next: [P3_worker]
+
+  P3_worker:
+    order: 4
+    description: "Spawn transformers-upgrade-worker → Phase A/B/C/D internal fix loop"
+    preconditions: [P2_upstream_branch]
+    required_actions:
+      - "Spawn Agent(subagent_type=Explore, brief=agent.md + env)"
+      - "Worker exits via Stop hook enforcing G2"
+      - "Read worker's PROGRESS.md handoff"
+    required_artifacts:
+      - path: "workspace/transformers-upgrade-{SESSION_TAG}/analysis.md"
+        must_exist: true
+      - path: "workspace/transformers-upgrade-{SESSION_TAG}/port-branch-commits.log"
+        must_exist: true
+      - path: "workspace/transformers-upgrade-{SESSION_TAG}/static-check-report.json"
+        must_exist: true
+        content_must_contain: ["py_compile"]
+      - path: "workspace/transformers-upgrade-{SESSION_TAG}/PROGRESS.md"
+        content_must_contain: ["Handoff:"]
+    invariants:
+      - "All edited .py files pass py_compile (G2)"
+      - "dry-import <consumer-package> succeeds (G2)"
+      - "Docker image tag unique per session (OL-04)"
+      - "Backcompat with SOURCE_IMAGE preserved (re-smoke on source after shims → still PASS in source band)"
+    prohibited_actions:
+      - "Claiming validation without target-image-band numerics (G3)"
+      - "Orchestrator Edit to consumer paths (G1)"
+    next: [P4_validation_smoke]
+
+  P4_validation_smoke:
+    order: 5
+    description: "Run V1.4-equivalent validation smoke on the new image; assert entropy_loss in target-image baseline band"
+    preconditions: [P3_worker]
+    required_actions:
+      - "Chip precheck (OL-05); OL-05b: use 2 chips (V1.4 min)"
+      - "Invoke scripts/smoke_validate.sh with target_band from SMOKE_BASELINE.md §target-image"
+      - "Record log path + entropy_loss in PROGRESS.md"
+    required_artifacts:
+      - path: "workspace/transformers-upgrade-{SESSION_TAG}/validation-smoke.md"
+        must_exist: true
+        content_must_contain:
+          - "step1_entropy_loss:"
+          - "target_image_band:"
+          - "source:"  # jsonl or stdout grep
+    invariants:
+      - "Step-1 entropy_loss in TARGET image's band (NOT source's band — G3)"
+      - "Evidence: log file path + entropy_loss numeric"
+    prohibited_actions:
+      - "Using source image's baseline band (v1 0.94-1.04) on a target image run"
+      - "Skipping chip precheck"
+    next: [P5_report]
+
+  P5_report:
+    order: 6
+    description: "Final report + cleanup + handoff to caller"
+    preconditions: [P4_validation_smoke]
+    required_actions:
+      - "Write RESULTS.md with provenance table + handoff payload JSON"
+      - "Run scripts/cleanup_session.sh — default behavior: preserve image (orchestrator needs to pass via --reuse-image to easyr1-expert)"
+      - "Classify: CLOSED | PARTIAL | FAILED"
+    required_artifacts:
+      - path: "workspace/transformers-upgrade-{SESSION_TAG}/RESULTS.md"
+        must_exist: true
+        content_must_contain:
+          - "handoff_payload:"
+          - "Cleanup:"
+          - "Closure classification:"
+    invariants:
+      - "CLOSED classification requires every artifact's produced_by ∈ {transformers-upgrade-worker, orchestrator, user-provided} (OL-09)"
+      - "Cleanup field present (OL-04b); for this expert default is 'partial (image preserved for handoff)'"
+    prohibited_actions:
+      - "Deleting the validated image before handoff back to caller (the caller expects to --reuse-image it)"
+    next: []  # terminal
