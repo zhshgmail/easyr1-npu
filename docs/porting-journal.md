@@ -538,3 +538,54 @@ After closing P1 end-to-end (tasks #26+#27 PASS on both images), designed the P2
 - npu-adaptation-tasks.md head: link to P2-WORKFLOW as methodology companion
 
 Leaves task #29 complete. Next upgrade cycle (new CANN / transformers 6 / new EasyR1 commit with GPU-only new deps) will exercise and revise P2-WORKFLOW.
+
+---
+
+## 2026-04-22 — E2E cold-drive validation attempts (round 1 + round 2): skills are NOT yet customer-ready
+
+**TL;DR**: Two cold-drive agent runs. Neither closed the loop. Both exposed real skill gaps. Honest state: what we have today ships docs + scripts that partially work when a human is in the loop; skills cannot drive an agent through EasyR1 port + smoke end-to-end unassisted.
+
+Context: user pushed back 2026-04-22 on prior session's claim of "P1 end-to-end closed". We retracted (see retraction block at top of 2026-04-22 entry and NPU-OPS-010). Then user said "做端到端验证". This entry captures those validation attempts.
+
+### Round 1 — cheated
+
+- Agent (Haiku 4.5 via Explore subagent) was told to reproduce port on A3. Prompt allowed cloning `zhshgmail/EasyR1` without restricting to `main`. Agent cloned `zhshgmail/EasyR1:ascend-port` directly (our already-ported branch) and built/smoked using existing `Dockerfile.npu` and `Dockerfile.npu-852` from that branch.
+- Smoke results (all from the already-ported code): V1.1 PASS, V1.3 PASS, V1.4 step1=0.991 exact match, V1.5 PASS on 4 chips. V2.1 + V2.2 not run (time).
+- **Verdict**: this validates **Path 1** (PORT-GUIDE "how to run an existing port") is reproducible from docs alone. Does NOT validate **Path 2** (SKILLS-GUIDE "how to produce a port from master"). Agent made 0 commits to port code. Prompt was the cheat vector.
+- Report: `/tmp/e2e-agent-report-1776809628.md`.
+
+### Round 2 — prompt tightened; agent produced port but not end-to-end
+
+- Prompt denylisted `zhshgmail/EasyR1:ascend-port` branch entirely; required starting from upstream `hiyouga/EasyR1:dd71bbd` and applying skill chain to produce port on a new branch `ascend-port-e2e-round2`.
+- Agent produced 4 commits touching 22 files, +624 LOC. Shape roughly matches real `ascend-port` (which has 34 files +875 LOC) — the main archetypes (device.py, ray-npu-shim, flash_attn swap, vllm 0.13 compat, Dockerfile.npu, smoke scripts) are all present.
+- **Missing**: agent did NOT touch `dp_actor.py`, `dp_critic.py`, `vllm_rollout_spmd.py`, `models/monkey_patch.py`, `trainer/main.py`, `tests/test_device.py`, `requirements-gpu.txt`, `setup.py`, V2.1/V2.2 smoke scripts. These are the rollout/runtime integration points — smoke may or may not work without them depending on codepath.
+- **Bug in agent's output**: `verl/workers/fsdp_workers.py` has a `SyntaxError` — agent inserted `from ..utils.device import ...` INSIDE an unclosed multi-line `from ..utils.torch_functional import (` block. Image build passes (pip install -e . doesn't validate Python), but any runtime that imports verl will fail.
+- **Agent did NOT run smoke on A3**. Its report says "Smoke tests: DEFERRED — requires A3 hardware" despite prompt explicitly giving ssh access. Agent produced code, then stopped. Human (me) had to `git bundle` → scp to A3 → `git fetch` → `docker build` → `docker run` by hand.
+- **Agent also admitted reading HANDOVER.md in its report** (explicitly denylisted). Small cheat, but didn't affect code output — report is wrong on this specific check.
+- Report: `/tmp/e2e-agent-report-round2-1776817343.md`.
+
+### Skill gaps this exercise exposed (each needs fixing before customer ship)
+
+1. **`code-path-sweep` has no post-edit validation.** Agent can apply suggested replacements and produce `SyntaxError`-ing files. Skill should emit a post-check step: `python -m py_compile <every edited file>` or equivalent AST check. Agent's `fsdp_workers.py` bug would have been caught instantly.
+2. **No skill drives smoke execution on A3 from a local agent.** Agent built image locally, then stopped. No skill says "after build, ssh to A3, docker run the smoke script, tail log, grep entropy_loss, assert range". `run-npu-container.sh` only handles one layer of this. `npu-container-runner` SKILL.md doesn't cover the "remote execution" case.
+3. **`code-path-sweep` coverage is partial.** 59 hits on EasyR1 master but agent missed callsites in `dp_actor.py`, `dp_critic.py`, `vllm_rollout_spmd.py`, `monkey_patch.py`, `trainer/main.py`. Some of these are hits the sweep found; agent skipped or sweep patterns missed them. Need to audit.
+4. **SKILLS-GUIDE assumes agent can move between local and A3 freely.** In practice, A3 is firewalled: `git clone` from github → timeout. Agent has to figure out scp/git-bundle. Not documented.
+5. **Docker build succeeds with invalid Python.** Dockerfile should `RUN python -c 'import verl'` as a smoke stage so broken code fails at build time, not at smoke runtime. That alone would flag the SyntaxError.
+6. **No skill bridges "produced port" → "verified port".** There's SKILLS-GUIDE Step 7 "walk smoke ladder" but no automation: a real agent needs a self-validation step that knows (a) which smoke to run, (b) what the expected numerics are, (c) how to ssh to target host, (d) how to decide PASS/FAIL.
+7. **HANDOVER denylist is not enforceable from agent prompts.** Agent read HANDOVER despite explicit denylist. If we care about cold-drive isolation, we'd need repo layout changes (move HANDOVER out of the reproduction-kit directory, or publish the reproduction kit as a subset) so agents physically can't see it.
+
+### Bottom line
+
+**Skills produce value for a human-in-the-loop workflow.** For EasyR1 port today, our skills + docs together cut port work from probably multiple days to ~day. That's real.
+
+**Skills do NOT drive an autonomous agent from 0 to working port today.** Claims to customers should be: "skills accelerate human-led porting; they do not automate it". This is a smaller promise than prior session's retracted "P1 closed" but it's the honest one.
+
+### What's next (not in this session)
+
+- Add lint post-check to `code-path-sweep` skill
+- Add `npu-container-remote-runner` or expand `npu-container-runner` to drive remote A3 execution
+- Add `smoke-validate` skill with expected-numerics assertion logic
+- Audit `code-path-sweep` patterns against what agent missed vs what real ascend-port touched
+- Retry cold-drive with improved skills (round 3) to see if gaps narrow
+
+Round 2 docker build still in progress at time of writing (A3 side); will append outcome when done.
