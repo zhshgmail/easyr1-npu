@@ -141,6 +141,64 @@ all_img_pkgs=$(
   | grep -v '^$' || true
 )
 
+# Also build a pkg→version map for installed packages (for version-constraint
+# override below). Emit "name=version" pairs.
+img_pkg_versions=$(
+  awk '
+      # Turn on parsing whenever we see any "## section heading" of interest.
+      # Match liberally so new section titles (Core ML / RL stack, EasyR1-relevant,
+      # EasyR1-required packages absent, Full pip freeze, secondary deps, etc.)
+      # all contribute package=version pairs.
+      /^## / {
+        # Turn parsing ON for any known-relevant section heading. awk does not
+        # have case-insensitive regex match, so enumerate the cases.
+        if ($0 ~ /pip freeze/ || $0 ~ /Pip freeze/ ||
+            $0 ~ /Core ML/ || $0 ~ /EasyR1/ ||
+            $0 ~ /stack/ || $0 ~ /Stack/ ||
+            $0 ~ /deps/ || $0 ~ /Dependencies/ ||
+            $0 ~ /packages/ || $0 ~ /Packages/) {
+          any_sec = 1
+        } else {
+          any_sec = 0
+        }
+        next
+      }
+      any_sec && /^\|/ {
+        line = $0
+        sub(/^\|[[:space:]]*/, "", line)
+        n = split(line, parts, /[[:space:]]*\|[[:space:]]*/)
+        if (n >= 2) {
+          name = tolower(parts[1])
+          ver  = parts[2]
+          # Strip markdown bold/italic + backticks
+          gsub(/\*/, "", name)
+          gsub(/`/, "", name)
+          gsub(/_/, "-", name)
+          gsub(/\*/, "", ver)
+          gsub(/`/, "", ver)
+          # Skip header row + separator row
+          if (name == "package" || name ~ /^-+$/) next
+          if (name ~ /^[a-z0-9][a-z0-9.-]*$/ && ver ~ /^[0-9]/) {
+            # Only take the number-starting prefix so "4.57.6 (release)" → "4.57.6"
+            match(ver, /^[0-9][0-9a-zA-Z.+-]*/)
+            if (RSTART > 0) ver = substr(ver, RSTART, RLENGTH)
+            print name "=" ver
+          }
+        }
+      }
+      any_sec && /^[a-zA-Z0-9_.-]+==/ {
+        line = $0
+        split(line, parts, "==")
+        name = tolower(parts[1])
+        ver  = parts[2]
+        gsub(/_/, "-", name)
+        print name "=" ver
+      }
+  ' "$IMG" \
+  | sort -u \
+  | grep -v '^$' || true
+)
+
 # -----------------------------------------------------------------------------
 # Walk requirements.txt, classify each dep.
 # -----------------------------------------------------------------------------
@@ -149,14 +207,48 @@ declare -A comment
 
 classify_dep() {
   local raw="$1"
-  # Strip version pins: "foo>=1.0,<2.0" -> "foo"; extras: "ray[default]" -> "ray"
+  # Strip extras: "ray[default]" -> "ray"; keep the version-constraint part
+  # separately so we can check it against the image's installed version.
+  local pkg_with_constraint
+  pkg_with_constraint=$(echo "$raw" | sed -E 's/[[:space:]]//g; s/\[[^]]*\]//')
   local pkg
-  pkg=$(echo "$raw" | sed -E 's/[[:space:]]//g; s/\[.*\]//; s/[<>=!~].*$//')
+  pkg=$(echo "$pkg_with_constraint" | sed -E 's/[<>=!~].*$//')
+  local constraint
+  constraint=$(echo "$pkg_with_constraint" | sed -E 's/^[a-zA-Z0-9._-]+//')  # "" or ">=5.0.0" etc.
   # Normalize
   local norm
   norm=$(echo "$pkg" | tr '[:upper:]_' '[:lower:]-')
   # Skip comments / blank
   [[ -z "$norm" || "$norm" =~ ^# ]] && return
+
+  # Version-constraint check (new 2026-04-22 E2E finding): if the req carries
+  # a constraint AND the image has the package installed, verify the image's
+  # version satisfies the constraint. Unsatisfiable → override to D regardless
+  # of PACKAGE_RULES.
+  if [[ -n "$constraint" ]]; then
+    local img_ver
+    img_ver=$(echo "$img_pkg_versions" | { grep -E "^${norm}=" || true; } | head -1 | cut -d= -f2-)
+    if [[ -n "$img_ver" ]]; then
+      local satisfied
+      satisfied=$(python3 -c "
+import re, sys
+try:
+    from packaging.version import Version
+    from packaging.specifiers import SpecifierSet
+    s = SpecifierSet('$constraint')
+    v = Version('$img_ver')
+    print('1' if v in s else '0')
+except Exception:
+    print('?')
+" 2>/dev/null)
+      if [[ "$satisfied" == "0" ]]; then
+        verdict[$norm]=D
+        comment[$norm]="Version conflict: consumer requires ${constraint}, image ships ${norm}==${img_ver}. Requires an upgrade-expert to produce an image with a satisfying version. Do NOT use PACKAGE_RULES tier; version mismatch overrides."
+        return
+      fi
+      # satisfied or unknown falls through to normal rule-based classification
+    fi
+  fi
 
   # 1. Check explicit rules
   local rule

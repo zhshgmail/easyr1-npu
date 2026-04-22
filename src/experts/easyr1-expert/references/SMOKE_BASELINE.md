@@ -74,6 +74,32 @@ Use `examples/qwen2_0_5b_math_grpo_npu_smoke.sh` from the `ascend-port` branch
 as the ground truth. Copy it verbatim — changes require re-establishing
 baseline (empirical run + journal entry).
 
+## Smoke script preamble — MUST include NPU_USER fallback (EC-14 prevention)
+
+Every smoke script (V1.1 / V1.3 / V1.4) must start with:
+
+```bash
+# EC-14 prevention: container's $USER is 'nobody', not the host NPU user.
+# Auto-discover NPU_USER so MODEL_PATH resolves to /data/z00637938/... not /data/nobody/...
+NPU_USER="${NPU_USER:-$(ls /data 2>/dev/null | grep -v '^$' | head -1)}"
+MODEL_PATH="${MODEL_PATH:-/data/${NPU_USER}/models/Qwen2-0.5B-Instruct}"
+```
+
+EC-14 has now been observed in round 3, round 4, wet-run, and E2E round 5.
+It is the #1 recurring V1.3 failure signature. If the template lacks the
+fallback, every new cold-drive agent has to re-discover it. Bake it in.
+
+For V1.3 Python smokes (`scripts/smoke_v13_rollout.py`), the Python
+equivalent at the top of `main()`:
+
+```python
+import os
+NPU_USER = os.environ.get("NPU_USER") or next(
+    (d for d in os.listdir("/data") if d.strip()), "z00637938"
+)
+MODEL_PATH = os.environ.get("MODEL_PATH") or f"/data/{NPU_USER}/models/Qwen2-0.5B-Instruct"
+```
+
 ## How to use these in assertions
 
 `scripts/smoke_validate.sh` V1.4+ first reads `experiment_log.jsonl` (written
