@@ -72,13 +72,13 @@ LOG_DIR="${LOG_DIR:-/tmp/${NPU_USER}/easyr1-logs}"
 case "$RUNG" in
   V1.1)
     SMOKE_CMD="python3 /opt/easyr1/scripts/smoke_v11_device.py"
-    DEFAULT_CHIPS="0,1"
+    DEFAULT_CHIPS="0"        # OL-05b: 1 chip sufficient for device smoke
     EXPECTED_MARKER="ALL SMOKE CHECKS PASSED"
     ASSERT_TYPE="marker"
     ;;
   V1.3)
     SMOKE_CMD="python3 /opt/easyr1/scripts/smoke_v13_rollout.py"
-    DEFAULT_CHIPS="0,1"
+    DEFAULT_CHIPS="0"        # OL-05b: 1 chip sufficient for single-prompt rollout
     EXPECTED_MARKER="V1.3 ROLLOUT SMOKE PASSED"
     ASSERT_TYPE="marker"
     ;;

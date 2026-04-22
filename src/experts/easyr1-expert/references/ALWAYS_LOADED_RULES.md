@@ -70,17 +70,35 @@ bash src/experts/easyr1-expert/scripts/static_check.py --files <edited-files> --
 
 使用已存在 tag = 走捷径 = 绕开了你应该自己 build 出来的代码路径。
 
-### OL-05: A3 是共享 host，先看 chip 再抢
+### OL-05: A3 是共享 host，任何 A3 动作前都先看 chip 再抢
 
-**前置步骤**：跑 smoke 前 **必须**：
+**前置步骤**：**任何**要占 NPU 的 A3 动作之前（smoke、docker run 挂 davinci、ray start 等）**必须**：
 
 ```bash
-ssh -p 443 root@$A3_HOST "npu-smi info | head -20"
+ssh -p 443 root@$A3_HOST "npu-smi info | head -30"
+# 以及针对打算使用的 npu：
+ssh -p 443 root@$A3_HOST 'for i in 0 1 2 3; do npu-smi info -t proc-mem -i $i 2>&1 | grep -E "Process id|Chip ID"; done'
 ```
 
-确认打算用的 chips AICore=0% + HBM 很低。不抢别人正在用的 chip（`Process id: xxx` 不为空的行）。
+确认打算用的 chips AICore=0% + HBM 接近静态（2-3GB）+ 没有 `Process id:` 行。发现非 idle → 停手，不抢，报给 user。
+
+**不是仅限 smoke**：也包括 `deploy_to_a3.sh` 触发 docker build（build 不占 chip 但验证阶段会）、`run-npu-container.sh`（启动即挂 chip）、任何 `--device=/dev/davinciN` 的 docker run。
 
 反例：2026-04-20..21 连续几天踩过"别人跑着的 Ray raylet 锁了 UDA namespace，我们容器启动失败"的坑（NPU-OPS-009）。
+
+### OL-05b: 用最少数量的 NPU
+
+**规则**：选 chip 数量时用"跑得通的最小"，不是"刚好能用的最大"。
+
+- **V1.1 device smoke**：1 chip 够了（`--chips 0`）。不要默认 2 chip。
+- **V1.3 rollout smoke**：1 chip 够了（单 prompt rollout）。不要默认 2 chip。
+- **V1.4 2-chip GRPO**：2 chip 是这一步的 baseline 定义（DP=2），不能再减。
+- **V1.5/V2.2 4-chip**：Stage 0 **默认跳过**。只在 user 明确要求时跑。
+- **V2.1 padding_free**：2 chip（和 V1.4 同），Stage 0 可选。
+
+共享 host 上占 4 chip 跑非必要测试 = 侵占他人配额。默认只跑必须 rung（V1.1+V1.3+V1.4），共占 2 chip 峰值。
+
+Worker 在 Phase D 入口必须在 PROGRESS.md 记录 `NPU-usage-plan: <rung → chip-count>` 给 orchestrator 审核。
 
 ### OL-06: A3 github 不通（GFW），用 scp / bundle 同步代码
 
