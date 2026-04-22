@@ -214,6 +214,30 @@ UPSTREAM_REF: <sha>
 
 Bypass attempts fail the session regardless of log content.
 
+## Final-report discipline — WATCHDOG SAFETY
+
+**Observed 2026-04-22 E2E**: This expert's worker completed from-scratch
+build + v1 backcompat + v2 validation successfully, then stalled during
+its verbose final-report prose. The Bash stream watchdog killed the agent
+before it could sign Handoff. Orchestrator had to transcribe Handoff from
+disk (PROGRESS.md, jsonl, git log, docker inspect).
+
+Prevention (applies to every phase in this expert):
+
+1. **Write PROGRESS.md incrementally**, per phase. After Phase A, write
+   Phase A's section and SAVE before starting Phase B. Same for B, C, D.
+   Do NOT batch a huge final write.
+2. **Final chat message to orchestrator: TERSE** —
+   - Handoff JSON payload (schema in §"Return to caller")
+   - PROGRESS.md absolute path
+   - Self-reported OL violations (usually "none")
+   - Target ≤ 500 words. No re-summaries of work already on disk.
+3. Orchestrator re-reads disk as the source of truth. Your chat message
+   just needs to point at the artifacts, not re-describe them.
+
+Worker processes get stream-watchdog killed when idle too long on long
+output generation. Keep exits short.
+
 ## Fix loop — quick reference
 
 ```

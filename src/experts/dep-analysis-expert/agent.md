@@ -122,6 +122,21 @@ no docker/A3 chip actions). Deterministic: same inputs → same output.
 Worker signed: dep-analysis-worker <ISO-8601-UTC>
 ```
 
+## Final-report discipline — WATCHDOG SAFETY
+
+This expert is typically fast (<5 min, no A3 chip binding), so watchdog
+stalls are less common than for port/upgrade experts — but the discipline
+still applies.
+
+1. Write PROGRESS.md + RESULTS.md + task-plan.json + dep-gap-report.md
+   BEFORE the final chat message. Disk is the source of truth.
+2. Final chat message to orchestrator: **return the contents of
+   task-plan.json verbatim** + PROGRESS.md path + OL violations
+   self-reported. Target ≤ 300 words. No re-description of the
+   classification work — that's already in RESULTS.md.
+3. If you find yourself typing a long prose summary: stop, save what
+   you have on disk, return the JSON + paths only.
+
 ## See also
 
 - `SKILL.md` / `state_machine.yaml` / `README.md`

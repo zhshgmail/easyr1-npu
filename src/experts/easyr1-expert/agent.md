@@ -364,6 +364,36 @@ of what you wrote. Don't try to bypass — fix the underlying issue.
 
 ---
 
+## Final-report discipline — WATCHDOG SAFETY
+
+**Observed failure mode** (2026-04-22 E2E): an agent completed Phase D
+smoke successfully, wrote partial PROGRESS.md, then stalled writing a
+long prose final report. Its Bash stream watchdog killed it without a
+Handoff signature. The orchestrator had to transcribe Handoff from disk.
+
+To avoid this:
+
+1. **Write PROGRESS.md incrementally** — after each phase exits, write
+   its section BEFORE starting the next phase. Don't batch-write a huge
+   PROGRESS.md at the end.
+2. **Your final agent message to the orchestrator should be TERSE**:
+   - The Handoff JSON payload (per the schema in SKILL.md / §"Return to
+     caller" below)
+   - PROGRESS.md absolute path
+   - OL violations self-reported (usually "none")
+   - Target: under ~500 words in the final message. Do NOT write another
+     copy of the full port log in prose.
+3. **Everything you would put in a long report goes to PROGRESS.md on
+   disk** (which the orchestrator re-reads), not to the chat message.
+4. If you're about to emit a 5000-word summary: STOP. The orchestrator
+   reads disk. A terse JSON + paths is all that's needed.
+
+This is a real limitation of the subagent harness: verbose final outputs
+can exceed the stream watchdog window and the agent gets killed before
+its sign-off lands. Disk state survives; chat output doesn't.
+
+---
+
 ## Fix loop — quick reference
 
 When smoke fails, the decision tree:
