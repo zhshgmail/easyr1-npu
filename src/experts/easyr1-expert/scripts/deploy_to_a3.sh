@@ -5,10 +5,17 @@
 # Usage:
 #   deploy_to_a3.sh --branch <port-branch> --image-tag <image-tag> [options]
 #
-# Required flags:
-#   --branch <NAME>     git branch on zhshgmail/EasyR1 to deploy (e.g. ascend-port-round3)
-#   --image-tag <TAG>   docker image tag to build (MUST be unique per session;
-#                       script rejects easyr1-npu:ascend-port and :round2 etc.)
+# Required (one of the two):
+#   --image-tag <TAG>     docker image tag to BUILD (MUST be unique per session;
+#                         script rejects easyr1-npu:ascend-port and :round2 etc.)
+#   --reuse-image <TAG>   use pre-existing image on A3 provided by user
+#                         (OL-04 exception: skip build + skip tag-uniqueness check;
+#                         image must already exist on A3 or script errors)
+#
+# Required:
+#   --branch <NAME>       git branch to deploy (e.g. ascend-port-round3)
+#                         still required with --reuse-image: code is still synced
+#                         to A3 for log/editable bind, only docker build is skipped.
 #
 # Optional:
 #   --a3-host <HOST>    default: 115.190.166.102
@@ -16,7 +23,7 @@
 #   --a3-user <USER>    default: root
 #   --npu-user <USER>   default: z00637938 (for /data/$NPU_USER binds)
 #   --base-image <REF>  default: quay.io/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest
-#   --no-build          skip docker build (just sync code)
+#   --no-build          skip docker build (just sync code; image must pre-exist)
 #   --no-static-check   skip local static_check (NOT recommended)
 #
 # Workflow:
@@ -51,12 +58,14 @@ BRANCH=""
 IMAGE_TAG=""
 DO_BUILD=1
 DO_STATIC_CHECK=1
+REUSE_IMAGE=0   # OL-04 exception: --reuse-image = user-provided, skip build + skip tag uniqueness
 
 # --- parse ---
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --branch)          BRANCH="$2"; shift 2 ;;
     --image-tag)       IMAGE_TAG="$2"; shift 2 ;;
+    --reuse-image)     IMAGE_TAG="$2"; REUSE_IMAGE=1; DO_BUILD=0; shift 2 ;;
     --a3-host)         A3_HOST="$2"; shift 2 ;;
     --a3-port)         A3_PORT="$2"; shift 2 ;;
     --a3-user)         A3_USER="$2"; shift 2 ;;
@@ -70,15 +79,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "$BRANCH" ]]    && { echo "ERROR: --branch required" >&2; exit 2; }
-[[ -z "$IMAGE_TAG" ]] && { echo "ERROR: --image-tag required" >&2; exit 2; }
+[[ -z "$IMAGE_TAG" ]] && { echo "ERROR: --image-tag (or --reuse-image) required" >&2; exit 2; }
 
-# --- OL-04: unique image tag ---
-case "$IMAGE_TAG" in
-  easyr1-npu:ascend-port|easyr1-npu:ascend-port-e2e|easyr1-npu:round2|easyr1-npu-852:drill|easyr1-npu-852:drill-reproduce)
-    echo "ERROR: image tag '$IMAGE_TAG' is reused from past sessions. OL-04 requires unique session-specific tag." >&2
-    exit 4
-    ;;
-esac
+# --- OL-04: unique image tag (skipped when --reuse-image used) ---
+if [[ $REUSE_IMAGE -eq 0 ]]; then
+  case "$IMAGE_TAG" in
+    easyr1-npu:ascend-port|easyr1-npu:ascend-port-e2e|easyr1-npu:round2|easyr1-npu-852:drill|easyr1-npu-852:drill-reproduce)
+      echo "ERROR: image tag '$IMAGE_TAG' is reused from past sessions. OL-04 requires unique session-specific tag." >&2
+      echo "       Pass --reuse-image <TAG> instead if user has explicitly provided this image." >&2
+      exit 4
+      ;;
+  esac
+fi
 
 SSH_CMD="ssh -p $A3_PORT $A3_USER@$A3_HOST"
 
@@ -126,17 +138,32 @@ scp -P "$A3_PORT" "$BUNDLE_PATH" "$A3_USER@$A3_HOST:/tmp/round-deploy.bundle" 2>
 echo "--- A3 git fetch from bundle ---"
 $SSH_CMD "cd /home/$NPU_USER/workspace/easyr1-npu/upstream/EasyR1; git fetch /tmp/round-deploy.bundle $BRANCH:$BRANCH 2>&1 | tail -3; git checkout $BRANCH 2>&1 | tail -3" || exit 5
 
-# --- 5. docker build ---
+# --- 5. docker build (or verify pre-existing when --reuse-image) ---
 if [[ $DO_BUILD -eq 1 ]]; then
   echo "--- docker build ---"
   $SSH_CMD "cd /home/$NPU_USER/workspace/easyr1-npu/upstream/EasyR1; docker build -t $IMAGE_TAG -f Dockerfile.npu . 2>&1 | tail -20" || exit 5
-  # Verify image exists
   IMAGE_ID=$($SSH_CMD "docker images $IMAGE_TAG --format '{{.ID}}'" 2>/dev/null | head -1)
   if [[ -z "$IMAGE_ID" ]]; then
     echo "ERROR: image $IMAGE_TAG not found after build" >&2
     exit 5
   fi
   echo "  built: $IMAGE_ID"
+else
+  # Either --no-build or --reuse-image: image must already exist
+  IMAGE_ID=$($SSH_CMD "docker images $IMAGE_TAG --format '{{.ID}}'" 2>/dev/null | head -1)
+  if [[ -z "$IMAGE_ID" ]]; then
+    if [[ $REUSE_IMAGE -eq 1 ]]; then
+      echo "ERROR: --reuse-image $IMAGE_TAG: image not found on A3. Either user did not pre-provide it, or the tag is wrong." >&2
+    else
+      echo "ERROR: --no-build but image $IMAGE_TAG not found on A3." >&2
+    fi
+    exit 5
+  fi
+  if [[ $REUSE_IMAGE -eq 1 ]]; then
+    echo "  reused user-provided image: $IMAGE_ID  (skipping build)"
+  else
+    echo "  pre-existing image: $IMAGE_ID  (skipping build per --no-build)"
+  fi
 fi
 
 echo "✅ deploy_to_a3 done"

@@ -79,9 +79,17 @@ Expected env vars (orchestrator sets them):
 | `A3_USER` | A3 ssh user | `root` |
 | `NPU_USER` | container user on A3 (for `/data/$NPU_USER`) | `z00637938` |
 | `WORKSPACE` | `workspace/easyr1-port-{SESSION_TAG}/` | derived |
+| `REUSE_IMAGE_TAG` | if set by user, skip Phase C build + use this image tag (OL-04 exception) | unset |
 
 Missing env var → stop and ask orchestrator. Do not guess defaults for
 `SESSION_TAG` — a reused tag = OL-04 violation = `deploy_to_a3.sh` exits 4.
+
+**If user provided an image** via `REUSE_IMAGE_TAG`: Phase A/B still run
+(you still want the fixes in the branch + static_check green). Phase C
+invokes `deploy_to_a3.sh --reuse-image $REUSE_IMAGE_TAG --branch ...`
+which skips the docker build step, validates the image exists, and
+records provenance as `user-provided` (not `easyr1-port-worker`) in
+PROGRESS.md. Phase D runs smoke against the user image.
 
 ---
 
@@ -301,7 +309,35 @@ stuck-signature threshold is hit.
 
 ## Exit protocol
 
-Write to PROGRESS.md:
+**Before writing `Handoff:`**, run cleanup (OL-04b). Regardless of
+done/stuck/fail:
+
+```bash
+# Default: clean everything this session created
+bash $EASYR1_EXPERT_ROOT/scripts/cleanup_session.sh --session-tag $SESSION_TAG
+
+# If user gave you a pre-existing image via REUSE_IMAGE_TAG, whitelist it:
+bash $EASYR1_EXPERT_ROOT/scripts/cleanup_session.sh \
+  --session-tag $SESSION_TAG \
+  --keep-user-provided $REUSE_IMAGE_TAG
+
+# If smoke PASSED and user may want to re-run it manually, preserve the
+# image but drop containers + bundle:
+bash $EASYR1_EXPERT_ROOT/scripts/cleanup_session.sh \
+  --session-tag $SESSION_TAG --preserve-image
+```
+
+Record the result in PROGRESS.md:
+
+```
+Cleanup: clean | partial | skipped <reason>
+```
+
+Only `clean` and `partial` are acceptable — `skipped` requires a concrete
+reason (e.g. "user asked to keep image via --preserve-image" with the
+corresponding flag used).
+
+Then:
 
 ```
 ## Handoff: {done | stuck | @review-fail}
@@ -321,6 +357,7 @@ Worker signed: easyr1-port-worker 2026-04-22T15:30:00Z
 2. G3: any PASS-style claim has an associated log path + entropy_loss.
 3. OL-09: PROGRESS.md has `MODE:`, `EASYR1_REF:`, `TARGET_IMAGE:`, and
    `Handoff:` fields.
+4. OL-04b: PROGRESS.md has `Cleanup:` field with non-empty value.
 
 If hook returns non-zero your whole session is marked FAILED regardless
 of what you wrote. Don't try to bypass — fix the underlying issue.

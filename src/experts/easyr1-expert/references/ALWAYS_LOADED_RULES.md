@@ -70,6 +70,40 @@ bash src/experts/easyr1-expert/scripts/static_check.py --files <edited-files> --
 
 使用已存在 tag = 走捷径 = 绕开了你应该自己 build 出来的代码路径。
 
+**例外**：user 通过 `--reuse-image <TAG>` 明确提供预构建 image 时，skip build，直接用 user 给的 tag。此时 Phase C 仅验证 image 存在（`docker image inspect <TAG>`）+ 记录 image_id 到 PROGRESS.md（标注 `produced_by: user-provided`，不计入 cold-drive build 证据）。
+
+### OL-04b: 每次 session 跑完要清理临时 image/container
+
+**规则**：session 结束前（无论 PASS/FAIL/stuck），清理本 session 创建的临时产物。A3 磁盘是共享的。
+
+**清理对象**：
+- `easyr1-npu:{SESSION_TAG}` 和它的 iter 变种（`easyr1-npu:{SESSION_TAG}-iter1` 等）
+- 本 session 启动的容器（通过 `run-npu-container.sh` 创建的，名称模式 `easyr1-*-{SESSION_TAG}-*` 或时间戳匹配）
+- `/tmp/round-deploy.bundle` 等 scp 中转产物
+
+**不清理**：
+- user 提供的 image（OL-04 例外路径）
+- 基础镜像 `quay.io/ascend/verl:*`
+- 其他 session 留下的 image/container（不是你的就不要删）
+
+**清理方式**（Stop hook 或 `@review-fail` 前）：
+```bash
+# 删除本 session tag 的所有 image
+ssh -p 443 root@$A3_HOST "docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^easyr1-npu:${SESSION_TAG}' | xargs -r docker rmi -f"
+
+# 停+删本 session 启动的容器
+ssh -p 443 root@$A3_HOST "docker ps -a --format '{{.Names}}' | grep ${SESSION_TAG} | xargs -r docker rm -f"
+
+# 临时 bundle
+ssh -p 443 root@$A3_HOST "rm -f /tmp/round-deploy.bundle"
+```
+
+**不要**：`docker system prune` / `docker image prune` 这类泛清理——会删掉别的 session 或 user 持有的资源。只删本 session 打了 tag 的。
+
+Worker 退出前必须在 PROGRESS.md 记录 `Cleanup: {clean|partial|skipped <reason>}`。
+
+### OL-05: A3 是共享 host，任何 A3 动作前都先看 chip 再抢
+
 ### OL-05: A3 是共享 host，任何 A3 动作前都先看 chip 再抢
 
 **前置步骤**：**任何**要占 NPU 的 A3 动作之前（smoke、docker run 挂 davinci、ray start 等）**必须**：

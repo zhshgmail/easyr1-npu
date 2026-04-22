@@ -58,6 +58,27 @@ for field in "MODE:" "EASYR1_REF:" "TARGET_IMAGE:" "Handoff:"; do
   fi
 done
 
+# --- OL-04b: cleanup field must be present and non-empty ---
+# Accept: "Cleanup: clean", "Cleanup: partial", "Cleanup: skipped <reason>".
+# Reject: missing line, or bare "Cleanup: skipped" without a reason.
+CLEANUP_LINE=$(grep -E '^Cleanup:' "$PROGRESS" 2>/dev/null | head -1 || true)
+if [[ -z "$CLEANUP_LINE" ]]; then
+  err "OL-04b violation: PROGRESS.md missing 'Cleanup:' field. Run scripts/cleanup_session.sh."
+  exit 4
+fi
+case "$CLEANUP_LINE" in
+  "Cleanup: clean"*|"Cleanup: partial"*) ;;
+  "Cleanup: skipped "?*) ;;  # skipped WITH reason
+  "Cleanup: skipped"|"Cleanup: skipped "*)
+    err "OL-04b violation: 'Cleanup: skipped' requires a concrete reason after 'skipped'."
+    exit 4
+    ;;
+  *)
+    err "OL-04b violation: 'Cleanup:' value must be 'clean', 'partial', or 'skipped <reason>'. Got: $CLEANUP_LINE"
+    exit 4
+    ;;
+esac
+
 # --- G2: static_check on edited files ---
 # Extract edited files from transcript if available; else scan upstream/EasyR1/verl/
 EDITED_FILES=""
