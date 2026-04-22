@@ -135,8 +135,13 @@ git bundle create "$BUNDLE_PATH" "$BRANCH" ^main 2>&1 | tail -3
 scp -P "$A3_PORT" "$BUNDLE_PATH" "$A3_USER@$A3_HOST:/tmp/round-deploy.bundle" 2>&1 | tail -3 || exit 5
 
 # --- 4. fetch into A3 checkout ---
+# Detach HEAD first so `git fetch bundle $BRANCH:$BRANCH` doesn't refuse when
+# $BRANCH is the currently checked-out branch (previous round's leftover state).
 echo "--- A3 git fetch from bundle ---"
-$SSH_CMD "cd /home/$NPU_USER/workspace/easyr1-npu/upstream/EasyR1; git fetch /tmp/round-deploy.bundle $BRANCH:$BRANCH 2>&1 | tail -3; git checkout $BRANCH 2>&1 | tail -3" || exit 5
+$SSH_CMD "cd /home/$NPU_USER/workspace/easyr1-npu/upstream/EasyR1 && \
+  git checkout --detach 2>&1 | tail -1 && \
+  git fetch --force /tmp/round-deploy.bundle $BRANCH:$BRANCH 2>&1 | tail -3 && \
+  git checkout $BRANCH 2>&1 | tail -3" || exit 5
 
 # --- 5. docker build (or verify pre-existing when --reuse-image) ---
 if [[ $DO_BUILD -eq 1 ]]; then
