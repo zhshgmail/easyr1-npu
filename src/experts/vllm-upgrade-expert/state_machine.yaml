@@ -1,0 +1,113 @@
+# vllm-upgrade workflow state machine.
+
+version: 1
+schema_version: "0.1"
+workflow_name: vllm-upgrade
+stage: 0
+last_updated: "2026-04-22"
+
+global_invariants:
+
+  - id: G1
+    description: "Orchestrator MUST NOT directly Edit consumer files. All vllm-shim edits go through vllm-upgrade-worker."
+    check: "PreToolUse on Edit: block consumer paths unless $CLAUDE_AGENT_NAME == 'vllm-upgrade-worker'"
+    severity: BLOCKING
+
+  - id: G2
+    description: "Shim code passes static_check (py_compile + optional container dry-import of vllm against the target image) before Phase D."
+    check: "Stop hook: static_check.py on edited .py; fail → reject."
+    severity: BLOCKING
+
+  - id: G3
+    description: "Any PASS / green claim cites (a) a log file path AND (b) either the V1.3 rollout marker line or the V1.4 step-1 entropy_loss numeric in the TARGET image's band (via jsonl)."
+    check: "Stop hook greps PROGRESS/RESULTS for claim keywords; require log-path + numeric/marker evidence."
+    severity: BLOCKING
+
+phases:
+
+  P0_parse_args:
+    order: 1
+    required_actions:
+      - "Determine SOURCE_IMAGE / TARGET_IMAGE / TARGET_VLLM_VERSION / UPSTREAM_CONSUMER / UPSTREAM_REF / SESSION_TAG"
+      - "Create workspace/vllm-upgrade-{SESSION_TAG}/"
+    required_artifacts:
+      - path: "workspace/vllm-upgrade-{SESSION_TAG}/PROGRESS.md"
+        content_must_contain: ["MODE:", "SOURCE_IMAGE:", "TARGET_IMAGE:", "UPSTREAM_REF:"]
+    invariants:
+      - "SOURCE_IMAGE != TARGET_IMAGE"
+    next: [P1_image_inspect]
+
+  P1_image_inspect:
+    order: 2
+    description: "Pull source+target pip-freeze, focus on vllm / vllm-ascend / compressed_tensors / xformers / (vllm transitive deps). Emit targeted diff."
+    required_actions:
+      - "Use cached knowledge/images/<slug>.md where available"
+      - "Check target image for NPU-BUG-001 triton-ascend integrity (same workaround as transformers-upgrade)"
+      - "Extract vllm version, vllm-ascend version, and any vllm-subpackage rename/move hints from release notes (WebFetch allowed for upstream CHANGELOG)"
+    required_artifacts:
+      - path: "workspace/vllm-upgrade-{SESSION_TAG}/image-diff.md"
+        content_must_contain: ["vllm:", "vllm_ascend:"]
+    next: [P2_upstream_branch]
+
+  P2_upstream_branch:
+    order: 3
+    required_actions:
+      - "cd upstream/<consumer> && git checkout $UPSTREAM_REF && git checkout -b ascend-vllm-upg-{SESSION_TAG}"
+    invariants:
+      - "upstream checked out at UPSTREAM_REF"
+    prohibited_actions:
+      - "Reading ascend-port* / round{3,4}-* branch content (OL-03)"
+    next: [P3_worker]
+
+  P3_worker:
+    order: 4
+    description: "vllm-upgrade-worker applies known CP-002/CP-004/EC-03 shims + any new rename shims surfaced in P1; verifies VLLMHijack target methods still resolve on new vllm"
+    required_actions:
+      - "Spawn Agent(subagent_type=Explore, brief=agent.md + env)"
+      - "Worker exits via Stop hook"
+    required_artifacts:
+      - path: "workspace/vllm-upgrade-{SESSION_TAG}/analysis.md"
+        must_exist: true
+      - path: "workspace/vllm-upgrade-{SESSION_TAG}/static-check-report.json"
+        must_exist: true
+    invariants:
+      - "All edited .py files pass py_compile (G2)"
+      - "SOURCE backcompat: re-run V1.3 rollout on source image post-shim, still produces coherent output"
+    prohibited_actions:
+      - "Editing outside OL-08 scope (vllm-adjacent files only: vllm_utils.py, vllm_rollout_spmd.py, fsdp_vllm.py)"
+    next: [P4_validation_smoke]
+
+  P4_validation_smoke:
+    order: 5
+    description: "V1.3 rollout smoke (primary — exercises vllm-ascend end-to-end) + V1.4 training smoke (secondary — catches training-path regressions, e.g. weight-sync breakage)"
+    required_actions:
+      - "Chip precheck (OL-05). Use chip 0 for V1.3, chips 0,1 for V1.4 (OL-05b)"
+      - "V1.3 smoke_validate.sh --rung V1.3 --image-tag ... --image-family <family> → marker 'V1.3 ROLLOUT SMOKE PASSED'"
+      - "V1.4 smoke_validate.sh --rung V1.4 --image-family <family>; assert step-1 entropy_loss in target band"
+    required_artifacts:
+      - path: "workspace/vllm-upgrade-{SESSION_TAG}/validation-smoke.md"
+        content_must_contain:
+          - "V1.3 marker"
+          - "V1.4 step1 entropy_loss"
+          - "target_image_band"
+    invariants:
+      - "V1.3 marker must be present (this is the primary vllm smoke)"
+      - "V1.4 step-1 entropy_loss in TARGET image's band — not source's (G3 band discipline)"
+    next: [P5_report]
+
+  P5_report:
+    order: 6
+    required_actions:
+      - "Write RESULTS.md with Handoff payload + provenance"
+      - "cleanup_session.sh --session-tag ... --preserve-image"
+      - "Classify CLOSED | PARTIAL | FAILED"
+    required_artifacts:
+      - path: "workspace/vllm-upgrade-{SESSION_TAG}/RESULTS.md"
+        content_must_contain:
+          - "handoff_payload:"
+          - "Cleanup:"
+          - "Closure classification:"
+    invariants:
+      - "CLOSED requires produced_by ∈ {vllm-upgrade-worker, orchestrator, user-provided}"
+      - "Cleanup 'partial (image preserved)' is the default for this expert (image handoff to caller)"
+    next: []
