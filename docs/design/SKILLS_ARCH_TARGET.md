@@ -1,469 +1,247 @@
-# NPU 移植生态目标架构 + 演进路径 (V2.0)
+# NPU 移植 Skills 目标架构 + 演进路径 (V3.0)
 
-> 状态：2026-04-22，V2.0。替换 V1.0（照抄 a5_ops kernel-pipeline）。V1.0 的错误是把我们的问题（多上游 DAG 升级协调）当成 kernel 生成的线性 pipeline 问题。V2.0 从 DAG + per-dep expert 模型出发。
+> 状态：2026-04-22，V3.0。替换 V2.0（过早设计 multi-expert DAG）。V2.0 的错误：还没证明 **1 个 expert 能完成 EasyR1 port** 就去设计 **N 个 expert 的 DAG**。
 >
-> V1.0 草稿保留 git 历史（`0664095..89b2530`），供对比。
+> **核心修正**：先证明最基本的情况 (1 expert 完成 D=0 移植) 能 cold-drive 工作，再谈扩展。DAG / 多 expert 架构**挪到附录**，作为"未来当出现需要适配的依赖升级时再考虑"。
 >
-> **核心洞察**（用户 2026-04-22 01:04 + 01:06）：
-> 1. 我们的复杂度来自**一个版本升级级联多个依赖升级**，不是单一 op 从 analyze 到 verify
-> 2. **每个主要依赖应有自己的专家（skill + agent）独立处理**
-> 3. 升级按**依赖树 / DAG 叶子到根**逐节点解决
-> 4. DAG 不是严格树，有并行有串行
-> 5. **每个 expert 拿出来都是独立产品**（e.g. `torch-npu-expert` 可独立用于"把最新 pytorch 跑到 NPU"场景，不局限服务 easyr1-npu）
+> 过往版本：
+> - V1.0（commit `89b2530`）：照抄 a5_ops kernel-pipeline，被证明不适用
+> - V2.0（commit `db801cd`）：过早的 DAG + per-dep expert 泛化
+> - V3.0（本版）：Stage 0 只做 1 expert；DAG 挪附录
 
 ---
 
-## 0. 文档导航
+## 0. 一句话定位
 
-| Domain 文档 | 职责 | 状态 |
-|---|---|---|
-| 本文 `docs/design/SKILLS_ARCH_TARGET.md` | 总体架构 + 演进路径 + phase 计划 | V2.0 draft |
-| `docs/design/EXPERT_CONTRACT.md` | Expert 产品契约：输入 / 输出 schema / constraint 声明格式 | Phase 1 产出 |
-| `docs/workflow/orchestrator_state_machine.yaml` | Orchestrator 的 DAG 构建 + 调度 state machine | Phase 2 产出 |
-| `docs/workflow/WORKFLOW_CRITIC_DESIGN.md` | Critic hook 详细设计、SKILL↔YAML 双绑 | Phase 2 产出 |
-| `src/experts/<dep-name>/` | 每个 expert 的 skill + agent + KB + scripts + tested_combinations | Phase 2-4 逐个产出 |
+**当前阶段的任务**：做 1 个 easyr1-expert，让它能在 A3 上 cold-drive 完成 EasyR1 master（D=0 场景）→ V1.1-V2.2 smoke 全绿。
 
-**正交性原则**：本文描述 **"是什么 / 为什么 / 怎么演进"**；domain docs 描述 **"怎么运行 / 怎么强制 / 某 expert 具体长什么样"**。
+Stage 0 PASS = 基线。之后才有资格谈扩展。
 
 ---
 
-## 1. 这个系统做什么
+## 1. 基本事实 (before 设计)
 
-**产品（复数）**：一组**独立可用的 NPU-dep-expert**，每个 expert 负责**把一个主流上游依赖（torch / vllm / transformers / ray / triton）往 Ascend NPU 方向适配**。每个 expert 自己就是交付物。
+### 1.1 EasyR1 master 今天 D=0
 
-**核心 use case** 举例（每条是独立产品）：
-- "把最新 pytorch 跑到 NPU 上" → `torch-npu-expert` （即 torch_npu 升级专家）
-- "让 vllm 0.20 跟 vllm-ascend 协同" → `vllm-ascend-expert`
-- "transformers 5 的 NPU 兼容性" → `transformers-expert`
-- "Ray 2.x + NPU 资源" → `ray-expert`
-- "triton-ascend 跟上 upstream triton 版本" → `triton-ascend-expert`
-- "EasyR1 在 NPU 跑"（消费上面一组 expert）→ `easyr1-expert`
+`docs/easyr1-dep-chain-audit.md` 已证明：EasyR1 master 20 个 runtime deps 在 v1 (CANN 8.5.0) image 上**没有** D 类 blocker（需要新 NPU 适配的依赖）。所有适配都是**EasyR1 自己源码的改动**：
 
-**EasyR1 移植 = `easyr1-expert` 作为 orchestrator，消费其他 expert 的 constraint + advice 产出 port 代码 + image + smoke 验证**。
+- 35 处 CUDA-only callsite 替换（NPU-CP-001）
+- Ray NPU resource 注册 shim（NPU-CP-003）
+- Flash attention 走 `transformers.integrations.npu_flash_attention`（NPU-CP-007）
+- vllm 0.13 的 2 处 API rename 适配（NPU-CP-002 / CP-004）
+- transformers 5.x / vllm 0.18 的 backward-compat（已 cherry-pick 进 ascend-port）
+- 写 `Dockerfile.npu`（fix triton-ascend NPU-BUG-001 + deps install）
+- 写 smoke 脚本
 
-**关键结构**：这不是 "easyr1-npu + 它的 skills"，而是 **"一组独立 expert + 一个 easyr1-expert 消费者 + 一个 orchestrator 连接他们"**。
+→ **技术上 1 个 expert 做完所有这些事情就够**。我们现在就是要证明：能不能**做一个 expert 把上面这些全自动化**。
 
----
+### 1.2 Skills 现状（NPU-OPS-010 之后的诚实基线）
 
-## 1.1 产品身份：每个 expert 独立交付
+- 8 个独立 skill md（npu-image-inspect / dep-gap-detect / npu-code-path-sweep / npu-container-runner / upstream-branch-hygiene / ray-npu-shim / image-upgrade-drill / codex-review）
+- 各自单独功能可用，但**没有 pipeline 串联**
+- SKILLS-GUIDE.md 是**人工 9 步 playbook**，没有 agent / hook 强制执行
+- Round 1 cold-drive 用 `zhshgmail/EasyR1:ascend-port` 作弊成功
+- Round 2 tightened prompt 让 agent 从 `hiyouga/EasyR1:main` 出发：产出 4 commits 的 port code **但**：
+  1. `verl/workers/fsdp_workers.py` 有 SyntaxError（未被 skill 拦住）
+  2. Agent 停在 "docker image built"，没 ssh 到 A3 跑 smoke
+  3. 读了 denylist 里的 HANDOVER.md
 
-### 1.1.1 Expert 是独立产品
+**→ 单 skill 可用；skill chain 自动驱动 agent 到"端到端验证"不可用。这正是 Stage 0 要填的 gap。**
 
-每个 expert 的评价不基于 "它让 easyr1-expert 跑通了"，而是 **"它能独立完成它那个 dep 的 NPU 适配任务"**。
+### 1.3 DAG / 多 expert 情况还没出现
 
-举例 `torch-npu-expert` 的独立 use case：
-- 用户："我想把 pytorch 2.11（新 release）跑到 NPU 上" → 调 `torch-npu-expert`
-- Expert 输入：pytorch 版本 + NPU 平台（CANN 版本、芯片型号）
-- Expert 工作：查 CANN↔torch_npu 兼容表 → 找对应 torch_npu branch → build → 跑最小 import 测试 → 出报告
-- Expert 产出：(a) "torch_npu 2.11.x 在 CANN 8.5.1 上可用" constraint declaration + (b) build 指令 / Dockerfile layer
-- **不要求** easyr1-expert 在场
-
-**评价标准**：另一个项目（不是 easyr1-npu）的 agent / 工程师调用 `torch-npu-expert`，能否冷启动完成 torch_npu 升级任务。
-
-### 1.1.2 消费者是独立产品
-
-`easyr1-expert` 是**消费者型 expert**：
-- 自己的产品 = "EasyR1 跑在 NPU"
-- 实现方式 = orchestrator 调用一组底层 expert（torch-npu / vllm-ascend / transformers / ray 等），把它们的 constraint + advice 汇总，生成 `ascend-port` 分支
-- **不持有** torch-npu / vllm-ascend 等的知识 — 那是各自 expert 的 KB
-
-未来新 RL 框架移植（OpenRLHF / TRL）是另一个消费者 expert（`openrlhf-expert`），它**不用重新学** torch-npu / vllm-ascend 的知识，直接调已有 expert。
-
-### 1.1.3 产品质量三维度（沿用 V1.0）
-
-每个 expert 自己都对这三项负责：
-
-| 维度 | 含义 | 检查位置 |
-|---|---|---|
-| **Functional** | Expert 声称的 constraint / apply 在真实环境能用 | Expert 内部 smoke + 下游消费者反馈 |
-| **Numerical fidelity**（适用时） | 跑 smoke 数值在 baseline ±N% | Expert 的 smoke_validate 脚本 |
-| **Provenance** | 每个 artifact 的 producer 明确（expert / human-intervention） | Stop hook + critic |
+今天没有 D≥1 场景实际发生。一旦未来 EasyR1 新 commit 真要求某个 NPU 还没适配的依赖，我们**才**需要拆 expert（第一个会是 blocker 那个，比如 torch-npu-expert 或 transformers-expert）。现在**不预先设计**。
 
 ---
 
-## 2. 目标架构
+## 2. Stage 0 设计
 
-### 2.1 DAG 驱动的消费者-专家模型
+### 2.1 范围：1 个 expert
 
-**传统 pipeline (a5_ops kernel-gen)**：单线程 A→B→C→D，适合"生产一件东西"
-
-**我们的模型**：DAG 里多个节点并行/串行，每节点是独立专家，适合"协调一组东西"
-
-```mermaid
-flowchart TB
-    User["user<br/>/easyr1-port new-commit dd71bbd<br/>or /torch-npu-bump 2.11"]
-    Orch["orchestrator<br/>(DAG resolver)"]
-
-    subgraph Experts[Experts（每个是独立产品）]
-        direction LR
-        TNE["torch-npu-<br/>expert"]
-        VAE["vllm-ascend-<br/>expert"]
-        TAE["triton-ascend-<br/>expert"]
-        TFE["transformers-<br/>expert"]
-        VLE["vllm-<br/>expert"]
-        RYE["ray-<br/>expert"]
-    end
-
-    subgraph Consumers[Consumer experts（也是独立产品）]
-        direction LR
-        ERE["easyr1-<br/>expert"]
-        ORE["openrlhf-<br/>expert<br/>(未来)"]
-        TRE["trl-<br/>expert<br/>(未来)"]
-    end
-
-    User --> Orch
-    Orch --> ERE
-    Orch --> ORE
-    Orch --> TRE
-
-    ERE -.依赖+调用.-> VLE
-    ERE -.依赖+调用.-> TFE
-    ERE -.依赖+调用.-> RYE
-    VLE -.依赖+调用.-> VAE
-    VAE -.依赖+调用.-> TNE
-    VAE -.依赖+调用.-> TAE
-    TFE -.依赖+调用.-> TNE
-
-    style Experts fill:#e8f4fa
-    style Consumers fill:#fae8e8
-```
-
-**关键点**：
-- Expert 之间通过 **declared dependencies** 形成 DAG（expert 自己报它依赖谁）
-- Orchestrator 做 **constraint propagation**（SAT solver 类模型）
-- 叶子节点（CANN 层）固定、根节点（消费者）启动请求
-- 并行：同层无依赖的 expert 并行；串行：有依赖的等前置 done
-
-### 2.2 一次 EasyR1 new-commit 升级的端到端时序
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant Orch as orchestrator<br/>(DAG resolver)
-    participant ERE as easyr1-expert
-    participant TFE as transformers-expert
-    participant VLE as vllm-expert
-    participant VAE as vllm-ascend-expert
-    participant TNE as torch-npu-expert
-
-    User->>Orch: /easyr1-port new-commit <easyr1-hash>
-    Orch->>ERE: query dependencies
-    ERE-->>Orch: depends on {transformers, vllm, ray}
-    Orch->>VLE: query dependencies
-    VLE-->>Orch: depends on {vllm-ascend}
-    Orch->>VAE: query dependencies
-    VAE-->>Orch: depends on {torch-npu, triton-ascend}
-    Orch->>Orch: DAG built, topological sort
-
-    Note over Orch,TNE: 叶子层：并行 query constraint
-    par
-        Orch->>TNE: declare_constraints(target_cann=8.5.0)
-        TNE-->>Orch: {torch_npu: "2.8.0", ok: true}
-    and
-        Orch->>VAE: declare_constraints(vllm=0.13)
-        VAE-->>Orch: waiting_on_torch_npu
-    end
-
-    Orch->>VAE: declare_constraints(vllm=0.13, torch_npu=2.8.0)
-    VAE-->>Orch: {vllm_ascend: "0.13.1", ok: true}
-
-    Note over Orch,ERE: 向上传播到根
-    Orch->>VLE: declare_constraints(vllm_ascend=0.13.1)
-    VLE-->>Orch: {vllm: "0.13.0+empty", ok: true, shim_patterns: [...]}
-
-    Orch->>TFE: declare_constraints(torch_npu=2.8.0, easyr1_ref=<hash>)
-    TFE-->>Orch: {transformers: "4.57.6", ok: true, shim_patterns: [...]}
-
-    Orch->>Orch: solver 汇总约束 → solution tuple
-
-    Note over Orch,ERE: 下行 apply：每 expert 产出自己领域的 artifact
-    Orch->>VAE: apply(solution)
-    VAE-->>Orch: dockerfile_layer + build_status
-    Orch->>VLE: apply(solution)
-    VLE-->>Orch: patch_suggestions[vllm_utils.py, vllm_rollout_spmd.py]
-    Orch->>TFE: apply(solution)
-    TFE-->>Orch: patch_suggestions[fsdp_workers.py import]
-
-    Note over Orch,ERE: 根层：消费者 expert 消化所有 advice
-    Orch->>ERE: apply(solution, all_expert_advice)
-    ERE->>ERE: produce ascend-port-<target> branch
-    ERE->>ERE: build image + run smoke ladder V1.1→V2.2
-    ERE-->>Orch: port branch + smoke results
-
-    Orch->>Orch: post-verify + knowledge-maintain 各 expert 更新 tested_combinations
-    Orch-->>User: report
-```
-
-### 2.3 Expert 的标准形态
-
-每个 expert 有一致的目录结构（便于独立仓拆分）：
+**easyr1-expert**：负责 EasyR1 → NPU 移植的全流程。
 
 ```
-<expert-name>/
-├── README.md                          # 独立产品的对外介绍
-├── SKILL.md                           # Skill 定义（给 Claude Code / orchestrator 调用）
-├── agent.md                           # Agent 定义（phases + Stop hook）
-├── state_machine.yaml                 # 内部 workflow（如果 expert 有自己的多阶段）
-├── references/                        # 该 dep 的 KB（版本兼容表、常见 bug、API 变动）
+easyr1-expert/
+├── SKILL.md              # /easyr1-port 入口
+├── agent.md              # easyr1-port-worker 的 agent 定义（Phase A/B/C/D + Stop hook）
+├── state_machine.yaml    # 内部工作流（phases + invariants）
+├── references/           # EasyR1-port 专属 KB
 │   ├── ALWAYS_LOADED_RULES.md
 │   ├── KB_INDEX.md
-│   ├── ERROR_CORRECTIONS.md
-│   ├── VERSION_COMPAT.md              # 核心：版本兼容矩阵
+│   ├── CODE_PATH_PATTERNS.md    # NPU-CP-001..007 具体怎么 apply
+│   ├── ERROR_CORRECTIONS.md     # traceback → root cause → fix
+│   ├── PLATFORM_BUGS.md         # NPU-BUG-001..004
+│   ├── SMOKE_BASELINE.md        # V1.1-V2.2 per-image 期望数值
 │   └── patterns/
-├── scripts/                           # Expert 专属脚本
-│   ├── declare_constraints.py         # 给定输入返回 constraint
-│   ├── apply.py                       # 给定 solution 产出 artifact
-│   ├── smoke_validate.sh              # Expert 内部最小验证
-│   └── ...
-├── tested_combinations.yaml           # 已知 working tuple 存档
-└── hooks/                             # Expert agent 的 Stop hook
-    └── check_expert.sh
+│       ├── device_dispatch.md
+│       ├── ray_integration.md
+│       ├── attention_backend.md
+│       ├── vllm_compat.md
+│       ├── transformers_compat.md
+│       └── dockerfile.md
+├── scripts/
+│   ├── static_check.py          # py_compile + dry-import (from V1.0)
+│   ├── deploy_to_a3.sh          # tar → scp → docker cp
+│   ├── smoke_validate.sh        # 跑 smoke + grep entropy_loss + assert
+│   └── code_path_sweep.sh       # (从 easyr1-npu/scripts/code-path-sweep.sh 搬)
+├── tested_combinations.yaml     # 已验 tuple: v1 image + ascend-port ecce71d
+└── hooks/
+    ├── check_port_worker.sh     # Stop: static_check PASS + PROGRESS 签名
+    └── ...
 ```
 
-### 2.4 Expert 之间的合约（EXPERT_CONTRACT.md）
+### 2.2 Agent 内部 phases
 
-**每个 expert 对外暴露 3 个动作**：
+（一个 agent 包揽所有 phase，无 orchestrator；worker internal fix loop）
 
-```python
-# 动作 1：声明依赖（构建 DAG 用）
-def declare_dependencies() -> list[ExpertName]: ...
-
-# 动作 2：声明 constraint
-def declare_constraints(
-    context: dict,  # orchestrator 提供：上游 expert 已解出的版本、用户 target
-) -> Constraint: ...
-# Constraint 可以是 "我必须要 dep X 是版本 Y"、"在这个版本下我可用"、"不兼容"
-
-# 动作 3：apply
-def apply(solution: dict) -> Artifact: ...
-# Artifact 可以是：dockerfile layer、代码 patch suggestions、build script、test report
-```
-
-**消费者 expert 多一个动作**：
-
-```python
-def integrate(solution: dict, expert_advice: dict) -> PortBranch: ...
-# 根据所有底层 expert 的 apply 结果，产出自己的 port 代码 / 分支
-```
-
-**合约层严格 schema 化**（Phase 1 的 EXPERT_CONTRACT.md 要固定）。
-
-### 2.5 Orchestrator 的职责（专一）
-
-**不** 持有任何 dep 的知识。只做：
-
-1. **DAG construction**：call `declare_dependencies` 跨 expert 构建 DAG
-2. **Constraint solving**：Topological traverse 叶子→根，每节点 call `declare_constraints`，汇总到 solution tuple
-3. **Scheduling**：并行化（无依赖的 expert 并发），串行化（有依赖的等待）
-4. **Critic hook**：运行时强制 G1-G6 invariants
-5. **Artifact coordination**：把 expert A 的 output 喂给 expert B 的 input
-6. **Post-verify + commit + knowledge-maintain**：最终聚合
-
-### 2.6 KB 层次：每个 expert 自己的
-
-**V1.0 的错误**：我设计了一个大 `src/skills/references/` 统一 KB。
-
-**V2.0 正解**：每个 expert 有**自己的 KB**。
-
-| KB 位置 | 持有什么 |
-|---|---|
-| `torch-npu-expert/references/VERSION_COMPAT.md` | CANN ↔ torch 版本映射表 |
-| `vllm-ascend-expert/references/VERSION_COMPAT.md` | vllm-ascend ↔ vllm ↔ torch_npu 映射 |
-| `transformers-expert/references/NPU_SHIM_PATTERNS.md` | transformers 在 NPU 上常用 shim 模式 |
-| `easyr1-expert/references/CODE_PATH_PATTERNS.md` | EasyR1 特有的 CUDA-only callsite |
-| `orchestrator/references/DAG_INVARIANTS.md` | G1-G6 跨 expert 全局约束 |
-
-**共享 KB**（少量）：orchestrator 持有的全局规则 + shared types schema。
-
-### 2.7 Hook / Critic 三层
-
-| Layer | Scope | 管什么 |
+| Phase | Action | Artifact |
 |---|---|---|
-| Expert agent Stop hooks | 单 expert 单 agent | Expert 自己产物合法（schema / provenance / 内部 check） |
-| Expert workflow critic (optional per-expert) | 单 expert 内部多阶段 | Expert 内部 state machine invariants |
-| **Orchestrator workflow critic** | 全局 DAG | G1-G6：expert 之间的 constraint 一致性、provenance 跨 expert 追踪、cycle detection、版本冲突 |
+| A. Analyze | 读 KB (ALWAYS_LOADED + KB_INDEX) + run code-path-sweep → analysis.md | `analysis.md` |
+| B. Code gen | 按 CODE_PATH_PATTERNS apply device dispatch / ray shim / flash attn swap / vllm compat；写 Dockerfile.npu + smoke scripts | git commits on branch |
+| C. Build + static | **static_check.py must PASS** (Stop hook 强制 G2) → build docker image | image tag |
+| D. Deploy + smoke + fix loop | ssh A3 → deploy → run V1.1 → if fail, read log + match ERROR_CORRECTIONS + apply fix + rebuild → up to N iters → V1.4 → continue | smoke logs + verification.json |
+
+**Fix loop in D**: if smoke rung N fails, agent reads log, greps ERROR_CORRECTIONS.md, applies fix, rebuilds, retries. Up to M iters per rung (e.g. 3). Stuck → exit with handoff (未来 Stage 1 会有 smoke-probe agent，Stage 0 只是手工 escalate)。
+
+### 2.3 Hook 强制
+
+Stage 0 需要的最小 hook set：
+
+1. **Stop hook on easyr1-port-worker**：
+   - Static check pass (G2)
+   - PROGRESS.md 有签名
+   - 声称 smoke PASS 必须有 `/tmp/.../easyr1-logs/*.log` 文件存在 + 文件里有 entropy_loss 数值 (G3)
+2. **PreToolUse on Edit**：
+   - Orchestrator 不能 Edit consumer code paths (G1 — 此 stage 我们只有 1 个 expert 包办一切，这条先 lenient)
+
+Phase 完了的 Acceptance check：
+- 一个 cold-drive Explore agent，只给 repo + A3 ssh access + 一句任务 "把 EasyR1 master 移植到 A3 跑 V1.4"，能**自己完成 V1.1 V1.3 V1.4**（agent context 里），**没有我手动帮忙**。
+
+### 2.4 KB 组织（per-expert，Stage 0 就 1 个）
+
+V2.0 说 "per-expert KB"，Stage 0 只有 1 个 expert，所以所有 KB 在这一个目录里。未来拆 expert 时按 dep 拆出去。
+
+关键 KB 文件（Stage 0 必须写）：
+
+- `ALWAYS_LOADED_RULES.md`（最多 10 条硬规则；一 phase 就读）
+- `KB_INDEX.md`（Keywords/Aliases 索引）
+- `ERROR_CORRECTIONS.md`（从 porting-journal 整理出的 traceback → fix，至少 10 条）
+- `CODE_PATH_PATTERNS.md`（NPU-CP-001..007 从 npu-patterns.md 拆出）
+- `PLATFORM_BUGS.md`（NPU-BUG-001..004）
+- `SMOKE_BASELINE.md`（V1.1-V2.2 per-image 数值）
+- `patterns/*.md`（按领域）
 
 ---
 
-## 3. 当前状态（as-of 2026-04-22）
+## 3. Acceptance (Stage 0 PASS = 基线达成)
 
-### 3.1 仓布局现状
+**T0.1 — static check 拦住 round 2 的 SyntaxError**
+- 跑 `scripts/static_check.py --files <round2-agent's fsdp_workers.py>` → 必须 exit 1 + 指出行号
 
-```
-easyr1-npu/
-├── docs/, skills/*, scripts/*, knowledge/, src/scripts/static_check.py (Phase 1 前的 V1.0 produce)
-└── （无 expert 目录、无 orchestrator、无 constraint solver）
-```
+**T0.2 — Stop hook 拦住"声称 PASS 无 log 证据"**
+- 人为构造一个假 PROGRESS.md 说 "V1.4 PASS" 但没有 log 文件 → Stop hook exit 2 reject
 
-### 3.2 能力盘点
+**T0.3 — cold-drive round 3 产 port + 自己跑 V1.4 smoke 在 agent 内**
+- Fresh Explore agent，严格 denylist（HANDOVER / journal / drill / 现有 ascend-port 分支 git log 禁读）
+- Task: "把 EasyR1 master 移植到 NPU 跑通 V1.4 smoke"
+- Agent 必须在它自己 session 内完成：产 port code → static_check PASS → build image → ssh A3 → V1.1 PASS → V1.4 step1 entropy_loss ∈ [0.94, 1.04]
+- **我不介入 debug**
+- PASS = Stage 0 基线达成，可以展开 Stage 1
 
-能力矩阵（每行一个目标场景，列是我们是否能做）：
-
-| 场景 | 支持？ | 说明 |
-|---|---|---|
-| 路径 1：用现有 ascend-port 在 A3 跑 smoke | ✅ Cold-reproducible（round 1 agent 证明） | PORT-GUIDE 5 步 |
-| 路径 2：给新 EasyR1 commit 产 port | 🟥 Agent round 2 产码有 syntax 错，不跑 smoke | skill 是 playbook 不是 pipeline |
-| **"把新 pytorch 跑到 NPU 上" 独立场景** | 🟥 **完全不支持** | 没有 torch-npu-expert |
-| **"让 vllm 0.20 在 NPU 可用" 独立场景** | 🟥 **完全不支持** | 没有 vllm-ascend-expert |
-| "transformers 新版 NPU 兼容" 独立场景 | 🟥 **完全不支持** | 没有 transformers-expert |
-| 多依赖协调升级（跨 expert DAG） | 🟥 **完全不支持** | 没有 orchestrator |
-
-### 3.3 可以复用的现有资产
-
-V1.0 写出来的一些东西还能复用（不丢）：
-
-- `src/scripts/static_check.py`（Phase 1 前的 static 检查脚本）—— 改挪到 orchestrator 公共 scripts 或 easyr1-expert 里
-- `docs/workflow/port_state_machine.yaml`（V1.0 画的 state machine）—— **不复用**，V2.0 下 orchestrator 是 DAG 不是 state machine；但可作为"easyr1-expert 内部的 state machine"参考
-- `skills/{dep-gap-detect, npu-code-path-sweep, inspect-ascend-image, run-npu-container, ray-npu-shim, ...}` —— **大部分应该归属到对应 expert**：
-  - `dep-gap-detect` → 搬到 `easyr1-expert`（消费者 gap 检查）或独立为 `dep-gap-expert`
-  - `inspect-ascend-image` → 工具脚本，`orchestrator/scripts/`
-  - `ray-npu-shim` → 搬到 `ray-expert`
-  - `npu-code-path-sweep` → 搬到 `easyr1-expert`（EasyR1 特有的 callsite scan）
-- `knowledge/{npu-patterns, upstream-refs, images, ...}` —— 拆到各 expert KB
-- `scripts/run-npu-container.sh` → `easyr1-expert/scripts/`（因为只服务消费者）或拆一个 `a3-runtime-expert`
-
-### 3.4 NPU-OPS-010 教训（不能再违反）
-
-Round 2 agent 产码有 syntax 错 + 不跑 smoke 的事实。**V2.0 任何 expert 产出的代码必须通过内部 Stop hook 的 static_check + smoke；orchestrator 的 G2 invariant 跨 expert 再强制一次**。
+**T0.4 — V1.5 / V2.1 / V2.2 bonus**
+- 同上 agent 继续走完 V1.5 HCCL + V2.1 padding_free + V2.2 ulysses=2
+- 不强制，Stage 0 最小 PASS 是 T0.3
 
 ---
 
-## 4. Gap 分析
+## 4. 从当前 → Stage 0 (分步)
 
-| # | Gap | 严重度 | Phase |
-|---|---|---|---|
-| 1 | 没有 expert 这个抽象层（当前只是一堆 skill 和脚本） | HIGH | Phase 1：定义 EXPERT_CONTRACT.md |
-| 2 | 没有 orchestrator（DAG + solver） | HIGH | Phase 2 |
-| 3 | 各 dep 的 KB 没独立，分散在 `knowledge/` | MEDIUM | Phase 3：按 expert 重新组织 |
-| 4 | 没有 `tested_combinations.yaml` 机制（已知 working tuple） | MEDIUM | Phase 2（作为 expert 模板的一部分） |
-| 5 | Agent 产码无 syntax/import 验证（NPU-OPS-010） | HIGH | Phase 1：Stop hook 强制 |
-| 6 | Agent 不自己上 A3 跑 smoke | HIGH | Phase 2：consumer expert 的 `integrate` 动作包含这个 |
-| 7 | 没有 provenance 追踪跨 expert | HIGH | Phase 1：合约里 artifact 标 `produced_by` 字段 |
-| 8 | 没有 SKILL ↔ YAML 双绑 | MEDIUM | Phase 1：pre-commit hook |
-| 9 | 现有 skills 单独存在，没有归属 expert | LOW | Phase 3：搬迁 |
-| 10 | 没有 knowledge-maintain（跨 expert 共享新发现） | LOW | Phase 4 |
-| 11 | HANDOVER/porting-journal 对 agent 可见（作弊源） | LOW | Phase 4：物理隔离 reproduction-kit |
+### 4.1 现有 "资产"
 
----
+（V1.0 / V2.0 冗余都移除）
 
-## 5. 演进路径
+- `src/scripts/static_check.py` （V1 写的，保留）
+- `docs/workflow/port_state_machine.yaml` （V1 draft，保留作为 state machine 参考；实际 YAML 归 easyr1-expert）
+- `knowledge/npu-patterns.md`（24 stable IDs，要拆到 easyr1-expert references/）
+- 现有 8 个 skill md（concept 不丢；部分内容迁到 easyr1-expert/{scripts, references, state_machine}；部分作为未来 multi-expert 时拆出去的种子）
 
-### 原则
+### 4.2 执行步骤（each 是一个 commit）
 
-- **每个 Phase 有 concrete acceptance test**（不是"文档写完"）
-- **先做 2 个 expert 完整走通**（torch-npu + easyr1 或 vllm-ascend + easyr1），而不是一次做所有 expert
-- **Orchestrator 先做最小 version**，验证 DAG + solver 概念
-- **cold-drive 测试每 phase 后必做**
-- 每个 Phase 结束，可以**选择独立发布** expert（比如 Phase 2 完了 `torch-npu-expert` 就可以单独用于 pytorch 升级场景）
+**S1. rewrite design doc (= this commit)**  
+Stage 0 only, DAG 挪附录
 
-### Phase 1 — 合约 + 机械强制（1-2 天）
+**S2. create `src/experts/easyr1-expert/` 骨架**  
+空目录 + README.md 说明定位 + 占位 SKILL.md + agent.md
 
-**目标**：定义 expert 产品的标准合约；让任何 expert 产码都不能有 SyntaxError；跨 expert 的 provenance 可追踪。
+**S3. state_machine.yaml 草稿**  
+8 phases (P0..P7) + invariants G1-G3（不是 V2.0 的 G1-G6；stage 0 只需要 3 条 hard）
 
-**交付物**：
-- `docs/design/EXPERT_CONTRACT.md`：expert 的 3 个动作 schema（declare_dependencies / declare_constraints / apply）+ 消费者的 integrate
-- `docs/design/DAG_INVARIANTS.md`：G1-G6 跨 expert 规则（从 port_state_machine.yaml 改造）
-- `src/scripts/static_check.py`（保留，作为 expert 公共脚本）
-- `src/scripts/provenance_lint.py`：检查 artifact 的 produced_by 字段合法
-- `.claude/hooks/PreToolUse/block_orchestrator_edit_consumer_code.sh`（G1）
-- `.claude/hooks/Stop/check_expert_static_pass.sh`（G2）
+**S4. 第一批 KB 文件**  
+- ALWAYS_LOADED_RULES.md (≤10 条核心规则)
+- ERROR_CORRECTIONS.md (从 porting-journal 挖 10 条)
+- CODE_PATH_PATTERNS.md (从 npu-patterns.md NPU-CP-001..007 重写成 actionable pattern)
+- SMOKE_BASELINE.md (V1.1-V2.2 per-image 数值表)
 
-**Acceptance**：
-- **T1.1**：新写一个 toy expert `src/experts/hello-expert/`，能 declare_dependencies() + declare_constraints() 返回合法 schema，被 lint 工具通过
-- **T1.2**：人为在 expert 产物里放 SyntaxError，Stop hook 必须拦截
-- **T1.3**：Orchestrator 试图直接 Edit 消费者 expert 的 port code，PreToolUse hook 拦截
+**S5. Scripts + Hooks**  
+- `deploy_to_a3.sh` + `smoke_validate.sh`
+- `check_port_worker.sh` Stop hook
 
-### Phase 2 — 2 个 expert 最小闭环（5-7 天）
+**S6. agent.md 完整化**  
+Phase A/B/C/D 具体 brief，含 fix loop，含 Stop hook reference
 
-**目标**：写出 **`torch-npu-expert`** + **`easyr1-expert`** 两个 expert，加一个最小 orchestrator，跑通一次 end-to-end：用户调 `/easyr1-port reproduce v1`，orchestrator 调两个 expert，产出可跑 V1.1 smoke 的 image。
+**S7. Round 3 cold-drive test**  
+T0.3 acceptance test. 按结果：
+- PASS → Stage 0 达成，更新 HANDOVER + porting-journal，等用户决定 Stage 1
+- FAIL → 诊断 gap，补 KB / hook / agent md，round 4
 
-**为什么先这俩**：torch_npu 是最底层（叶子侧），easyr1 是根。两者走通了 = 证明 DAG + solver 概念 work，后续加 vllm-ascend/transformers 是 same pattern 复制。
+### 4.3 预估时间
 
-**交付物**：
-- `src/experts/torch-npu-expert/`（完整目录：SKILL.md + agent.md + state_machine.yaml + references/ + scripts/ + tested_combinations.yaml + hooks/）
-- `src/experts/easyr1-expert/`（完整目录，consumer 版）
-- `src/orchestrator/`（skill + DAG builder + constraint solver + scheduler）
-- `docs/workflow/orchestrator_state_machine.yaml`
+S1: 30 min（此 commit）  
+S2-S3: 1 h  
+S4: 2-3 h（KB 内容最花时间）  
+S5: 1 h  
+S6: 1 h  
+S7 + iterate: 不定（首次 cold-drive 可能 1-3 轮）
 
-**Acceptance**：
-- **T2.1**：冷启动 agent 调 `/torch-npu-bump 2.8 --cann 8.5.0`，torch-npu-expert 自己能产出 "torch_npu 2.8.0 可用，这是 build layer" 报告（不需要 easyr1 在场）
-- **T2.2**：冷启动 agent 调 `/easyr1-port reproduce v1`，orchestrator 构建 DAG → 调 torch-npu-expert → 调 easyr1-expert → 产出可跑 V1.1 smoke 的 image，V1.1 PASS
-- **T2.3**：人为破坏 torch-npu-expert 的 declare_constraints（返回矛盾约束），orchestrator 的 solver 必须报错中止，不放行
-- **T2.4**：agent 的整个运行里，provenance 表清晰标注每个 artifact 的 producer；没有 human-intervention
-
-### Phase 3 — 补齐其他 expert（3-5 天）
-
-**目标**：把现有 ascend-port 的能力拆到剩余 expert。
-
-**交付物**：
-- `src/experts/vllm-ascend-expert/`
-- `src/experts/vllm-expert/`
-- `src/experts/transformers-expert/`
-- `src/experts/triton-ascend-expert/`
-- `src/experts/ray-expert/`
-- 每个 expert 包含迁移过来的 KB（从 `knowledge/npu-patterns.md` 按 category 拆）
-- 每个 expert 的 `tested_combinations.yaml` 填入当前 v1/v2 image 验证过的 tuple
-
-**Acceptance**：
-- **T3.1**：`/easyr1-port reproduce v1` 完整跑 V1.1 → V2.2 ladder 全绿
-- **T3.2**：独立跑 `/transformers-bump 5.3 --npu` 能独立产 report（证明 expert 独立性）
-- **T3.3**：每个 expert 的 `tested_combinations.yaml` 能被 orchestrator 查询到选可行组合
-
-### Phase 4 — 真正冷启动复现 + 对外发布（2-3 天）
-
-**目标**：证明整个产品能被客户用。
-
-**交付物**：
-- 每个 expert 可独立 git-extract 到自己的 gitcode 仓（保留 monorepo，但每个 expert 目录自包含）
-- `docs/CUSTOMER-GUIDE.md`：外部用户如何调这些 expert
-- Round 3 cold-drive 测试：fresh agent 完整跑通 `/easyr1-port new-commit <hash>`
-- Retrospective artifact：round 3 数据 + 和 round 1/2 对比（skill effectiveness 升级证据）
-
-**Acceptance**：
-- **T4.1**：Round 3 agent，在 < 2h 内，产出 CLOSED 状态的 port（无 human-intervention artifact）
-- **T4.2**：把 torch-npu-expert 拆到独立 gitcode 仓测，另一个场景（不是 easyr1）能复用
-- **T4.3**：Codex review 本设计 + acceptance 结果，无 CRITICAL 级 issue
-
-### Phase 5 — 多 consumer expert（未来）
-
-- `src/experts/openrlhf-expert/`（另一个消费者）
-- 证明加新消费者 = 0 改动 orchestrator + 0 改动底层 expert
-- 不阻塞 Phase 4 的对客发布
+**→ Stage 0 首次 T0.3 尝试：半天**。如果 round 3 直接 PASS 那 Stage 0 完成；FAIL 就再迭代。
 
 ---
 
-## 6. 保持 / 改 / 新增
+## 5. Stage 1+ （等 Stage 0 PASS 再规划）
 
-**保持**：
-- 所有现有 `docs/`、`knowledge/`、`scripts/` 不删；`knowledge/*.md` Phase 3 时拆到 expert，原件可作为迁移前 reference 在 `docs/archive/`
-- 现有 `skills/*/SKILL.md` 作为 Phase 3 迁移来源（不独立存在；归到 expert）
-- `porting-journal.md` / `HANDOVER.md` / `NPU-OPS-010`（继续 append）
+**明确保留**：不提前设计。
 
-**改**：
-- README 路径说明：加**第 5 个入口**——"独立用单个 expert"（不只是 easyr1 场景）
-- `install-skills.sh` 升级：支持 `--expert <name>` 仅装单个 expert
+当真遇到 D≥1 场景（e.g. EasyR1 新依赖 NPU 没适配 / vllm 升级带动 torch_npu 升级），才开拆第一个 dep expert。
 
-**新增**：
-- `src/experts/*`, `src/orchestrator/`, `docs/design/EXPERT_CONTRACT.md`, `docs/workflow/orchestrator_state_machine.yaml`, `.claude/hooks/`, Phase 4 的 `CUSTOMER-GUIDE.md`
+**附录 A** 记录了**可能的**扩展方向（DAG + multi-expert），供未来参考。
 
 ---
 
-## 7. 已知债务
+## 6. 已知债（进入 Stage 0 前坦白）
 
-- V1.0 的 `port_state_machine.yaml` 是 easyr1 单产品视角，不适合 V2.0；保留作为 easyr1-expert 内部 state machine 参考
-- Round 2 的 ascend-port-e2e-round2 分支有 SyntaxError，Phase 1 完成后重跑 round 3 会用 hook 拦住
-- A3 build 因 huaweicloud mirror 慢卡死：Phase 2 的 expert Dockerfile 必须用可靠 mirror + timeout
-- cold-drive 闭环 0 次成功（round 1 作弊，round 2 不跑 smoke）—— Phase 4 的 T4.1 是首次真闭环
+- Round 2 ascend-port-e2e-round2 分支有 SyntaxError：我**不手工 fix**（fix 了就作弊）。round 3 由新 agent 重新产。
+- A3 那个 huaweicloud-mirror 卡死的 build：Dockerfile 里 aliyun+timeout 要写进 easyr1-expert 的 dockerfile.md pattern。
+- HANDOVER / journal / drill 是 reproduction-kit 的污染源。Stage 0 的 prompt 层面 denylist；未来可能要物理隔离（repo 分 reproduction-kit 和 history 两个子目录），但这个不是 Stage 0 必需。
+- `src/scripts/static_check.py` 在 V1 写了，但 hook wire 要 S5 做。
 
 ---
 
-## 8. 下一步
+## 附录 A：多 expert / DAG 扩展（future-work placeholder）
 
-**等 user 审批**：
-1. DAG + per-dep expert 模型方向对吗？
-2. Phase 1 先定合约 + 机械 hook，Phase 2 先做 torch-npu + easyr1 两个 expert，这个起手顺序合理吗？
-3. Acceptance T1-T4 够严吗？
-4. monorepo 阶段 OK，还是一上来就独立仓？
+**当以下条件真的发生才考虑**：
+1. EasyR1 新 commit 触发某个 dep 需要 NPU 适配（dep-gap-detect 返回 D≥1）
+2. 我们要 serve 非 EasyR1 场景（e.g. "帮我把 pytorch 新版跑到 NPU"），此时 easyr1-expert 的代码跟需求无关，需要独立的 torch-npu-expert
 
-批准后 Phase 1 开工（1-2 天）。
+**届时的设计候选**：
+- 从 easyr1-expert 拆出 `torch-npu-expert`（或 `transformers-expert` 等，取决于哪个是第一次真正独立需要的）
+- 加入一个最小 orchestrator 来协调 2 个 expert
+- Contract schema 定义 3 个 action（declare_dependencies / declare_constraints / apply）
+
+**不承诺**：
+- 不预先写 6 个 expert
+- 不预先写 DAG solver
+- 不预先定义跨 expert contract
+
+**原则**：跟随实际需求拆；任何扩展前，先问"有证据说现在的结构不够"吗？
+
+（V2.0 的设计稿 commit `db801cd` 保留在 git 历史，是未来真需要时的参考骨架，但不是**承诺**。）
