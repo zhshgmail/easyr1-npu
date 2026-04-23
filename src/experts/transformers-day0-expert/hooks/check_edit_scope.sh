@@ -33,12 +33,22 @@ except Exception:
 
 [[ -z "$FILE_PATH" ]] && exit 0
 
-# Protected paths for this expert:
+# Protected paths for this expert (only transformers-day0-worker may touch):
 # - Dockerfile.overlay-trans* anywhere in upstream consumer tree
-# - $WORKSPACE/transformers-day0-*/patches/**  (forward-port patches)
-# Other Dockerfiles + verl/*.py belong to sibling experts.
+# - $WORKSPACE/transformers-day0-*/ (workspace + patches/)
+# - verl/workers/fsdp_workers.py (EC-02 shim; widened per 2026-04-23 vllm-day0
+#   wet-run finding — fixture=master case needs the shim applied by this
+#   expert, not orchestrator)
+# - scripts/smoke_v{11,13}*.py + examples/qwen2*.sh (harness; fixture=master
+#   doesn't have them)
+# Other verl/*.py belong to sibling experts (easyr1-expert, etc.).
 case "$FILE_PATH" in
-  *upstream/*/Dockerfile.overlay-trans*|*/Dockerfile.overlay-trans*|*workspace/transformers-day0-*/patches/*)
+  *upstream/*/Dockerfile.overlay-trans*|*/Dockerfile.overlay-trans*|\
+  *workspace/transformers-day0-*/*|\
+  *upstream/*/verl/workers/fsdp_workers.py|\
+  *upstream/*/scripts/smoke_v11_device.py|\
+  *upstream/*/scripts/smoke_v13_rollout.py|\
+  *upstream/*/examples/qwen2_0_5b_math_grpo_npu_smoke.sh)
     echo "[check_edit_scope] BLOCKING: G1 invariant — transformers-day0 files must go through transformers-day0-worker, not $AGENT" >&2
     echo "  target: $FILE_PATH" >&2
     echo "  see: transformers-day0-expert/state_machine.yaml G1" >&2

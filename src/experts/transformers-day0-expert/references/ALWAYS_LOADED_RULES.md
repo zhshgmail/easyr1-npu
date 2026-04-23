@@ -38,13 +38,28 @@
   Dockerfile（`FROM base-image` + pip install 新 transformers）
 - `upstream/<consumer>/requirements*.txt` —— 只放松 transformers 版本上
   界的 fixture 路径允许；不碰其它 dep pin
-- **如果 outcome B（forward-port）**：允许编辑 `npu_flash_attention.py`
-  副本（通常放在 `$WORKSPACE/patches/` 下，build 时 COPY 进 image 覆盖
-  base 里那份），**不要**直接改 image 内文件系统中的原文件
-- **绝不**碰 `verl/**/*.py` —— 本 expert 不做 consumer 代码 port（那是
-  easyr1-expert / transformers-upgrade-expert 的域；如果 transformers
-  新版真的改了 consumer 必须 port 的 API，本 expert 的 outcome 是 C，
-  交接回 orchestrator）
+- **如果 outcome B（forward-port NPU FA 适配）**：允许编辑
+  `npu_flash_attention.py` 副本（通常放在 `$WORKSPACE/patches/` 下，
+  build 时 COPY 进 image 覆盖 base 里那份），**不要**直接改 image 内
+  文件系统中的原文件
+- **EC-02 shim（if UPSTREAM_REF=master 场景）**：
+  `verl/workers/fsdp_workers.py` 中 `no_init_weights` 的 try/except
+  import。master 分支不带这个 shim；如果 UPSTREAM_REF 是纯 master
+  而不是 baseline-working port ref，必须 apply。参照
+  `easyr1-expert/references/ERROR_CORRECTIONS.md §EC-02` 的 try/except
+  template。**这是 2026-04-23 vllm-day0 wet-run 暴露的通用教训**：day0
+  expert 在 fixture=master 场景下需要 apply 基础 shim，即使 target 版本
+  没引入新的 API drift
+- **其它 `verl/**/*.py` 不碰** —— consumer 代码的大规模 port 是
+  easyr1-expert 的域；如果 transformers 新版真的改了 consumer 必须 port
+  的 API 超出 EC-02 范围，本 expert 的 outcome 是 C，交接回 orchestrator
+- **Smoke harness 允许新建**（if UPSTREAM_REF=master 场景）：
+  `upstream/<consumer>/scripts/smoke_v11_device.py`,
+  `upstream/<consumer>/scripts/smoke_v13_rollout.py`,
+  `upstream/<consumer>/examples/qwen2_0_5b_math_grpo_npu_smoke.sh`.
+  Master 没这些脚本；写 minimal 版本参照
+  `references/patterns/domains/smoke-harness-minimal.md`（待补），
+  不依赖 `verl.utils.device`（那是 CP-001 产物，master 没有）
 
 PreToolUse hook 拦违规 Edit。
 

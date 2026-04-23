@@ -92,6 +92,66 @@
 3. **dep-analysis-expert 路由规则扩展**：区分 "NPU 已 ship 的版本" vs "NPU 未 ship 的版本"，分别路由到 shim-adapt 或 day0 expert
 4. **orchestrator** 的 task-plan 输出增加 scenario 维度：P1 (D=0) / P2a (shim-adapt 能搞定) / P2b (需要 day0 forward-port)
 
+### Day-0 wet-run 实证发现（2026-04-23 追加）
+
+**finding #1 — Day-0 expert 不能假设 fixture 分支是 NPU-ready**
+
+vllm-day0-expert 的 wet-run（vllm 0.19.1 on v2 image, session
+`vllm-day0-wetrun-20260423-0226`）用了 fixture 分支 off master。期望
+outcome A；实测 outcome **B**——原因：**master 上就已经有 2 个未 apply
+的 shim**（CP-002: `vllm.lora.models` 在新 vllm 不存在；CP-004:
+`get_tensor_model_parallel_group` 被 rename）。这些 shim 并不是 0.19.1
+引入的，而是 vllm 任何 ≥ 0.13.1 的版本都需要的（ascend-port 分支常年
+有 try/except，master 没有）。
+
+影响：
+- 任何 day0 expert 在 fixture=master 的场景下，都要 apply 基础 shim，
+  即使 target 版本没有新的 API 变动
+- **所以 OL-08 必须给 day0 expert 留出 shim 文件权限**（vllm-day0-expert
+  已经留了：vllm_utils.py / fsdp_vllm.py / vllm_rollout_spmd.py）
+- transformers-day0-expert 有同样隐患：master 上 `no_init_weights`
+  在 4.x 的 modeling_utils（没问题），但换成 fixture=baseline-working
+  branch 就不同。建议 transformers-day0 也加上 OL-08 下的
+  `verl/workers/fsdp_workers.py` 权限，以便在 fixture=master 场景补
+  EC-02 类 shim
+- **或者**：day0 expert 强制要求 `UPSTREAM_REF` 是已知 baseline-working
+  port ref（比如 `ascend-port-round4-20260422-0702`）而不是纯 master。
+  这样 fixture 只需 loosen pin，不需要带基础 shim。Trade-off：这违背
+  OL-03 的"day0 expert 不读 ascend-port* 分支内容"初衷，但 "checkout
+  一个 ref 并基于它开分支" 不等于 "读它的 git log/diff 理解做了什么"，
+  可以区分。需要在 OL-03 加明确条款
+
+**finding #2 — Day-0 expert 需要自带 smoke harness**
+
+fixture=master 时没有 `scripts/smoke_v11_device.py` / `smoke_v13_rollout.py`
+/ `examples/qwen2_0_5b_math_grpo_npu_smoke.sh` — 这些都是 ascend-port
+分支上建的。vllm-day0 agent 当场 workaround：在新分支上 commit 了
+minimal 版本 smoke scripts。
+
+影响：
+- Day-0 expert 的 OL-08 应允许写 `scripts/smoke_v{11,13}*.py` + canonical
+  V1.4 `examples/*.sh`，且 KB 里应该提供 **minimal harness 模板**，
+  不依赖 `verl.utils.device`（因为 master 没有，它是 CP-001 的产物）
+- 或者和 finding #1 一样，要求 UPSTREAM_REF 是带 smoke harness 的 port ref
+
+**finding #3 — 共享 host OL-05 讨论**
+
+wet-run 最后一步被共享 host 上的 Ray workers（另一个 root session）
+抢占。agent 等了 6min 没等到，按 OL-05 诚实 BLOCKED 退出，没假 PASS
+也没抢占。这是 OL 反作弊生效的时刻。
+
+影响：
+- OL-05 的"等 chip 空闲再上"在共享 host 上可能 block 整个 session
+- 建议添加 `OL-05c`：如果 chip 占用 > X 分钟（例如 15min），expert
+  emit PARTIAL 结果 + follow-up recipe，允许 orchestrator 之后用
+  `--reuse-image` 短路径完成 smoke
+- 当前 vllm-day0 agent 的行为（手写 smoke-blocked.md + re-attempt recipe）
+  已经是理想模式，只是没 codify
+
+**总结**：Day-0 expert scope 设计基本对，但 **OL-08 shim 权限** 和
+**smoke harness 自带** 要明确列入 expert 责任；OL-05 在共享 host
+场景要加 "超时 PARTIAL exit" 分支。
+
 ---
 
 ## 0. 一句话定位
