@@ -85,6 +85,34 @@ v2 image (2026-04-23):
 - **`../../_shared/references/patterns/domains/day0-deploy-artifacts.md`**
   — 5 deploy deliverables (mandatory for A / A-with-note / C-patch).
 
+## vllm 0.20.0 drift surface (2026-04-23 late session finding)
+
+Day-0 probe on vllm v0.20.0 (commit 579602aa4, 2026-04-22; 156 commits
+after vllm-ascend's last main2main cursor) exposes a deeper drift
+surface than vllm 0.19.1. V1.3 smoke on overlay requires **6+ point
+patches** to reach profile_run, and a 7th structural refactor beyond
+that. Concrete drift ledger:
+
+| # | Symptom at LLM() construction | vllm upstream PR | Fix scope |
+|---|---|---|---|
+| 1 | `ImportError: vllm_is_batch_invariant` | #35007 | 4-file env-var migration (same as vllm-ascend main PR #7787) |
+| 2 | `ImportError: Qwen3NextGatedDeltaNet` | #37975 | patch_qwen3_next.py import fallback to `layers.mamba.gdn_linear_attn.GatedDeltaNetAttention` |
+| 3 | `ImportError: Qwen3_5GatedDeltaNet` | #37975 | patch_qwen3_5.py same fallback |
+| 4 | `ImportError: create_vllm_config_for_draft_model` | #37880 | draft_proposer.py import optional + stub on call |
+| 5 | `NotImplementedError manual_seed_all` | #38468 | NPUPlatform.manual_seed_all classmethod |
+| 6 | `AttributeError: logprob_token_ids` | vllm 0.20 feat | NPUInputBatch.__init__ add field |
+| 7 (deferred) | `AttributeError: 'Tensor' has no 'gpu'` (self.positions.gpu[]) | #32951 | **structural** — `self.positions` / `self.seq_lens` changed from CpuGpuBuffer to plain GPU tensor; requires main2main skill, not ad-hoc point fix |
+
+Concrete artifacts: `workspace/vllm-day0-vllm0200-20260423-1623/findings.md`
++ personal fork branch `ascend-day0-torch211-20260423` commits
+`149393a0..335d99eb` (6 drift-patch commits on top of torch 2.11 Fix B+/C).
+
+**Takeaway**: Day-0 probe past 1-2 minor versions of vllm-ascend cursor
+can expose 6+ drift layers. First 6 are each 1-file point patches the
+skill can apply iteratively. Beyond that, sync work belongs to the
+vllm-ascend team's main2main skill (they have one per PR #6983), not
+our iterative Day-0 loop.
+
 ## Pre-probe discipline (2026-04-23 lesson)
 
 **Before committing a target vllm version**, check if vllm-ascend main
