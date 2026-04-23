@@ -85,12 +85,35 @@ it bypasses every affected call site in one shot.
   (commits `7c2078e7` + `caa55fed`)
 - Patched overlay image on A3: `easyr1-npu-torch211-vllmascend-fixb:ascend-day0-torch211-20260423`
 
-## Validated smoke matrix for Fix B+ patch (2026-04-23 late dusk, 2 iterations)
+## Validated smoke matrix for Fix B+ / Fix C patches (2026-04-23, 4 iterations)
 
-| Rung | Iter 1 (Fix B+ only) | Iter 2 (Fix B+ + reshape) | Notes |
-|---|---|---|---|
-| V1.3 (Qwen2-0.5B rollout, 1 chip) | **PASS** | **PASS** | marker `V1.3 ROLLOUT SMOKE PASSED`; reshape change didn't regress (input is 2D in V1.3 path, doesn't hit the new branch) |
-| V1.4 (Qwen2-0.5B GRPO training, 2 chips) | **FAIL** `AssertionError: x must be a 2D tensor` | **FAIL** (different error) `NotImplementedError: aten::linear_backward on CPU backend` | Iter 2 progresses past 2D assert → training reaches `Update policy 25%`. New failure is autograd-backward dispatch (inductor-compiled backward graph hits CPU fallback where linear_backward isn't registered). Logs: `.../20260423-011007.log` (iter 1), `.../20260423-011808.log` (iter 2) |
+| Rung | Iter 1 (Fix B+ only) | Iter 2 (+ reshape) | Iter 3 (+ TORCH_NPU_USE_COMPATIBLE_IMPL=1) | Iter 4 (Fix C rebuild) |
+|---|---|---|---|---|
+| V1.3 (Qwen2-0.5B rollout, 1 chip) | **PASS** | **PASS** | n/a | **PASS** |
+| V1.4 (Qwen2-0.5B GRPO training, 2 chips) | **FAIL** `2D tensor assert` | **FAIL** `aten::linear_backward CPU fallback` | **FAIL** (same as iter 2) | TBD — in flight |
+
+Iter 3 confirmed `TORCH_NPU_USE_COMPATIBLE_IMPL=1` doesn't help the
+autograd backward dispatch issue; the flag is about torch_npu's own
+removed monkey-patches, not inductor backward graph.
+
+**Iter 4 = Fix C applied**: rebuild `vllm_ascend_C.so` against torch
+2.11 ABI inside the patched container. Build succeeds once
+`CMakeLists.txt:26` hard-pin `VERSION_EQUAL "2.9.0"` is widened to
+accept `2.11.x` (commit `ab26a534` on personal fork). Resulting `.so`
+is 472KB (vs previous torch-2.9-built version). New overlay image
+tagged `easyr1-npu-torch211-fixc:ascend-day0-torch211-20260423`.
+
+Native-op reproducer (`torch.ops._C_ascend.npu_add_rms_norm_bias`):
+- **Pre-Fix C**: SIGSEGV through `torch._ops.py:1269 __call__`
+- **Post-Fix C**: clean `RuntimeError: call aclnnAddRmsNormBias failed,
+  detail:[PID: 1] ... The binary_info_config.json of socVersion
+  [ascend910_93] does not support opType [AddRmsNormBias]`
+
+So Fix C solved the ABI drift; op call now goes through the dispatcher
+cleanly, but Ascend's aclnn kernel repo doesn't have an A3-specific
+AddRmsNormBias binary registered. This is a separate kernel-coverage
+issue (could route to triton-ascend-day0 or Ascend kernel team) — but
+it IS a catchable Python exception now, not a SIGSEGV.
 
 **Limitation of Fix B+ batch-invariant escape hatch**: works for inference
 paths (V1.3) where linear inputs are 2D-flattened, breaks on training
