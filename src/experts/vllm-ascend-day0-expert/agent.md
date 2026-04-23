@@ -72,16 +72,34 @@ Per `vllm-ascend-probe.md §Phase A, B, C`.
 
 Per `ALWAYS_LOADED_RULES §Fix level selection`. Try levels 1→3.
 
-1. Env-var-only (level 1): set `VLLM_BATCH_INVARIANT=1` before any
-   vllm import in reproducer; does it PASS?
-2. Plugin-entry guard (level 2): add auto-detect to
+1. **Env-var-only (level 1)**: set `VLLM_BATCH_INVARIANT=1` before any
+   vllm import in reproducer; does it PASS? Enough for outcome B if
+   the user scenario is inference-only (V1.3).
+2. **Plugin-entry guard (level 2)**: add auto-detect to
    `vllm_ascend/__init__.py` (must run before any vllm module
    imports, because `vllm_is_batch_invariant()` is cached at vllm
-   module-import time)
-3. Per-call-site (level 3): version-gated fallback in each affected
-   file (only when few unguarded sites exist)
-4. C++ rebuild (level 4): not this session's scope; record as tech
-   debt and move to level 1-3 alternative
+   module-import time). Outcome C-patch for inference scenarios.
+3. **Per-call-site (level 3)**: version-gated fallback in each affected
+   file (only when few unguarded sites exist). Common example:
+   `linear_batch_invariant` reshape 3D→2D. Often gets training past
+   forward but autograd backward still fails.
+4. **C++ rebuild (level 4 — Fix C, IN SCOPE as of 2026-04-23)**:
+   rebuild `vllm_ascend_C.so` against the running torch ABI. **This
+   is the level you need when V1.4 training is required**. Levels
+   1-3 typically handle inference; V1.4 training almost always
+   needs native custom-op + native NPU backward, which means level 4.
+   Recipe: `patterns/domains/vllm-ascend-probe.md §"Level 4 rebuild
+   recipe"`. First patch: `CMakeLists.txt:26` hard-pin on torch
+   version (commit this to your `ascend-day0-<delta>-<SESSION>`
+   branch too).
+5. **C-report (level 5)**: fix belongs to a different upstream
+   (community torch, CANN kernel team). Blocker-report only.
+
+**Decision rule**: if V1.3 (inference) is PASS but V1.4 (training) is
+the failure, **don't stop at level 3 — escalate to level 4**. See
+`references/KB_INDEX.md §"Validated smoke matrix"` for the 2026-04-23
+evidence that level 4 is the minimum fix for training-path support
+on a new torch ABI.
 
 Write `workspace/vllm-ascend-day0-analysis-$SESSION_TAG/fix-design.md`.
 
@@ -100,6 +118,12 @@ Write `workspace/vllm-ascend-day0-analysis-$SESSION_TAG/fix-design.md`.
 5. Build image, run V1.3 smoke. Marker `V1.3 ROLLOUT SMOKE PASSED`
    required. **Do NOT** set `VLLM_BATCH_INVARIANT=1` manually — the
    patch must auto-trigger.
+6. **If V1.4 training is in scope for the session**: run V1.4 on the
+   same (Fix C) image with `VLLM_BATCH_INVARIANT=0` explicitly set
+   (forces native custom-op path, skips batch-invariant fallback).
+   Expected: PASS with `entropy_loss` in the v2 baseline band
+   `[1.21, 1.34]` (historical v2 V1.4 baseline = 1.275). If V1.4 fails
+   here, you're probably missing level 4 — go back to Phase C step 4.
 
 ### Phase E — deploy artifacts
 

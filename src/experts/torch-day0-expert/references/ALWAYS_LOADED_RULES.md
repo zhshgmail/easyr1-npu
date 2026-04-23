@@ -80,12 +80,16 @@
 2. PyPI: `pip index versions torch-npu` 或 `curl pypi.org/pypi/torch-npu/json`
    —— 看有没有 rc wheel（Day-0 session 的 install 对象）
 3. CANN 版本配对：`upstream/torch-npu/README.md` 的兼容表 + base image
-   的 CANN 版本 (`knowledge/images/<image>.md`)
+   的 CANN 版本 (`knowledge/images/<image>.md`)。**必须匹配或 base 版本
+   ≥ rc 要求的一个 patch 以内**（e.g. rc1 标 CANN 8.5.0，base 有 8.5.1
+   可接受；base 有 8.4.0 或 8.6.x 要 re-probe）。
 4. **Stop 条件**：
    - Ascend/pytorch main 已经适配 + 有 stable release → session 没
      skill 价值，换更新 target
    - rc wheel 不存在 → session 被 Ascend release 节奏阻塞，emit
      advisory，标 deferred
+   - base image CANN 和 rc requirements 差距超过一个 patch → fail-fast
+     with "need base image refresh first"
 
 记这步的发现到 PROGRESS.md 的 Phase A。
 
