@@ -1,0 +1,113 @@
+# torch-npu-upgrade workflow state machine.
+
+version: 1
+schema_version: "0.1"
+workflow_name: torch-npu-upgrade
+stage: 0
+last_updated: "2026-04-22"
+
+global_invariants:
+
+  - id: G1
+    description: "Orchestrator MUST NOT directly Edit consumer files or Dockerfiles. All torch-stack Dockerfile and shim edits go through torch-npu-upgrade-worker."
+    check: "PreToolUse on Edit: block consumer paths + Dockerfile.npu* unless $CLAUDE_AGENT_NAME == 'torch-npu-upgrade-worker'"
+    severity: BLOCKING
+
+  - id: G2
+    description: "Container-level `import torch_npu` + dry-import of consumer top-level package MUST succeed inside the target image before Phase D smoke runs. This expert relies heavily on container-side validation because torch-stack regressions are often module-init, not static-check-catchable."
+    check: "Stop hook: runs static_check.py --container-import-image $TARGET_IMAGE. Reject if either torch_npu or consumer package fails to import."
+    severity: BLOCKING
+
+  - id: G3
+    description: "V1.1 marker + V1.3 marker + V1.4 step-1 entropy_loss in TARGET image's band (not source's), all cited with log paths. V1.1 is non-negotiable — it's the torch-stack health gate."
+    check: "Stop hook: require all 3 rung markers/numerics in PROGRESS.md with log-file citations."
+    severity: BLOCKING
+
+phases:
+
+  P0_parse_args:
+    order: 1
+    required_actions:
+      - "Determine SOURCE_IMAGE / TARGET_IMAGE / TARGET_TORCH_NPU_VERSION / UPSTREAM_CONSUMER / UPSTREAM_REF / SESSION_TAG"
+      - "Create workspace/torch-npu-upgrade-{SESSION_TAG}/"
+    required_artifacts:
+      - path: "workspace/torch-npu-upgrade-{SESSION_TAG}/PROGRESS.md"
+        content_must_contain: ["MODE:", "SOURCE_IMAGE:", "TARGET_IMAGE:", "UPSTREAM_REF:"]
+    next: [P1_image_inspect]
+
+  P1_image_inspect:
+    order: 2
+    description: "Pip-freeze diff focused on torch stack. Check NPU-BUG-001 + NPU-BUG-004 status on TARGET."
+    required_actions:
+      - "Use cached knowledge/images/<slug>.md where available"
+      - "Extract torch, torch_npu, triton, triton-ascend, compressed_tensors, torchdata, torchvision versions"
+      - "NPU-BUG-001 probe: docker run --rm TARGET python -c 'import torch; import torch_npu' → on fail, record that the Dockerfile needs triton-ascend force-reinstall"
+      - "NPU-BUG-004 probe: check /usr/local/python*/lib/python*/site-packages/triton/backends/{amd,nvidia} in target; on presence, record amd/nvidia prune for Dockerfile"
+    required_artifacts:
+      - path: "workspace/torch-npu-upgrade-{SESSION_TAG}/image-diff.md"
+        content_must_contain: ["torch_npu:", "triton_ascend:", "NPU-BUG-001:", "NPU-BUG-004:"]
+    next: [P2_upstream_branch]
+
+  P2_upstream_branch:
+    order: 3
+    required_actions:
+      - "cd upstream/<consumer> && git checkout $UPSTREAM_REF && git checkout -b ascend-torch-upg-{SESSION_TAG}"
+    invariants:
+      - "upstream checked out at UPSTREAM_REF"
+    prohibited_actions:
+      - "Reading ascend-port* / round{3,4}-* branch content"
+    next: [P3_worker]
+
+  P3_worker:
+    order: 4
+    description: "torch-npu-upgrade-worker runs its Phase A (inspect) + B (Dockerfile adjust; rarely a .py shim) + C (build or reuse) + D (validation smoke)."
+    required_actions:
+      - "Spawn Agent(subagent_type=Explore, brief=agent.md + env)"
+      - "Worker exits via Stop hook"
+    required_artifacts:
+      - path: "workspace/torch-npu-upgrade-{SESSION_TAG}/analysis.md"
+        must_exist: true
+      - path: "workspace/torch-npu-upgrade-{SESSION_TAG}/static-check-report.json"
+        must_exist: true
+    invariants:
+      - "Any edited .py passes py_compile (G2)"
+      - "Container dry-import verl (or consumer package) PASS inside TARGET (G2)"
+    prohibited_actions:
+      - "Editing any consumer .py file (this expert is Dockerfile-first; touch verl/*.py only for NPU-BUG-003 use_torch_compile-type smoke-config changes)"
+    next: [P4_validation_smoke]
+
+  P4_validation_smoke:
+    order: 5
+    description: "V1.1 (torch-stack health) → V1.3 (vllm-ascend still composes) → V1.4 (training path still composes). Stop on first rung FAIL."
+    required_actions:
+      - "OL-05 chip precheck"
+      - "V1.1 smoke_validate.sh --rung V1.1 --image-tag <TARGET> --chips 0 (1 chip; OL-05b)"
+      - "V1.3 smoke_validate.sh --rung V1.3 --image-tag <TARGET> --chips 0"
+      - "V1.4 smoke_validate.sh --rung V1.4 --image-tag <TARGET> --image-family <v1|v2> --chips 0,1"
+    required_artifacts:
+      - path: "workspace/torch-npu-upgrade-{SESSION_TAG}/validation-smoke.md"
+        content_must_contain:
+          - "V1.1 marker"
+          - "V1.3 marker"
+          - "V1.4 step1 entropy_loss"
+          - "target_image_band"
+    invariants:
+      - "V1.1 marker present (non-negotiable health gate)"
+      - "V1.4 step-1 in TARGET image's band — G3 band discipline"
+    next: [P5_report]
+
+  P5_report:
+    order: 6
+    required_actions:
+      - "RESULTS.md with Handoff payload"
+      - "cleanup_session.sh --session-tag ... --preserve-image"
+      - "Classify CLOSED | PARTIAL | FAILED"
+    required_artifacts:
+      - path: "workspace/torch-npu-upgrade-{SESSION_TAG}/RESULTS.md"
+        content_must_contain:
+          - "handoff_payload:"
+          - "Cleanup:"
+          - "Closure classification:"
+    invariants:
+      - "CLOSED requires produced_by ∈ {torch-npu-upgrade-worker, orchestrator, user-provided}"
+    next: []
