@@ -53,7 +53,7 @@ above)
 
 | Component | Overlay version | Ref | Evidence |
 |---|---|---|---|
-| vllm-ascend | patched 0.17.0rc2.dev109 | `ascend-day0-torch211-20260423` branch on `zhshgmail/vllm-ascend` personal fork, branched from `54879467` (the image's shipped commit) | 2 commits applied: `7c2078e7` + `caa55fed` — torch-ABI-safe guard + early VLLM_BATCH_INVARIANT set |
+| vllm-ascend | patched 0.17.0rc2.dev109 | session-local trace branch `ascend-day0-torch211-20260423` on mirror fork `zhshgmail/vllm-ascend`, branched from upstream `54879467` (the image's shipped commit); authoritative handoff = `workspace/vllm-ascend-day0-deploy-20260423-0655/PR_MATERIAL.md` for vllm-ascend maintainer | 2 file-level edits: `utils.py` torch-ABI-safe guard + `__init__.py` early VLLM_BATCH_INVARIANT set |
 
 ### `easyr1-npu-trans56:trans-day0-wetrun-20260423-0109`
 
