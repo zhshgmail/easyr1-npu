@@ -78,17 +78,31 @@ Skill 自动：
    (`.so` loads + `TORCH_LIBRARY_IMPL` 注册 OK + op call SIGSEGV)
 3. 枚举 call sites：layernorm.py:73 (guard-gated)、sampler.py:139
    (guard-gated)。全 guard-gated → Fix B+ 可行（env-var 层面 bypass）
-4. 在 `upstream/vllm-ascend/` 上开 `ascend-day0-torch211-<SESSION>` 分支：
-   - utils.py 加 `_torch_abi_safe_for_custom_ops()` guard
-   - `__init__.py` 在 plugin entry 早设 `VLLM_BATCH_INVARIANT=1`
-5. 建 overlay `FROM <torch-day0-output> COPY utils.py + __init__.py
-   patched`
-6. V1.3 smoke **不手动设 env var**，期望 PASS
-7. 返回 patched overlay image tag + PR material (含 before/after reproducer
-   + suggested Fix C tech debt)
+4. 在 `upstream/vllm-ascend/` 上开 `ascend-day0-torch211-<SESSION>` 分支，
+   按 fix-level 升级顺序打 patch（直到 smoke PASS）：
+   - **Level 1-2 (Fix B+)**：utils.py 加 `_torch_abi_safe_for_custom_ops()`
+     guard + `__init__.py` 在 plugin entry 早设 `VLLM_BATCH_INVARIANT=1`。
+     跑 V1.3，通常 PASS；跑 V1.4（训练）会遇到 2D assert → 加 Level 3。
+   - **Level 3** (per-call-site python patch)：`linear_batch_invariant`
+     wrapper 接 3D reshape。V1.4 推进到 "Update policy" step，之后仍
+     FAIL on `linear_backward CPU fallback` → 升到 Level 4。
+   - **Level 4 (Fix C, C++ rebuild)**：CMakeLists.txt 放宽 torch
+     version hard-pin（`VERSION_EQUAL "2.9.0"` → accept 2.11.x），
+     在 Fix B+ overlay container 里跑
+     `python3 setup.py build_ext --inplace`，提取 472KB 的新
+     `vllm_ascend_C.cpython-*.so`。COPY 到 overlay 构造出
+     Fix C image。
+5. 建 overlay：Fix B+ 和 Fix C 可以分别独立 overlay 层（4 commits on
+   personal fork）。Fix C image 是完整 production-ready 的最终产物。
+6. V1.3 smoke（rollout）→ PASS on Fix B+ or Fix C
+7. V1.4 smoke（training）with `VLLM_BATCH_INVARIANT=0`（强制 native
+   custom op path）→ **only PASS on Fix C image**。期望 entropy_loss
+   exactly matches v2 baseline band [1.21, 1.34]（2026-04-23 实测 1.275）
+8. 返回 patched overlay image tag + PR material（4 commits 的 diff 全集）
 
-**预期输出**：outcome `C-patch`，V1.3 marker matched，patched 分支推到
-personal fork。
+**预期输出**：outcome `C-patch` with Fix C rebuild，V1.3 + V1.4 都 PASS，
+patched 分支 4 commits 推到 personal fork，V1.4 entropy_loss 和 v2
+baseline exact match。
 
 ## 人工 G2 验证（可选，但推荐）
 
@@ -100,12 +114,25 @@ Skill 返回后，用户自己验证两个 overlay image 确实 PASS，不信 sk
 ssh -p 443 root@115.190.166.102 "bash /tmp/torch-day0-<SESSION>/smoke_torch211.sh"
 # 最后一行: ALL SMOKE STEPS PASSED
 
-# (b) vllm-ascend V1.3 rollout
+# (b) vllm-ascend V1.3 rollout（Fix B+ 或 Fix C 都 PASS）
 bash repo/src/experts/vllm-day0-expert/scripts/smoke_validate.sh \
     --rung V1.3 \
-    --image-tag easyr1-npu-torch211-vllmascend-fixb:ascend-day0-torch211-<SESSION> \
+    --image-tag easyr1-npu-torch211-fixc:ascend-day0-torch211-<SESSION> \
     --image-family v2 --chips 0
 # 结束应显示 ✅ V1.3 PASS (marker 'V1.3 ROLLOUT SMOKE PASSED' found)
+
+# (c) **V1.4 training — 只有 Fix C image PASS**，需要强制 native custom op
+#     并在 ascend-port branch 上跑（需要 CP-001 device dispatch）
+ssh -p 443 root@115.190.166.102 "cd /home/z00637938/workspace/easyr1-npu/upstream/EasyR1 && git checkout ascend-port"
+# temp-edit smoke script to set VLLM_BATCH_INVARIANT=0（session 末尾需 revert）
+ssh -p 443 root@115.190.166.102 "sed -i 's|^set -eux|set -eux\nexport VLLM_BATCH_INVARIANT=0|' /home/z00637938/workspace/easyr1-npu/upstream/EasyR1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh"
+bash repo/src/experts/vllm-day0-expert/scripts/smoke_validate.sh \
+    --rung V1.4 \
+    --image-tag easyr1-npu-torch211-fixc:ascend-day0-torch211-<SESSION> \
+    --image-family v2 --chips 0,1 --timeout-min 15
+# 结束应显示 ✅ V1.4 PASS: entropy_loss=<N> in band [1.21, 1.34]
+# 2026-04-23 实测 entropy_loss=1.275 (exact v2 baseline match)
+ssh -p 443 root@115.190.166.102 "cd /home/z00637938/workspace/easyr1-npu/upstream/EasyR1 && git checkout -- examples/qwen2_0_5b_math_grpo_npu_smoke.sh"
 ```
 
 ## 为什么要做这件事（为什么不用 transformers-upgrade-expert）
@@ -125,10 +152,12 @@ PR-ready diff 交给 vllm-ascend upstream。
   不 git track）
 - `workspace/vllm-ascend-day0-{analysis,deploy}-<SESSION>/`
 - A3 上的两个 overlay image（保留用于下游 RL 框架 FROM 使用）：
-  - `easyr1-npu-torch211:torch-day0-<SESSION>`
-  - `easyr1-npu-torch211-vllmascend-fixb:ascend-day0-torch211-<SESSION>`
+  - `easyr1-npu-torch211:torch-day0-<SESSION>` (torch layer)
+  - `easyr1-npu-torch211-vllmascend-fixb:ascend-day0-torch211-<SESSION>` (Fix B+ intermediate)
+  - `easyr1-npu-torch211-fixc:ascend-day0-torch211-<SESSION>` (Fix C, production-ready)
 - Personal fork 上的 PR-ready 分支：
-  - `zhshgmail/vllm-ascend/ascend-day0-torch211-<SESSION>`（2 commits）
+  - `zhshgmail/vllm-ascend/ascend-day0-torch211-<SESSION>`（4 commits：
+    utils.py guard + __init__.py early-set + linear reshape + CMakeLists.txt widen）
 - `PR_MATERIAL.md` 文件（给上游 maintainer 提 PR 时粘贴）
 
 ## KB 沉淀
@@ -140,15 +169,29 @@ Skill 跑完自动把新发现的 Day-0 gotcha 写进各自 `references/KB_INDEX
 - `vllm-ascend-day0-expert`: C++ ABI drift 三步诊断、fix-level 选择
   顺序、editable install 技巧
 
-## 2026-04-23 首次实测参数
+## 2026-04-23 首次实测参数 + 结果
 
 - 基础镜像: `easyr1-npu-852:trans-upg-e2e-20260422-2200`（CANN 8.5.1 +
   Python 3.11.14 + torch 2.9 + torch_npu 2.9）
-- Session tag: `torch-day0-manual-20260423-0537` + `vllm-ascend-day0-*-20260423-0636/0655`
-- 产出 image 都在 A3 保留
-- patch branch: `ascend-day0-torch211-20260423` (commits `7c2078e7` +
-  `caa55fed` on `zhshgmail/vllm-ascend`)
-- V1.3 生成的文字样本：
+- Session tags:
+  - `torch-day0-manual-20260423-0537`（Phase 1/2 torch layer）
+  - `vllm-ascend-day0-analysis-20260423-0636` + `deploy-20260423-0655`
+    （Phase 5 patch + Fix C rebuild + wet-run）
+- 产出 image 都在 A3 保留（3 个 overlay 层）
+- Patch branch: `ascend-day0-torch211-20260423` on `zhshgmail/vllm-ascend`
+  （**4 commits**）
+  1. `7c2078e7` utils.py `_torch_abi_safe_for_custom_ops()` guard
+  2. `caa55fed` __init__.py early VLLM_BATCH_INVARIANT=1 set
+  3. `87b507ed` linear_batch_invariant 3D-reshape wrapper
+  4. `ab26a534` CMakeLists.txt widen torch version check to accept 2.11.x
+- **V1.3 rollout**（inference）：PASS on 所有 Fix B+/Fix C image
   - `"Hello, my name is"` → `" Sarah and I am a 20"`
   - `"The capital of France is"` → `" ______.\nA. Paris\nB."`
   - `"2 + 2 equals"` → `" 4. 2 + 2"`
+- **V1.4 training**（GRPO 2-step Qwen2-0.5B + math12k, 2 chips）：
+  - Fix B+ only：FAIL（linear_batch_invariant 2D assert 或
+    linear_backward CPU fallback）
+  - **Fix C 鏡像 with VLLM_BATCH_INVARIANT=0**：**PASS**
+    `entropy_loss=1.275` 在 band `[1.21, 1.34]` 中，**exact match v2
+    历史 baseline**
+  - 证明 native custom op + native NPU backward pass 路径完整跑通
