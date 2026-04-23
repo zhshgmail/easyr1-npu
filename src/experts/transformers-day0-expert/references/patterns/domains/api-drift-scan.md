@@ -146,3 +146,30 @@ a key that the target version removes or reshapes = outcome B or C.
 ## Recommendation for P2_decide
 {A_works_as_is | B_forward_port | C_blocked} — rationale: ...
 ```
+
+---
+
+## Expected platform-bug carryovers across transformers minor bumps
+
+When overlaying a newer transformers onto an existing NPU image, platform
+bugs from the **image stack** generally carry through regardless of which
+transformers minor sits on top. This table is informational (don't block
+on it; just expect it).
+
+| Platform bug | Trigger | Mitigation (inherited) |
+|---|---|---|
+| NPU-BUG-001 | triton-ascend partial install | already in base image's Dockerfile.npu-* |
+| NPU-BUG-003 | torch.compile'd log_probs path crash | easyr1-expert canonical V1.4 smoke sets `worker.actor.use_torch_compile=false` |
+| NPU-BUG-004 | upstream triton amd/nvidia backend pollution | already pruned in v2 base image |
+
+Verified on 2026-04-23 transformers-day0 wet-run (5.6.0 on v2): NPU-BUG-003
+still fires on V1.4 **unless** `use_torch_compile=false` is in the smoke
+config. Agent cherry-picked the existing workaround (ea08078) and recovered
+in 3 iterations. Not a Day-0 finding — expected platform debt.
+
+**Takeaway for future day0 agents**: running the canonical V1.4 smoke config
+verbatim (per `easyr1-expert/references/SMOKE_BASELINE.md §"canonical
+config"`) already avoids this. If the smoke config you're using is a stripped
+version, add `use_torch_compile=false` explicitly before the first V1.4
+iteration.
+

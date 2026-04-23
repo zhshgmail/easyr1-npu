@@ -38,14 +38,30 @@ RUN pip install --no-cache-dir --no-deps transformers==<TARGET_VERSION>
 # missing (e.g. 'regex' bump, 'tokenizers' bump), add it here.
 # RUN pip install --no-cache-dir tokenizers==<newer>
 
-# Sanity (build-time — fast-fail):
+# Sanity (build-time — fast-fail). VERSION-ONLY, do NOT import
+# npu_flash_attention here. See §"Build-time import trap" below.
 RUN TORCH_DEVICE_BACKEND_AUTOLOAD=0 python3 -c '
 import transformers
 print("overlaid transformers:", transformers.__version__)
-from transformers.integrations import npu_flash_attention
-print("npu_flash_attention module OK")
 '
 ```
+
+**Build-time import trap (2026-04-23 day0 finding)**: it is tempting to
+add `from transformers.integrations import npu_flash_attention` inside
+the Dockerfile sanity block. **Don't.** That import chain triggers
+`torch_npu → libascend_hal.so` dlopen, which fails in the docker build
+sandbox (no NPU device mount). The build aborts with a misleading
+"torch_npu backend failed to load" error.
+
+Only verify the `transformers` version at build time. Test
+`from transformers.integrations import npu_flash_attention` at **runtime**,
+inside a smoke container that actually has NPU devices mounted. If it
+fails there, it's a real adapter problem; if you catch it at build time,
+it's a false alarm from the missing device mount.
+
+First observed 2026-04-23 during transformers-day0 wet-run on 5.6.0
+(session `trans-day0-wetrun-20260423-0109` iter1 build failure). Fix
+landed as iter2 of that session's Dockerfile.
 
 Image tag convention: `easyr1-npu-trans<major><minor>:<SESSION_TAG>`
 (e.g. `easyr1-npu-trans56:trans-day0-20260423-0103`).
@@ -69,16 +85,23 @@ RUN pip install --no-cache-dir --no-deps transformers==<TARGET_VERSION>
 COPY patches/npu_flash_attention.py \
      /usr/local/python3.11.14/lib/python3.11/site-packages/transformers/integrations/npu_flash_attention.py
 
-# Sanity check — our patch loads cleanly AND transformers still imports
+# Sanity check at BUILD time: ONLY verify the patch file was written and
+# transformers itself still imports. Do NOT import npu_flash_attention
+# here — that triggers torch_npu → libascend_hal.so dlopen, which fails
+# in the docker-build sandbox (no NPU devices). See §"Build-time import
+# trap" above.
 RUN TORCH_DEVICE_BACKEND_AUTOLOAD=0 python3 -c '
-import transformers
-from transformers.integrations.npu_flash_attention import npu_flash_attn_func
-# If patch adds handlers for flash_attention_3 / paged|*, verify the
-# adapter now has them:
-from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
-# Assert: the keys your patch intended to add are present
-# print("handlers for:", [k for k in ALL_ATTENTION_FUNCTIONS.keys() if k in ("flash_attention_3","paged|flash_attention_2")])
+import transformers, os
+print("overlaid transformers:", transformers.__version__)
+patch_path = "/usr/local/python3.11.14/lib/python3.11/site-packages/transformers/integrations/npu_flash_attention.py"
+assert os.path.isfile(patch_path), f"patch not at {patch_path}"
+print("patch file in place")
 '
+
+# Runtime patch verification happens in the FIRST smoke container (V1.1)
+# where NPU devices are mounted. At that point, `import npu_flash_attention`
+# + a registry-key check is meaningful. Don't try to shift it into the
+# Dockerfile.
 ```
 
 The `patches/npu_flash_attention.py` source lives in `$WORKSPACE/patches/`
