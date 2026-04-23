@@ -101,6 +101,14 @@ bash scripts/fetch-upstream.sh --include-optional
 
 详细状态 + caveat + 要不要切的决策建议 → [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md)
 
+### 路径 3.5：社区刚发了新 transformers / vllm / torch，NPU 没跟上 —— Day-0 场景
+
+这是**真正最难**的场景：community 刚 release 新版本，NPU 生态还没 ship 配套 image / wheel，你又想用。`/transformers-day0` / `/vllm-day0` / `/torch-day0` skills 就是为这个设计的。
+
+**0 交互示例**（实测 2026-04-23，community transformers 5.6.0 前一天发布，NPU 原本无适配）→ [`docs/examples/transformers-5.6.0-day0.md`](docs/examples/transformers-5.6.0-day0.md)
+
+示例包含：1 行 skill 调用、skill 在 5 个 Phase 里做什么、预期 3 种 outcome（works-as-is / forward-port / blocked）、反作弊独立 verify 步骤、真实测得的数字（step-1 entropy_loss=1.31 在 v2 band 内）。
+
 ---
 
 ## 路径 4：复现"EasyR1 + 新依赖自动移植"的流程

@@ -39,6 +39,7 @@
 | **每个 skill 的权威说明** | `skills/<name>/SKILL.md` | SKILLS-GUIDE §1 表引用 |
 | **项目指令（给 Claude Code 用）** | `CLAUDE.md` | README 的仓库布局 |
 | **本 convention（给贡献者用）** | `docs/DOCS-CONVENTION.md`（本文件） | README → 维护小节 |
+| **用户侧 0-交互 skill 使用示例**（针对具体版本 / 具体场景） | `docs/examples/<skill>-<trigger>.md`（每个示例独立文件；zero-interaction reproduce 路径 + 反作弊 verify 步骤） | README → PORT-GUIDE / SKILLS-GUIDE → examples 目录 |
 
 **不要**：
 - 把同一信息写在多个地方（会 drift；以上表里每一条都是 **single source of truth**）
