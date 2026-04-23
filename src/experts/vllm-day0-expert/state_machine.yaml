@@ -1,0 +1,104 @@
+# vllm-day0 workflow state machine.
+
+version: 1
+schema_version: "0.1"
+workflow_name: vllm-day0
+stage: 0
+last_updated: "2026-04-23"
+
+global_invariants:
+
+  - id: G1
+    description: "Orchestrator MUST NOT Edit consumer source or vllm-ascend source. Worker only edits $WORKSPACE and, for outcome B consumer-side shim, a narrow allowlist of vllm-adjacent .py files."
+    check: "PreToolUse on Edit: block paths unless $CLAUDE_AGENT_NAME == 'vllm-day0-worker'"
+    severity: BLOCKING
+
+  - id: G2
+    description: "Container-level `import vllm` + `vllm-ascend plugin loads` + `import verl` MUST succeed inside the overlay image before Phase D smoke runs. Day-0 is runtime-compat; pip's install-succeeded signal is not enough."
+    check: "Stop hook: static_check.py --container-import-image <overlay> --import-package vllm + --import-package verl. Both must succeed."
+    severity: BLOCKING
+
+  - id: G3
+    description: "Outcome evidence requirements: A needs V1.3 marker + V1.4 entropy_loss; B needs same plus shim commit diff; C needs blocker-report.md citing specific vllm-ascend file + line that requires upstream work."
+    check: "Stop hook: grep outcome keyword in RESULTS.md; require matching evidence set."
+    severity: BLOCKING
+
+phases:
+
+  P0_parse_args:
+    order: 1
+    required_actions:
+      - "Determine TARGET_VLLM_VERSION / BASE_IMAGE / UPSTREAM_CONSUMER / UPSTREAM_REF / SESSION_TAG"
+      - "Create workspace/vllm-day0-{SESSION_TAG}/"
+    required_artifacts:
+      - path: "workspace/vllm-day0-{SESSION_TAG}/PROGRESS.md"
+        content_must_contain: ["MODE:", "TARGET_VLLM_VERSION:", "BASE_IMAGE:", "UPSTREAM_REF:"]
+    next: [P1_overlay_probe]
+
+  P1_overlay_probe:
+    order: 2
+    description: "Inside BASE_IMAGE, pip install target vllm. Probe vllm-ascend plugin load + API surfaces (lora, parallel_state, SamplingParams, LLM.generate)."
+    required_actions:
+      - "one-shot docker run: pip install --no-deps vllm==$TARGET_VLLM_VERSION; capture warnings"
+      - "Probe platform_plugins registration (does vllm-ascend still register?)"
+      - "Probe LoRAModel import (lora.lora_model vs lora.models)"
+      - "Probe get_tp_group presence"
+      - "Probe SamplingParams read-only property set (may grow version-to-version)"
+      - "Probe LLM.generate signature (prompts= / inputs= / prompt_token_ids= positional-vs-kwarg)"
+      - "Probe VLLMHijack targets (worker_manager._load_adapter, get_adapter_absolute_path, PEFTHelper)"
+      - "Probe any new-vllm-required symbols that older vllm-ascend doesn't export (e.g. new kernel import paths)"
+    required_artifacts:
+      - path: "workspace/vllm-day0-{SESSION_TAG}/api-drift-scan.md"
+        content_must_contain: ["target vllm version", "platform_plugins", "lora_model", "SamplingParams"]
+    next: [P2_decide]
+
+  P2_decide:
+    order: 3
+    required_actions:
+      - "If vllm-ascend plugin loads + all probed APIs stable + consumer-source grep clean → outcome A"
+      - "If small consumer-side shim needed (e.g. SamplingParams new RO property, positional-vs-kwarg fix) → outcome B"
+      - "If vllm-ascend missing a symbol new vllm requires (e.g. kernel import, attention backend) → outcome C (vllm-ascend needs upstream patch; not this expert's job)"
+    required_artifacts:
+      - path: "workspace/vllm-day0-{SESSION_TAG}/decision.md"
+        content_must_contain: ["outcome:", "rationale:"]
+    next: [P3_act]
+
+  P3_act:
+    order: 4
+    description: "Outcome A: build overlay image (+ loosen consumer vllm pin if needed). Outcome B: add consumer-side shim commit on fixture branch. Outcome C: blocker report, skip smoke."
+    required_actions:
+      - "If outcome in {A, B}: write Dockerfile.overlay-vllm<MM>; pip install --no-deps target vllm; build-time sanity VERSION-ONLY (runtime verification happens at smoke per day0 pattern)"
+      - "If outcome B: git checkout -b ascend-day0-vllm-$SESSION_TAG, commit shim edits in vllm_utils.py / vllm_rollout_spmd.py / fsdp_vllm.py (narrow OL-08 allowlist)"
+      - "If outcome C: write blocker-report.md naming specific vllm-ascend file + line"
+    required_artifacts:
+      - path: "workspace/vllm-day0-{SESSION_TAG}/overlay-build.log"
+        must_exist: "if outcome in {A, B}"
+      - path: "workspace/vllm-day0-{SESSION_TAG}/blocker-report.md"
+        must_exist: "if outcome == C"
+    invariants:
+      - "If outcome A/B: docker run overlay + import vllm + import verl must succeed"
+    next: [P4_smoke]
+
+  P4_smoke:
+    order: 5
+    description: "V1.3 (primary vllm exercise — rollout path) then V1.4 (training path regression check). Chip precheck per OL-05b."
+    preconditions: [P3_act]
+    required_actions:
+      - "V1.3 smoke_validate.sh --rung V1.3 --image-tag <overlay> --chips 0"
+      - "V1.4 smoke_validate.sh --rung V1.4 --image-tag <overlay> --image-family <base's family> --chips 0,1 --metrics-jsonl <path>"
+      - "FRESH BASELINE: V1.4 at target vllm has no known band; assertion = '2 steps + jsonl entropy_loss numeric'; record as new baseline"
+    required_artifacts:
+      - path: "workspace/vllm-day0-{SESSION_TAG}/validation-smoke.md"
+        content_must_contain: ["V1.3 marker", "V1.4 step1 entropy_loss", "fresh_baseline_or_band:"]
+    next: [P5_report]
+
+  P5_report:
+    order: 6
+    required_actions:
+      - "RESULTS.md with outcome + Handoff payload"
+      - "cleanup_session.sh --session-tag ... --preserve-image (overlay preserved for caller)"
+      - "Classify CLOSED (A/B green + baseline recorded) | PARTIAL | FAILED"
+    required_artifacts:
+      - path: "workspace/vllm-day0-{SESSION_TAG}/RESULTS.md"
+        content_must_contain: ["outcome:", "Cleanup:", "Closure classification:"]
+    next: []

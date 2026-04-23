@@ -155,8 +155,10 @@ For versions not in any NPU image:
    outcome (works-as-is / forward-port / blocked). Hardest scenario
    per user 2026-04-23; try this first.
 2. **vllm / vllm-ascend target not shipped** → `vllm-day0-expert`
-   (Stage 3, not yet built). Mark `routed_to_future_expert` until it
-   lands.
+   (Stage 3, built 2026-04-23). Typical case: community vllm ahead of
+   vllm-ascend by 1-2 minor. Expert probes whether existing vllm-ascend
+   plugin still loads against the new vllm (often YES due to
+   plugin-architecture version tolerance) + emits A/B/C outcome.
 3. **torch / torch_npu target not shipped** → `torch-day0-expert`
    (Stage 3, not yet built). Usually easiest case (NPU tracks torch
    closely) but still day-0 if genuinely unshipped.
