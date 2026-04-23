@@ -44,3 +44,34 @@ Day-0 probes often need a fixture branch on the consumer repo that:
 
 Fixture commit provenance: `orchestrator-fixture` (same as
 Day-0 post-mortem pattern from 2026-04-22 E2E).
+
+## Outcome matrix (aligned with vllm-day0 / torch-day0 / vllm-ascend-day0)
+
+| Outcome | Meaning | Action |
+|---|---|---|
+| **A** | pip overlay + probes all clean + consumer source unchanged → smoke PASS | Ship overlay + note |
+| **A-with-note** | PASS but something observable changed (e.g. ALL_ATTENTION_FUNCTIONS grew but we don't use new default) | Ship overlay + ONBOARDING known-broken section |
+| **B** | Consumer-side shim (1-line sig wrapper in `npu_flash_attention` or consumer rollout script) | Commit shim on fixture + smoke PASS |
+| **C-patch** | Fix belongs in `upstream/transformers/src/transformers/integrations/npu_*` (Huawei-owned NPU integration files within the transformers repo) | Branch `ascend-day0-transformers-<SESSION>` on transformers fork + PR material |
+| **C-report** | Fix needed in community transformers (non-NPU paths) | blocker report, we don't patch community code |
+
+## Related KB (sibling experts — 3-layer Day-0 chain)
+
+- `torch-day0-expert/` — when transformers 5.x depends on a torch version
+  the NPU ecosystem hasn't shipped, chain torch-day0 first
+- `vllm-day0-expert/` — when transformers bump combines with new vllm
+  (check dep-analysis routing)
+- `vllm-ascend-day0-expert/` — if transformers bump triggers vllm-ascend
+  C++ extension rebuild need, route there
+- `../../_shared/references/patterns/domains/day0-deploy-artifacts.md`
+  — Phase E 5-artifact template
+
+## 2026-04-23 validated result
+
+Session `transformers-day0-trans-day0-wetrun-20260423-0109`:
+- target: transformers 5.6.0 (community 2026-04-22)
+- overlay image: `easyr1-npu-trans56:trans-day0-wetrun-20260423-0109`
+- V1.1/V1.3/V1.4 all PASS; step-1 entropy_loss 1.310, in v2 baseline
+  band [1.21, 1.34]
+- outcome: A (no patch needed — all new ALL_ATTENTION_FUNCTIONS keys
+  expanded without touching the defaults our models use)
