@@ -53,6 +53,14 @@
 - **其它 `verl/**/*.py` 不碰** —— consumer 代码的大规模 port 是
   easyr1-expert 的域；如果 transformers 新版真的改了 consumer 必须 port
   的 API 超出 EC-02 范围，本 expert 的 outcome 是 C，交接回 orchestrator
+- **如 outcome C-patch（2026-04-23 新增）**：允许编辑以下华为开源适配层
+  在 `ascend-day0-<SESSION_TAG>` 分支上的 `.py`：
+  - `upstream/transformers/src/transformers/integrations/npu_*.py`
+    （NPU-specific integration 文件，Ascend 团队贡献的）
+  - 不改社区 transformers 本身（非 npu_* 部分属于社区 maintainer 的决定）
+  - patch 要走 git branch + Dockerfile COPY overlay；不直接 mutate image
+    内 .py。产出物是 PR-ready diff for transformers upstream's NPU
+    integration owner
 - **Smoke harness 允许新建**（if UPSTREAM_REF=master 场景）：
   `upstream/<consumer>/scripts/smoke_v11_device.py`,
   `upstream/<consumer>/scripts/smoke_v13_rollout.py`,

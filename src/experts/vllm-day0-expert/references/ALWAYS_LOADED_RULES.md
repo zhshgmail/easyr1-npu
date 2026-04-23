@@ -40,15 +40,43 @@
   - `verl/utils/vllm_utils.py` — CP-002 / VLLMHijack
   - `verl/workers/rollout/vllm_rollout_spmd.py` — EC-03 SamplingParams
   - `verl/workers/sharding_manager/fsdp_vllm.py` — CP-004 TP group
+- **如 outcome C-patch（2026-04-23 新增）**：
+  - `upstream/vllm-ascend/**/*.py` 在 `ascend-day0-<SESSION_TAG>` 分支上 ——
+    产出 vllm-ascend upstream patch 是 Day-0 skill 的正当交付物（skills
+    的受众就是 vllm-ascend 维护者）
+  - 同样适用于其它华为开源适配层（`triton-ascend/**`、`torch-npu/**`） ——
+    但 vllm-day0 session 通常只碰 vllm-ascend
+  - **不改**社区 vllm 本身（社区的决定我们无权替 rep）；不改非华为开源的
+    任何上游
+  - patch 要走 git branch，不直接 mutate image 内 `.py`；overlay image 通过
+    `pip install git+...@<branch>` 把 patch 装进去
 
 **禁写**：
 - 任何其它 `verl/**/*.py`（是 easyr1-expert 的 domain）
 - `Dockerfile.npu` / `Dockerfile.npu-852` / `Dockerfile.npu-torch-*` /
   `Dockerfile.overlay-trans*` —— 其它 expert 的 domain
-- **vllm-ascend 源码**：本 expert 不动 vllm-ascend；需要打 vllm-ascend
-  patch 的话是 **outcome C** 的责任：emit blocker-report 让 NPU 团队
-  upstream 修
+- 社区 vllm (`upstream/vllm/**`) 本身
 - `src/experts/**` 自身
+
+## Outcome 矩阵（2026-04-23 细化）
+
+| Outcome | 含义 | 该做什么 |
+|---|---|---|
+| A | 直接 pip overlay + V1.3 PASS（无需改任何 upstream） | 写 PROGRESS，存 overlay image |
+| B | V1.3 FAIL on consumer-side API drift，3 shim 文件能修 | 改 shim + V1.3 PASS |
+| C-patch | V1.3 FAIL because vllm-ascend（或其它华为开源）need code change | 在 `upstream/vllm-ascend/` 开 `ascend-day0-<SESSION_TAG>` 分支改，overlay 装 patch 后 V1.3 PASS，打包 PR-ready diff |
+| C-report | Fix 需要社区 vllm 侧做（我们无权改）；或 fix 超出 skill 领域范围 | 写 blocker-report 列最小复现 + suggested fix 交给 vllm-ascend/community owner |
+
+**目标是 A 或 C-patch 且 PASS。** C-report 只在真没法自己解的时候用。
+
+## Target 选择的 pre-probe（必做）
+
+在 `pip download vllm==<TARGET>` 之前，先 probe：
+1. `cd upstream/vllm-ascend && git fetch origin --tags && git log origin/main -S '<关键 symbol>'` —— 查 vllm-ascend main 有没有已经适配过该版本的 breaking change
+2. 如果 **vllm-ascend main 已 handle** → 换**更新 target**（社区更新的版本），回 step 1；否则当前 session 没 skill 价值
+3. 找社区最新 tag + `git log <ascend-cursor>..v<TARGET> --oneline` 看 delta 深度；delta < 10 commit 的可能不值得做 Day-0（换更新 target）
+
+记这步的发现到 PROGRESS.md 的 Phase A。
 
 PreToolUse hook 拦违规 Edit。
 

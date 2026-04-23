@@ -48,7 +48,8 @@ case "$FILE_PATH" in
   *upstream/*/verl/workers/fsdp_workers.py|\
   *upstream/*/scripts/smoke_v11_device.py|\
   *upstream/*/scripts/smoke_v13_rollout.py|\
-  *upstream/*/examples/qwen2_0_5b_math_grpo_npu_smoke.sh)
+  *upstream/*/examples/qwen2_0_5b_math_grpo_npu_smoke.sh|\
+  *upstream/transformers/src/transformers/integrations/npu_*)
     echo "[check_edit_scope] BLOCKING: G1 invariant — transformers-day0 files must go through transformers-day0-worker, not $AGENT" >&2
     echo "  target: $FILE_PATH" >&2
     echo "  see: transformers-day0-expert/state_machine.yaml G1" >&2

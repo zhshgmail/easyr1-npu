@@ -39,6 +39,10 @@ except Exception:
 # - $WORKSPACE/vllm-day0-*/ (notes, patches)
 # - scripts/smoke_v{11,13}*.py + examples/qwen2*.sh (fixture=master needs
 #   them; added 2026-04-23 post-vllm-day0 wet-run)
+# - upstream/vllm-ascend/**/*.py on ascend-day0-<SESSION_TAG> branch
+#   (2026-04-23: outcome C-patch — day-0 skill's legitimate deliverable is
+#   a vllm-ascend upstream patch; must be on an ascend-day0-* branch,
+#   worker's git discipline enforces that)
 # Other verl/*.py belong to sibling experts.
 case "$FILE_PATH" in
   *upstream/*/Dockerfile.overlay-vllm*|*/Dockerfile.overlay-vllm*|\
@@ -48,6 +52,7 @@ case "$FILE_PATH" in
   *upstream/*/scripts/smoke_v11_device.py|\
   *upstream/*/scripts/smoke_v13_rollout.py|\
   *upstream/*/examples/qwen2_0_5b_math_grpo_npu_smoke.sh|\
+  *upstream/vllm-ascend/*|\
   *workspace/vllm-day0-*/*)
     echo "[check_edit_scope] BLOCKING: G1 invariant — vllm-day0 files must go through vllm-day0-worker, not $AGENT" >&2
     echo "  target: $FILE_PATH" >&2
