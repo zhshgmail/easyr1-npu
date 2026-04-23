@@ -101,16 +101,44 @@ Is <pkg> in PACKAGE_RULES?
 
 ## Upgrade-expert routing
 
-If D is encountered:
+If D is encountered, check which expert owns it. As of Stage 2 there are
+three upgrade experts — pick the narrowest one that covers the trigger.
+Prefer single-dep over atomic-stack-swap when possible.
 
-1. Is it a `transformers` / `vllm` / `torch_npu` / CANN version gap? →
-   route to `transformers-upgrade-expert` (its drill covered this family).
-2. Is it a new Ascend-ecosystem package? → route to a future
-   `ascend-ecosystem-upgrade-expert` (doesn't exist yet; mark
-   `unsupported: needs new expert`).
-3. Is it a CUDA-only library with no NPU analog? → mark
-   `unsupported: cuda-only, no NPU port available`; orchestrator surfaces
-   to user (they may choose to remove the dep from consumer).
+1. **Whole-stack swap** (base-image family change — moves transformers +
+   vllm + torch_npu + CANN together, like v1→v2 historical drill) →
+   `transformers-upgrade-expert`. Triggers: consumer wants a new NPU
+   base image family; OR two+ of {transformers, vllm, torch_npu} need
+   to move together.
+2. **vllm-only bump** within a fixed base-image family (e.g. vllm 0.13→0.14
+   on same CANN+transformers+torch_npu) → `vllm-upgrade-expert`.
+   Triggers: consumer req has a conflict ONLY on `vllm` or `vllm-ascend`
+   while other deps stay put; or user asks to pick up a vllm-ascend
+   release for CVE/bugfix.
+3. **torch-stack-only bump** within a fixed transformers/vllm world
+   (e.g. torch_npu 2.8→2.9 on same transformers/vllm) →
+   `torch-npu-upgrade-expert`. Triggers: consumer req has a conflict
+   ONLY on `torch` / `torch_npu` / `triton-ascend` / `torchdata`;
+   new base image shipping upgraded torch but keeping transformers.
+4. **New Ascend-ecosystem package** that no existing expert covers
+   (e.g. future `ascend-flash-attn-standalone`, `cann-training-runtime`,
+   etc.) → mark `unsupported: needs new expert`. Orchestrator surfaces
+   to user for decision (build new expert or drop the dep).
+5. **CUDA-only library with no NPU analog** → mark
+   `unsupported: cuda-only, no NPU port available`; orchestrator
+   surfaces to user (typical resolution: make the dep optional via
+   [gpu] extras).
+
+### Rule for "which single expert" on ambiguous multi-dep D
+
+If D contains e.g. `{transformers>=5, vllm>=0.18}` — both part of the
+historical v1→v2 family — prefer **`transformers-upgrade-expert`**
+(atomic swap). Don't chain two single-dep experts when one atomic
+expert covers both; the atomic expert already carries the cross-dep
+wiring (e.g. vllm-ascend matching transformers version).
+
+If D contains e.g. `{vllm>=0.20}` alone but transformers stays put,
+prefer `vllm-upgrade-expert` — shorter, doesn't disturb other deps.
 
 ## Maintenance
 
