@@ -155,7 +155,7 @@ $SSH_CMD "cd $A3_CONSUMER_DIR && \
 # --- 5. docker build (or verify pre-existing when --reuse-image) ---
 if [[ $DO_BUILD -eq 1 ]]; then
   echo "--- docker build (using $DOCKERFILE) ---"
-  $SSH_CMD "cd $A3_CONSUMER_DIR; docker build -t $IMAGE_TAG -f $DOCKERFILE . 2>&1 | tail -20" || exit 5
+  $SSH_CMD "cd $A3_CONSUMER_DIR; docker build --build-arg BASE_IMAGE=$BASE_IMAGE -t $IMAGE_TAG -f $DOCKERFILE . 2>&1 | tail -20" || exit 5
   IMAGE_ID=$($SSH_CMD "docker images $IMAGE_TAG --format '{{.ID}}'" 2>/dev/null | head -1)
   if [[ -z "$IMAGE_ID" ]]; then
     echo "ERROR: image $IMAGE_TAG not found after build" >&2
