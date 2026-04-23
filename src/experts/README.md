@@ -127,7 +127,8 @@ Enabled Huawei-owned targets for C-patch:
 |---|---|---|---|---|---|---|---|---|
 | v1 | 4.57 | 0.13.0 | 0.13.1.dev18 | 2.7.x | 2.7.x | 8.4.0 | (historic) | (historic) |
 | v2 | 5.3.0.dev0 | 0.18.0 | 0.17.0rc2.dev109 | 2.9.0 | 2.9.0 | 8.5.1 | PASS | PASS |
-| v2 + torch 2.11 overlay | 5.3.0.dev0 | 0.18.0 | 0.17.0rc2.dev109 + Fix B+ (3 commits) | **2.11.0+cpu** | **2.11.0rc1** | 8.5.1 | **PASS** | progresses to `Update policy 25%`, then **FAIL** on `aten::linear_backward` CPU fallback (deeper issue — torch.compile backward graph; needs Fix C) |
+| v2 + torch 2.11 overlay (Fix B+ only) | 5.3.0.dev0 | 0.18.0 | 0.17.0rc2.dev109 + Fix B+ (3 commits) | **2.11.0+cpu** | **2.11.0rc1** | 8.5.1 | **PASS** | progresses to `Update policy 25%`, then **FAIL** on `aten::linear_backward` CPU fallback |
+| v2 + torch 2.11 overlay (Fix B+ + Fix C) | 5.3.0.dev0 | 0.18.0 | 0.17.0rc2.dev109 + Fix B+ + Fix C rebuild (4 commits) | **2.11.0+cpu** | **2.11.0rc1** | 8.5.1 | **PASS** | **PASS** entropy_loss=1.275 (exact v2 baseline match) |
 | v2 + transformers 5.6.0 overlay | **5.6.0** | 0.18.0 | 0.17.0rc2.dev109 | 2.9.0 | 2.9.0 | 8.5.1 | PASS | PASS (step1 entropy_loss 1.310 in band) |
 
 **Note on torch 2.11 overlay V1.4 FAIL**: Fix B+ forces batch-invariant

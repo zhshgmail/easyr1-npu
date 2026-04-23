@@ -308,32 +308,36 @@ Overlay images on A3 (preserved)：
 **A3 dirty state** — **2026-04-23T09:15Z 全部已清**（磁盘释放后 iter 3 补跑 +
 git checkout 恢复 examples/qwen2_0_5b_math_grpo_npu_smoke.sh）。没有残留。
 
-**V1.4 训练路径 trailing status**（3 iter 尝试，均 FAIL）：
-1. Iter 1 (Fix B+ only, commit caa55fed)：FAIL `AssertionError: x must be a 2D tensor` 在
-   `vllm_ascend/ops/triton/batch_invariant/matmul.py:261 linear_persistent`
-2. Iter 2 (+ Option 1 reshape, commit 87b507ed)：过 2D assert，训练进到
-   "Update policy 25%"，FAIL `NotImplementedError: aten::linear_backward on CPU backend`
-   （torch.compile backward graph 经 batch-invariant override 路径最终回落到 CPU，
-   CPU 没实现 linear_backward）
-3. Iter 3（09:14Z 磁盘释放后补跑）：+ `TORCH_NPU_USE_COMPATIBLE_IMPL=1` env var
-   **同样 FAIL** `aten::linear_backward on CPU backend`。证明 compat 标志不能
-   解决 inductor backward graph dispatch 问题；真正需要 **Fix C rebuild**。
-   Dirty state 已清。Log `/tmp/z00637938/easyr1-logs/V1.4-*vllmascend-fixb*-021028.log`
+**V1.4 训练路径 status**（4 iter，最终 **PASS on iter 4 / Fix C**）：
+1. Iter 1 (Fix B+ only, commit caa55fed)：FAIL `AssertionError: x must be a 2D tensor`
+2. Iter 2 (+ Option 1 reshape, commit 87b507ed)：过 2D assert，FAIL `linear_backward on CPU backend`
+3. Iter 3 (+ TORCH_NPU_USE_COMPATIBLE_IMPL=1)：同 iter 2 FAIL
+4. **Iter 4 Fix C (commit ab26a534)**: rebuild `vllm_ascend_C.so` against torch 2.11 ABI
+   inside 容器，CMakeLists 放宽 `VERSION_EQUAL "2.9.0"` → 接受 2.11.x。新的 472KB
+   `.so` COPY 回 overlay image (`easyr1-npu-torch211-fixc:ascend-day0-torch211-20260423`)。
+   设 `VLLM_BATCH_INVARIANT=0` 强制走 native custom op path。
+   **V1.4 PASS with entropy_loss=1.275 (exact v2 baseline 1.275 in band [1.21, 1.34])**.
+   Log: `/tmp/z00637938/easyr1-logs/V1.4-easyr1-npu-torch211-fixc-*-023329.log`
+
+这是**完整 3-layer Day-0 chain 端到端 PASS**：
+- torch 2.11 + torch_npu 2.11.0rc1 + CANN 8.5.1 ✓
+- vllm-ascend 0.17 + 4 commits Fix B+/Fix C ✓
+- EasyR1 V1.3 rollout + V1.4 training 都 PASS ✓
 
 **Fix C 依然是 V1.4 根治方案**（task #77）：rebuild `vllm_ascend_C.so` against
 torch 2.11 让 custom op 走 native NPU impl 而不是 batch-invariant fallback。
 只要 custom op 生效，batch-invariant 不启用，linear 的 autograd backward
 就走正常 NPU path，不经过 CPU fallback。
 
-**下次 session 建议**（今晚已 confirm Fix C 是 V1.4 唯一可行路径）：
-1. 优先走 **Fix C**（task #77）：在 docker container 里 pip install torch_npu
-   build-from-source 配置（需 CANN dev headers 在 path），`cd /vllm-ascend
-   && python setup.py build_ext --inplace` 重编 `vllm_ascend_C.*.so` against
-   现场 torch 2.11 ABI。成功后 batch-invariant 不再需要被 auto-enable，V1.4
-   的 autograd 走正常 NPU path。如果 rebuild 本身卡住（CANN header 不全、
-   NPU 编译链 mismatch 等），那就 escalate 给 Ascend 团队（C-report scope）
-2. 或换 target 做 Phase 8 cold-drive（task #73）
-3. A3 磁盘状态建议每次 session 启动 df -h / 看一眼，非自己消耗别清
+**下次 session 建议**（Fix C iter 4 已完成 V1.4 PASS — 3-layer chain 全链路跑通）：
+1. 唯一剩下的 pending 是 Phase 8 cold-drive validation（task #73）：新 session
+   fresh state 调 `/torch-day0` + `/vllm-ascend-day0` 验证 skill 能自动复现
+   今天 manual 那条链路
+2. 或开始新 target：比如 vllm v0.20.0（156 commit ahead of vllm-ascend main，
+   是真 Day-0 target），用 `/vllm-day0` + `/vllm-ascend-day0` chain
+3. 或推 `/transformers-day0` 其它版本，或建 triton-ascend-day0-expert（如果
+   触发新 target 时遇到 triton-ascend 层的 Day-0 issue）
+4. A3 磁盘状态建议每次 session 启动 df -h / 看一眼，非自己消耗别清
 
 ---
 
