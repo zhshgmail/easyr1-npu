@@ -72,7 +72,7 @@ EasyR1 port 验证的不同**深度**。数字越大，覆盖越深。一次 por
 - 3 个 prompt 全部产出**非空**输出（formal criterion）
 - 输出**分布和 baseline 对齐**（semantic criterion，更严格）
 
-目前 smoke harness 只检 formal criterion（marker 匹配 + 输出非空）。semantic criterion 需要和 baseline image 对比 logits 或 token sequence。2026-04-23 vllm 0.20 session 发现：formal V1.3 PASS 但 semantic FAIL（输出是噪声 token 而非正常英文），**这是 smoke harness 的盲点**，待补。
+目前 smoke harness 只检 formal criterion（marker 匹配 + 输出非空）。semantic criterion 需要和 baseline image 对比 logits 或 token sequence。2026-04-23 vllm 0.20 session 发现：formal V1.3 PASS 但 semantic FAIL（输出是噪声 token 而非正常英文），**这是 smoke harness 的盲点**，待补。具体案例 + root-cause trace 见 `workspace/vllm-day0-vllm0200-20260423-1623/BLOCKER_REPORT.md`——step-0 logits bit-exact match baseline（prefill 正确），step-1 开始分叉（decode 读 KV 全零）。这类 bug 靠 formal criterion 抓不到，必须 token-level 对比。
 
 ---
 

@@ -152,6 +152,25 @@ run (e.g. PR #6983). This skill surfaces them early so you can plan
 the main-branch sync cadence ahead of the next vllm release, rather
 than debugging consumers' breakage reports post-ship.
 
+**Surprise finding — semantic-vs-formal V1.3 gap surfaced**:
+iter 15 produced formal V1.3 PASS (marker matched, non-empty output)
+but generated tokens were noise (`' Sarahatic斧 (++...'`) vs baseline
+`' Sarah and I am a 20'`. Token-diff probe showed step-0 logits
+bit-exact match with baseline but step-1 onward diverging — isolated
+to KV cache never being written. Root cause traced to vllm 0.20's new
+`AttentionBackend.forward_includes_kv_cache_update: bool` contract
+(default True, all upstream GPU backends override to False). vllm-ascend
+inherits True, so vllm skips `unified_kv_cache_update`, AND vllm-ascend's
+own `reshape_and_cache` has `len(kv_cache) > 1` guard that fails under
+vllm 0.20's `kv_cache = (unified_tensor,)` layout. Full trace in
+`workspace/vllm-day0-vllm0200-20260423-1623/BLOCKER_REPORT.md` ready
+for vllm-ascend maintainer.
+
+This is also the **first signal** that V1.3 smoke harness's non-empty-output
+criterion is insufficient — a semantic check (top-k logit comparison
+against a trusted baseline) should be added. Tracked as harness
+improvement for a follow-up session.
+
 ## Pre-probe discipline (2026-04-23 lesson)
 
 **Before committing a target vllm version**, check if vllm-ascend main
