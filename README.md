@@ -269,6 +269,11 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 - **Language**：项目文档中文，代码 / commit / SKILL.md frontmatter 英文（详见 DOCS-CONVENTION §4）
 - **Session 起手**：读 README → **NEXT-SESSION-STARTER** → HANDOVER → DOCS-CONVENTION（4 篇）就能接手。详见 DOCS-CONVENTION §7
 - **术语对不上时**：所有 "Fix A/B/B+/C"、"Level 1-4"、"outcome A/B/C-patch/C-report"、"V1.x smoke rung"、"session-tag" 的**单一权威定义**在 [`docs/GLOSSARY.md`](docs/GLOSSARY.md)。如果本 repo 里某处术语和 GLOSSARY 冲突，以 GLOSSARY 为准。
+- **进行中 session 的工作计划 + 工作记录**：活跃 session 的 ground-truth log 在 `workspace/<session-tag>/PROGRESS.md`（**每完成一小步或发现新问题都要追加**），auto-compact 之后下一 session 要依赖它续跑。当前活跃 session 见下表：
+
+| Session | PROGRESS.md path | Status |
+|---|---|---|
+| vllm-day0-vllm0200-20260423-1623 | [`workspace/vllm-day0-vllm0200-20260423-1623/PROGRESS.md`](../workspace/vllm-day0-vllm0200-20260423-1623/PROGRESS.md) | in-progress iter 17 (tuple→stack for vllm 0.20 KV cache contract) |
 
 commit message **不要**加 Claude 相关文字（`CLAUDE.md` 规定）。
 
