@@ -18,6 +18,7 @@
 | vllm-ascend's installed plugin fails to register with new vllm (e.g. registry API changed) | **C** — vllm-ascend needs NPU-team upstream fix |
 | New vllm imports a kernel/symbol from an older dep that's pinned on NPU (e.g. `triton.runtime.jit.constexpr_function` missing) AND consumer path actually uses it | **C** — upstream triton-ascend needs the symbol, or consumer path must skip the new feature |
 | Same new kernel import fails but ONLY for model types consumer doesn't use (e.g. gpt_oss MoE when consumer runs Qwen2-0.5B) | **A with informational note** — not a real blocker |
+| `ImportError: cannot import name 'vllm_is_batch_invariant' from vllm.model_executor.layers.batch_invariant` at LLM() construction | **C** — vllm ≥0.19 removed public getter; vllm-ascend 0.17 imports it in 5 sites (ascend_config / batch_invariant / utils / sample/sampler). Needs forward-compat helper reading `_batch_invariant_MODE` private global. See `workspace/vllm-day0-vllm-day0-wetrun-20260423-0226/blocker-report.md` Option 1 |
 
 ## 2026-04-23 baseline snapshot
 
@@ -34,11 +35,19 @@ v2 image (2026-04-23):
   present
 - `SamplingParams` RO properties: `{all_stop_token_ids, bad_words_token_ids,
   eos_token_id}` — same set as 0.18 (no drift)
-- **NEW DAY-0 FINDING**: `gpt_oss_triton_kernels_moe.py` in 0.19 imports
+- **NEW DAY-0 FINDING (pre-probe)**: `gpt_oss_triton_kernels_moe.py` in 0.19 imports
   `triton.runtime.jit.constexpr_function` — triton-ascend 3.2.0 doesn't
   export that. BUT only fires for gpt_oss MoE model type; EasyR1's
-  Qwen2-0.5B path doesn't hit it. **A with informational note** is the
-  expected outcome.
+  Qwen2-0.5B path doesn't hit it.
+- **WET-RUN FINDING (2026-04-23 follow-up, outcome C)**: V1.3 LLM(...)
+  construction raises `ImportError: cannot import name 'vllm_is_batch_invariant'`
+  from `vllm.model_executor.layers.batch_invariant` (vllm 0.19.1 removed
+  the public getter). vllm-ascend 0.17 imports it in 5 call sites. Session
+  reclassified pre-probe "A with note" → real outcome **C**. Fix must ship
+  in vllm-ascend (forward-compat helper reading `_batch_invariant_MODE`).
+  Takeaway: **pre-probe of plugin registration is necessary but insufficient
+  — a wet-run is still required**, because some removals only surface at
+  runtime plugin init.
 
 ## Related KB (sibling experts)
 
