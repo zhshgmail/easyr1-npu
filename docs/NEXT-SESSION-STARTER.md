@@ -11,7 +11,7 @@
 
 **3-layer Day-0 chain 第一次打通并 codified**：
 - `torch-day0-expert` — community PyTorch × NPU
-- `vllm-ascend-day0-expert` — vllm-ascend 在新 torch 下的 ABI drift
+- `vllm-ascend/day0-expert` — vllm-ascend 在新 torch 下的 ABI drift
 - + 原有 `vllm-day0-expert`, `transformers-day0-expert`
 - + 共享 pattern: `_shared/references/patterns/domains/day0-deploy-artifacts.md`
 

@@ -49,7 +49,7 @@ Session torch-day0-manual-20260423-0537 results (torch 2.11 + torch_npu 2.11.0rc
 
 ## Related KB (sibling / downstream experts)
 
-- `vllm-ascend-day0-expert/` (next layer) — when torch 2.11 overlay is
+- `vllm-ascend/day0-expert/` (next layer) — when torch 2.11 overlay is
   deployed, vllm-ascend on top needs Fix B+ ABI guard. See
   `workspace/vllm-ascend-day0-*/analysis.md`.
 - `vllm-day0-expert/` — Day-0 vllm on NPU when vllm-ascend is already

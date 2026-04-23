@@ -1,4 +1,4 @@
-# vllm-ascend-day0-expert
+# vllm-ascend/day0-expert
 
 **Product**: patch vllm-ascend to catch up with an upstream delta (torch,
 transformers, community vllm, CANN) that vllm-ascend's shipped release

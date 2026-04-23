@@ -124,7 +124,7 @@ session 2026-04-23-0655 for an instance).
 ## Downstream layer handoff
 
 After A / A-with-note / C-patch outcome, the deploy artifacts ONBOARDING
-enables downstream experts (`vllm-ascend-day0-expert`,
+enables downstream experts (`vllm-ascend/day0-expert`,
 `transformers-day0-expert`, user RL framework) to start their own
 Day-0 port on top of the deployed torch layer, per the
 [upstream deploy chain pattern](../../memory/day0_upstream_deploy_chain.md).

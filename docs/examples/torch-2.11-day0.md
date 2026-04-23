@@ -168,7 +168,7 @@ Skill 跑完自动把新发现的 Day-0 gotcha 写进各自 `references/KB_INDEX
 (下次 cold-drive 会读)：
 - `torch-day0-expert`: `_import_device_backends()` 建 trap、rc wheel
   pin 严格、CANN 一个 patch 宽容
-- `vllm-ascend-day0-expert`: C++ ABI drift 三步诊断、fix-level 选择
+- `vllm-ascend/day0-expert`: C++ ABI drift 三步诊断、fix-level 选择
   顺序、editable install 技巧
 
 ## 2026-04-23 首次实测参数 + 结果

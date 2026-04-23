@@ -72,7 +72,7 @@ When the NPU ecosystem **has NOT shipped** the target version:
   matching vllm-ascend isn't released
 - **[torch-day0-expert/](torch-day0-expert/)** — community PyTorch whose
   stable torch_npu isn't released (torch_npu rc on PyPI used)
-- **[vllm-ascend-day0-expert/](vllm-ascend-day0-expert/)** — vllm-ascend
+- **[vllm-ascend/day0-expert/](vllm-ascend/day0-expert/)** — vllm-ascend
   itself needs patching for a deeper upstream move (new torch ABI drift,
   new vllm symbol removal, etc.). Usually chained downstream of
   torch-day0 or transformers-day0.
@@ -150,7 +150,7 @@ Long-term fixes (tracked):
 - Fix C (task #77): rebuild `vllm_ascend_C.so` against torch 2.11 —
   eliminates need for batch-invariant fallback
 - vllm-ascend `linear_batch_invariant` patch to reshape 3D → 2D →
-  restore (see vllm-ascend-day0-expert KB_INDEX Option 1)
+  restore (see vllm-ascend/day0-expert KB_INDEX Option 1)
 
 ## See also
 

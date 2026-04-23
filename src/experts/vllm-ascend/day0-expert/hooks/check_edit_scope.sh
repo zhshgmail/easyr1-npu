@@ -34,7 +34,7 @@ case "$FILE_PATH" in
   */Dockerfile.overlay-vllm-ascend-*)
     echo "[check_edit_scope] BLOCKING: G1 — vllm-ascend-day0 files must go through vllm-ascend-day0-worker, not $AGENT" >&2
     echo "  target: $FILE_PATH" >&2
-    echo "  see: vllm-ascend-day0-expert/state_machine.yaml G1" >&2
+    echo "  see: vllm-ascend/day0-expert/state_machine.yaml G1" >&2
     exit 1
     ;;
 esac

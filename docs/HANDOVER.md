@@ -6,7 +6,7 @@
 (transformers-day0, vllm-day0) scaffolding。**晚班（本次）：3-layer Day-0
 chain 完整打通 + codified**：torch 2.11 manual port → deploy artifacts →
 vllm-ascend Fix B+ patch → V1.3 PASS → 2 个新 skill
-(`torch-day0-expert`, `vllm-ascend-day0-expert`) + shared deploy-artifacts
+(`torch-day0-expert`, `vllm-ascend/day0-expert`) + shared deploy-artifacts
 pattern。详见 §6.5 (晚班工作) / §7.2 (3-layer chain) / §11 (next-session
 cold-drive)。
 
@@ -263,7 +263,7 @@ drill image 同样，`--image easyr1-npu-852:drill`。
 
 两个新 skill codified + pushed：
 - `src/experts/torch-day0-expert/` (commit `b1d05a3`)
-- `src/experts/vllm-ascend-day0-expert/` (commit `8efd236`)
+- `src/experts/vllm-ascend/day0-expert/` (commit `8efd236`)
 
 Shared pattern codified：
 - `src/experts/_shared/references/patterns/domains/day0-deploy-artifacts.md` (commit `fb0f78c`)

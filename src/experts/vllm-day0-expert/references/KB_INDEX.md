@@ -75,7 +75,7 @@ v2 image (2026-04-23):
   — Dockerfile.overlay template + build-time import trap warning (applies
   here too: don't `import vllm` at Dockerfile build time — it triggers
   torch_npu dlopen)
-- **`../../vllm-ascend-day0-expert/`** — sibling Day-0 expert for when
+- **`../../vllm-ascend/day0-expert/`** — sibling Day-0 expert for when
   the fix belongs IN vllm-ascend rather than consumer. Route to this
   skill when detected C-patch on vllm-ascend.
 - **`../../torch-day0-expert/`** — parent Day-0 expert when new vllm

@@ -61,7 +61,7 @@ Day-0 post-mortem pattern from 2026-04-22 E2E).
   the NPU ecosystem hasn't shipped, chain torch-day0 first
 - `vllm-day0-expert/` — when transformers bump combines with new vllm
   (check dep-analysis routing)
-- `vllm-ascend-day0-expert/` — if transformers bump triggers vllm-ascend
+- `vllm-ascend/day0-expert/` — if transformers bump triggers vllm-ascend
   C++ extension rebuild need, route there
 - `../../_shared/references/patterns/domains/day0-deploy-artifacts.md`
   — Phase E 5-artifact template

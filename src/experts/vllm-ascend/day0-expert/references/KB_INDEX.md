@@ -1,4 +1,4 @@
-# vllm-ascend-day0-expert KB — Search Index
+# vllm-ascend/day0-expert KB — Search Index
 
 ## Decision frameworks (load unconditionally at Phase A)
 

@@ -8,7 +8,7 @@
 
 ## 1. Day-0 skill 的 outcome 分类
 
-Day-0 skill（`vllm-day0-expert` / `torch-day0-expert` / `vllm-ascend-day0-expert` / `transformers-day0-expert`）每跑完一个 session，产出**一个**下列 outcome：
+Day-0 skill（`vllm-day0-expert` / `torch-day0-expert` / `vllm-ascend/day0-expert` / `transformers-day0-expert`）每跑完一个 session，产出**一个**下列 outcome：
 
 | Outcome | 含义 | 下游拿到什么 | 案例 |
 |---|---|---|---|
