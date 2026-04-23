@@ -85,12 +85,12 @@ it bypasses every affected call site in one shot.
   (commits `7c2078e7` + `caa55fed`)
 - Patched overlay image on A3: `easyr1-npu-torch211-vllmascend-fixb:ascend-day0-torch211-20260423`
 
-## Validated smoke matrix for Fix B+ patch (2026-04-23 late dusk)
+## Validated smoke matrix for Fix B+ patch (2026-04-23 late dusk, 2 iterations)
 
-| Rung | Result | Notes |
-|---|---|---|
-| V1.3 (Qwen2-0.5B rollout, 1 chip, enforce_eager, no training) | **PASS** | marker `V1.3 ROLLOUT SMOKE PASSED`; 3/3 prompts produce text. See `workspace/.../deploy/smoke.log` |
-| V1.4 (Qwen2-0.5B GRPO training, 2 chips, full trainer loop) | **FAIL** | `AssertionError: x must be a 2D tensor` in `vllm-ascend/ops/triton/batch_invariant/matmul.py:261 linear_persistent`. Training path passes 3D `[batch, seq, hidden]` to `F.linear`, but batch-invariant's `linear_batch_invariant` Triton kernel only supports 2D inputs. Log: `/tmp/z00637938/easyr1-logs/V1.4-easyr1-npu-torch211-vllmascend-fixb-*20260423-011007.log` |
+| Rung | Iter 1 (Fix B+ only) | Iter 2 (Fix B+ + reshape) | Notes |
+|---|---|---|---|
+| V1.3 (Qwen2-0.5B rollout, 1 chip) | **PASS** | **PASS** | marker `V1.3 ROLLOUT SMOKE PASSED`; reshape change didn't regress (input is 2D in V1.3 path, doesn't hit the new branch) |
+| V1.4 (Qwen2-0.5B GRPO training, 2 chips) | **FAIL** `AssertionError: x must be a 2D tensor` | **FAIL** (different error) `NotImplementedError: aten::linear_backward on CPU backend` | Iter 2 progresses past 2D assert → training reaches `Update policy 25%`. New failure is autograd-backward dispatch (inductor-compiled backward graph hits CPU fallback where linear_backward isn't registered). Logs: `.../20260423-011007.log` (iter 1), `.../20260423-011808.log` (iter 2) |
 
 **Limitation of Fix B+ batch-invariant escape hatch**: works for inference
 paths (V1.3) where linear inputs are 2D-flattened, breaks on training
@@ -99,21 +99,58 @@ paths (V1.4) where FSDP + trainer emit 3D tensors to F.linear directly.
 batch-invariant linear kernel itself has a dim-restriction assert
 (`matmul.py:261`). Presumably written with inference shapes in mind.
 
-### Option 1 (quick): loosen the assert to handle 3D via reshape
+### Option 1 — applied 2026-04-23 dusk as commit `87b507ed` on ascend-day0-torch211-20260423 branch
 
-vllm-ascend patch candidate (untested, but clean):
+Added arbitrary-leading-dims reshape to `linear_batch_invariant`
+wrapper (not `linear_persistent` itself — the wrapper is the right place
+since it matches `F.linear`'s contract):
 
 ```python
-# vllm_ascend/ops/triton/batch_invariant/matmul.py linear_persistent
-def linear_persistent(x, weight, bias=None, ...):
-    orig_shape = x.shape
-    if x.dim() == 3:
-        x = x.reshape(-1, x.shape[-1])  # flatten batch*seq × hidden
-        output = <existing 2D kernel call>
-        return output.reshape(*orig_shape[:-1], output.shape[-1])
-    assert x.dim() == 2, "x must be a 2D tensor"
-    ...
+def linear_batch_invariant(input_, weight, bias=None):
+    orig_shape = input_.shape
+    if input_.dim() > 2:
+        input_ = input_.reshape(-1, orig_shape[-1])
+    output = linear_persistent(input_, weight)
+    if bias is not None:
+        output = output + bias
+    if len(orig_shape) > 2:
+        output = output.reshape(*orig_shape[:-1], output.shape[-1])
+    return output
 ```
+
+**Effect (wet-run 2026-04-23 0818Z)**: V1.4 gets past the 2D assertion,
+reaches `Update policy 25% (1/4)` step of training. New failure surfaces:
+
+```
+NotImplementedError: Could not run 'aten::linear_backward' with arguments
+from the 'CPU' backend. ... 'aten::linear_backward' is only available for
+these backends: [PrivateUse1, Meta, ...]
+```
+
+This is a **different, deeper issue**: torch 2.11's
+`torch.compile`/inductor compiled backward graph is running
+`aten::linear_backward` on CPU (probably because batch-invariant mode's
+`aten::linear` override hits the CPU fallback path during autograd
+backward generation, not NPU). The backward op for `linear` only has a
+PrivateUse1 (NPU) impl, not CPU, so it crashes.
+
+**This is beyond Fix B+ scope.** Batch-invariant mode was designed for
+forward-only inference; training's autograd path through inductor doesn't
+interact well with the Python-level kernel override. Proper fix requires
+one of:
+
+1. **Fix C** (rebuild vllm_ascend_C against torch 2.11) — eliminates
+   need for batch-invariant fallback entirely, training goes through
+   the native C++ impl which has NPU backward registered
+2. **Disable torch.compile on training path** (env var
+   `TORCH_COMPILE_DISABLE=1` or similar) — avoids inductor generating
+   the CPU-dispatch backward graph. Untested but worth a shot.
+3. **Register NPU backward for batch-invariant's aten::linear override**
+   — substantial; also in vllm-ascend scope but much heavier than the
+   Python reshape patch.
+
+Recorded as tech debt. Session's deliverable remains: **V1.3 PASS, V1.4
+reaches 25% of training before autograd-backward dispatch crash**.
 
 ### Option 2 (simpler for user): skip batch-invariant on linear
 
