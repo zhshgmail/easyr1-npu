@@ -1,13 +1,96 @@
-# NPU 移植 Skills 目标架构 + 演进路径 (V3.0)
+# NPU 移植 Skills 目标架构 + 演进路径 (V3.0 + Day-0 reframe)
 
-> 状态：2026-04-22，V3.0。替换 V2.0（过早设计 multi-expert DAG）。V2.0 的错误：还没证明 **1 个 expert 能完成 EasyR1 port** 就去设计 **N 个 expert 的 DAG**。
+> 状态：2026-04-23，V3.0 主体 + 顶部 Day-0 reframe 追加。
 >
-> **核心修正**：先证明最基本的情况 (1 expert 完成 D=0 移植) 能 cold-drive 工作，再谈扩展。DAG / 多 expert 架构**挪到附录**，作为"未来当出现需要适配的依赖升级时再考虑"。
+> **核心修正 (V3.0)**：先证明最基本的情况 (1 expert 完成 D=0 移植) 能 cold-drive 工作，再谈扩展。DAG / 多 expert 架构**挪到附录**。
 >
 > 过往版本：
 > - V1.0（commit `89b2530`）：照抄 a5_ops kernel-pipeline，被证明不适用
 > - V2.0（commit `db801cd`）：过早的 DAG + per-dep expert 泛化
 > - V3.0（本版）：Stage 0 只做 1 expert；DAG 挪附录
+
+---
+
+## Day-0 Reframing (2026-04-23, user directive)
+
+**原 V3.0 + Stage 2 experts 的隐含假设（错误）**：
+> "dep 升级 = 消费者 reqs 换新版本号 → NPU image 已经 ship 好了对应
+> 版本 → 我们只需 apply shim 兼容 API rename"
+
+这假设**社区版本总是已经在 NPU 上 ready**。**错**。
+
+**真实问题（user 2026-04-23T00:44-45）**：
+> "开源社区有了的版本，npu 上跑不起来，因为配套软件没有。这才是我们的
+> skills 需要解决的问题。easyr1 的所有配套软件都就位是最简单的场景。
+> 我们要解决 day 0 支持新版本社区软件的问题。"
+
+换言之：
+- 上游社区发布 `transformers 5.4` / `vllm 0.20` / `torch 2.11`
+- NPU 生态里 `torch_npu` 或 `vllm_ascend` 或 `transformers.integrations.npu_flash_attention` **还没跟上**
+- EasyR1 consumer 想用新版
+- **这时候才是真正难的场景**，也是 skills 必须解决的
+- "shim-only" 的 expert 在这种场景里**没意义**——因为目标 NPU image 里根本没有对应 vllm-ascend / 配套 wheel
+
+**按难度重排（user 观察 2026-04-23T00:44）**：
+1. **pytorch 最容易**：`torch_npu` 跟社区 torch 版本差异很小，NPU 团队跟得紧
+2. **vllm 中等**：vllm-ascend 通常慢 vllm 1-2 minor，可以通过分支 cherry-pick
+3. **transformers 最难**：社区迭代最快，API drift 多，NPU FA / device_map 集成点多
+
+### 今天 Stage 2 experts 的真实定位
+
+重新看三个 upgrade expert 的实际能力：
+
+| Expert | 现在做的事 | 能否处理 Day-0 缺 NPU 配套 |
+|---|---|---|
+| `transformers-upgrade-expert` | 消费已 ship 的 v2 base image；apply EC-02/03 shim | ❌ 不能；v2 image 是假设存在的。若 transformers 5.4 来了且没 matching NPU image，本 expert 无工具可用 |
+| `vllm-upgrade-expert` | apply CP-002/004/EC-03 shim；复用已 ship 的 vllm-ascend | ❌ 不能；若 vllm 0.20 来了 vllm-ascend 还是 0.17，shim 不足以补全缺失的 NPU kernel 调用 |
+| `torch-npu-upgrade-expert` | 给新 image 加 Dockerfile NPU-BUG-001/004 workaround | ⚠️ 部分能；torch 一般 NPU 跟得紧，所以本 expert 的 "添加 workaround + 验证 import 通" 就可能够用。但如果 torch 真跑到 2.11 而 torch_npu 还卡 2.9，也不行 |
+
+**结论**：**三个 Stage 2 expert 都是 "shim 消费者"，不是 "ecosystem driver"**。
+它们只证明了 skills harness 能跑起来，没证明 skills 能解决 Day-0 真问题。
+
+### Day-0 expert 真正需要的能力（Stage 3 重新设计）
+
+以 `transformers-upgrade-expert` 为例，如果 transformers 5.4 发布而 NPU 还没跟上，真正的 expert 需要做的：
+
+1. **诊断层**：
+   - pip freeze 对比：告诉我哪个 NPU 生态包滞后（vllm-ascend / transformers.integrations.npu_flash_attention / torch_npu）
+   - API diff：新 transformers 的 public API 变化 + NPU FA 适配层哪些 hook 点没跟上
+   - 找出"社区有而 NPU 版本没支持的"功能集（例如新的 attention impl / 新的模型结构）
+
+2. **决策层**：
+   - 是否能用已 ship 的 torch_npu 跑新 transformers？（短期 workaround 路径）
+   - 是否需要本地 patch vllm-ascend / transformers NPU FA？（中期 forward-port）
+   - 是否需要等上游 NPU 团队？（长期 block）
+   - 哪些 consumer feature 可以临时关闭？（降级路径）
+
+3. **实施层（如果 forward-port）**：
+   - Checkout vllm-ascend / transformers 的 NPU 适配分支，cherry-pick 到新上游 tip
+   - Build 本地 wheel / image
+   - 验证 import + V1.3 rollout + V1.4 training 全通
+
+4. **Exit 路径**：
+   - 成功 → emit forward-port 分支 + patched image + baseline numerics（可能不在已知 band，需要 fresh baseline 建立 protocol）
+   - 失败 → 精准 blocker 报告（"NPU 端没人适配 X 这个 op；consumer 要么等 NPU 团队，要么放弃 transformers 5.4 这个新 feature"）
+
+**这**才是 skills 对用户有价值的地方。
+
+### 这对今天产出的影响
+
+- 昨天-今天跑的 /npu-port 端到端 E2E（fixture transformers>=5 → v2 image 已 ship → 通）证明的是 **harness 管道能跑通**，**不证明** Day-0 场景能处理
+- 三个 Stage 2 upgrade expert 保留有价值，但 **scope 需要改名 / 分层**：
+  - 现在的它们：`<dep>-shim-adapt-expert`（消费已 ship 的 NPU 版本，apply consumer-side shim）—— 已完成
+  - 真正需要的 Stage 3：`<dep>-day0-forward-port-expert`（当 NPU 生态没跟上时，诊断 + 决策 + 可能的 forward-port）—— **未做**
+- Transformers 难度最高，Stage 3 从 transformers day-0 入手合理
+- Pytorch 难度最低，Stage 3 做 pytorch day-0 主要是建立 pattern 模板
+- Vllm 难度中等，有 vllm-ascend pre-release 可参考，Stage 3 第二优先级
+
+### 下一步实际需要做什么
+
+1. **重命名今天三个 Stage 2 experts**：加明确后缀或在 README 第一行说清 "assumes NPU build exists"
+2. **新设计 Stage 3 experts** 专门解决 Day-0：`transformers-day0-expert`、`vllm-day0-expert`、`torch-day0-expert`
+3. **dep-analysis-expert 路由规则扩展**：区分 "NPU 已 ship 的版本" vs "NPU 未 ship 的版本"，分别路由到 shim-adapt 或 day0 expert
+4. **orchestrator** 的 task-plan 输出增加 scenario 维度：P1 (D=0) / P2a (shim-adapt 能搞定) / P2b (需要 day0 forward-port)
 
 ---
 
