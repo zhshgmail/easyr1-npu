@@ -180,6 +180,7 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 │   ├── SKILLS-GUIDE.md               ← 路径 2 & 4：怎么用 skill 自动化移植（P1 workflow）
 │   ├── UPGRADE-DRILL-STATUS.md       ← 路径 3：升级演练当前状态
 │   ├── P2-WORKFLOW.md                ← 路径 4 补充：EasyR1 需要 NPU 没覆盖的依赖时的端到端 workflow
+│   ├── NEXT-SESSION-STARTER.md       ← **冷启动 10 分钟 checklist（最新来的 agent 先读）**
 │   ├── HANDOVER.md                   ← 当前状态 + 未结工作（**session 起手必读**）
 │   ├── DOCS-CONVENTION.md            ← **文档组织 convention + 归属 map**（贡献者 / agent 必读）
 │   ├── DELIVERABLE.md                ← 正式 sign-off 文档
@@ -266,7 +267,7 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
   - 常见入口：坑目录 `knowledge/npu-patterns.md` · 日记 `docs/porting-journal.md` · 状态 `docs/HANDOVER.md` · 适配任务 `docs/npu-adaptation-tasks.md` · 依赖审计 `docs/easyr1-dep-chain-audit.md`
 - **什么时候更新什么**：见 DOCS-CONVENTION §2 的触发表
 - **Language**：项目文档中文，代码 / commit / SKILL.md frontmatter 英文（详见 DOCS-CONVENTION §4）
-- **Session 起手**：读 README → HANDOVER → DOCS-CONVENTION（3 篇）就能接手。详见 DOCS-CONVENTION §7
+- **Session 起手**：读 README → **NEXT-SESSION-STARTER** → HANDOVER → DOCS-CONVENTION（4 篇）就能接手。详见 DOCS-CONVENTION §7
 
 commit message **不要**加 Claude 相关文字（`CLAUDE.md` 规定）。
 
