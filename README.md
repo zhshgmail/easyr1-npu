@@ -268,6 +268,7 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 - **什么时候更新什么**：见 DOCS-CONVENTION §2 的触发表
 - **Language**：项目文档中文，代码 / commit / SKILL.md frontmatter 英文（详见 DOCS-CONVENTION §4）
 - **Session 起手**：读 README → **NEXT-SESSION-STARTER** → HANDOVER → DOCS-CONVENTION（4 篇）就能接手。详见 DOCS-CONVENTION §7
+- **术语对不上时**：所有 "Fix A/B/B+/C"、"Level 1-4"、"outcome A/B/C-patch/C-report"、"V1.x smoke rung"、"session-tag" 的**单一权威定义**在 [`docs/GLOSSARY.md`](docs/GLOSSARY.md)。如果本 repo 里某处术语和 GLOSSARY 冲突，以 GLOSSARY 为准。
 
 commit message **不要**加 Claude 相关文字（`CLAUDE.md` 规定）。
 

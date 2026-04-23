@@ -95,18 +95,28 @@ When the NPU ecosystem **has NOT shipped** the target version:
   - `scripts/` — reference copies of `static_check.py` etc. that
     experts fork and specialize
 
-## Upstream fork & PR-material workflow
+## Outcome C-patch — handoff to upstream maintainer
 
-When a Day-0 expert produces outcome **C-patch** (Huawei-owned upstream
-needs source change):
+**Audience reminder**: these skills are authored for the
+Huawei-owned upstream repo's maintainers (vllm-ascend / torch_npu /
+triton-ascend / transformers NPU integrations), not for us to push
+our own PR. When a Day-0 expert produces outcome **C-patch**:
 
-1. Worker opens branch `ascend-day0-<delta>-<SESSION>` on the relevant
-   `upstream/<huawei-repo>/` checkout
+1. Worker opens local branch `ascend-day0-<delta>-<SESSION>` on the
+   relevant `upstream/<huawei-repo>/` checkout — **session-local trace
+   only**, so the fix is reproducible in the session workspace
 2. Worker commits minimal patch with `[BugFix]` / `[Feature]` prefix
-3. Worker pushes branch to user's personal fork (`zhshgmail/<repo>`)
-4. Worker writes `PR_MATERIAL.md` with title, description, before/after
-   table, reproducer
-5. User reviews and opens PR to upstream from their personal fork
+   to that trace branch
+3. Optional: worker pushes the trace branch to a mirror fork the
+   session operator has push rights on (e.g. `zhshgmail/<repo>`),
+   purely for traceability; this is **not the authoritative handoff**
+4. **Authoritative deliverable**: `PR_MATERIAL.md` + reference
+   `.py.patched` files in the session workspace, written so the
+   actual upstream maintainer can cherry-pick the diff into their
+   own tree (where they own the upstream push rights and CI)
+5. Worker emits handoff JSON pointing at `pr_material_path`; delivery
+   to the maintainer is off-session (email / issue / existing
+   relationship channel — outside skill scope)
 
 Enabled Huawei-owned targets for C-patch:
 - `github.com/vllm-project/vllm-ascend`

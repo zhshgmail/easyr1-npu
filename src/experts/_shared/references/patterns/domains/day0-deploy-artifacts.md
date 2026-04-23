@@ -128,11 +128,15 @@ By session convention, workspace artifacts live at
 `workspace/<session-tag>/` and are NOT tracked in git. They are
 ephemeral to the session. The durable outputs are:
 - This pattern file (committed to `_shared/references/patterns/`)
-- Upstream patches (committed on personal fork's `ascend-day0-*` branch)
+- Reference `.py.patched` files + `PR_MATERIAL.md` in the session
+  workspace — authoritative handoff for the upstream maintainer
+  (vllm-ascend / torch_npu / triton-ascend / transformers NPU
+  integration owners); a session-local trace branch on a mirror fork
+  is optional traceability, not the deliverable
 - Skill definition (committed under `src/experts/<expert>/`)
 - KB updates (committed under `src/experts/<expert>/references/`)
 
-If a future session needs to reproduce a past deploy: the upstream
+If a future session needs to reproduce a past deploy: the reference
 patches + the skill + the deploy template (in the skill's scripts dir)
 regenerate the artifacts. Don't copy session-specific artifacts into
 the skill.

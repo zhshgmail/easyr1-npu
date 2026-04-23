@@ -268,9 +268,12 @@ drill image 同样，`--image easyr1-npu-852:drill`。
 Shared pattern codified：
 - `src/experts/_shared/references/patterns/domains/day0-deploy-artifacts.md` (commit `fb0f78c`)
 
-Upstream patch shipped：
-- Branch `ascend-day0-torch211-20260423` on personal fork `zhshgmail/vllm-ascend`
-- 2 commits：`7c2078e7` (utils.py torch-ABI guard) + `caa55fed` (init.py early VLLM_BATCH_INVARIANT set)
+Upstream handoff material（audience = vllm-ascend maintainer）：
+- `workspace/vllm-ascend-day0-deploy-20260423-0655/PR_MATERIAL.md` (authoritative)
+- Reference `.py.patched` 文件同目录
+- Session-local trace：`ascend-day0-torch211-20260423` branch on mirror fork `zhshgmail/vllm-ascend`，
+  2 commits（`7c2078e7` utils.py torch-ABI guard + `caa55fed` init.py early VLLM_BATCH_INVARIANT）
+  仅作 reproducibility trace，不是 deliverable
 
 Workspace artifacts（未 commit，session 内）：
 - `workspace/torch-day0-analysis-20260423-0531/analysis.md` — Phase 1 feasibility
@@ -353,8 +356,12 @@ on `easyr1-npu-vllm0200:vllm-day0-vllm0200-20260423-1623`。
 
 **Overlay image** (preserved)：`easyr1-npu-vllm0200:vllm-day0-vllm0200-20260423-1623`
 
-**Upstream branch**: `ascend-day0-torch211-20260423` on `zhshgmail/vllm-ascend`
-— **17 commits** (torch 2.11 Fix B+/C 4 + vllm 0.20 drift 13 含 1 revert)：
+**Session-local trace branch**: `ascend-day0-torch211-20260423` on mirror
+fork `zhshgmail/vllm-ascend` — **17 commits** (torch 2.11 Fix B+/C 4 +
+vllm 0.20 drift 13 含 1 revert)，authoritative handoff material (for
+vllm-ascend maintainer) 在
+`workspace/vllm-day0-vllm0200-20260423-1623/` 下的 `.py.patched` 文件
++ `findings.md`。Trace branch 只作 reproducibility。Drift 明细：
 - iter 1–4: `from vllm.model_executor.layers.batch_invariant import vllm_is_batch_invariant`
   removed in PR #35007 → 改走 `vllm.envs.VLLM_BATCH_INVARIANT`（utils.py +
   ascend_config.py + sample/sampler.py + batch_invariant.py）

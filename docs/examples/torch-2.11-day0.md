@@ -92,17 +92,19 @@ Skill 自动：
      `python3 setup.py build_ext --inplace`，提取 472KB 的新
      `vllm_ascend_C.cpython-*.so`。COPY 到 overlay 构造出
      Fix C image。
-5. 建 overlay：Fix B+ 和 Fix C 可以分别独立 overlay 层（4 commits on
-   personal fork）。Fix C image 是完整 production-ready 的最终产物。
+5. 建 overlay：Fix B+ 和 Fix C 可以分别独立 overlay 层（4 个
+   file-level edits，session-local trace branch 上 4 commits）。
+   Fix C image 是完整 production-ready 的最终产物。
 6. V1.3 smoke（rollout）→ PASS on Fix B+ or Fix C
 7. V1.4 smoke（training）with `VLLM_BATCH_INVARIANT=0`（强制 native
    custom op path）→ **only PASS on Fix C image**。期望 entropy_loss
    exactly matches v2 baseline band [1.21, 1.34]（2026-04-23 实测 1.275）
-8. 返回 patched overlay image tag + PR material（4 commits 的 diff 全集）
+8. 返回 patched overlay image tag + PR material（4 个 file-level edits 的
+   diff 全集，给 vllm-ascend maintainer 落到他们自己 tree 里）
 
 **预期输出**：outcome `C-patch` with Fix C rebuild，V1.3 + V1.4 都 PASS，
-patched 分支 4 commits 推到 personal fork，V1.4 entropy_loss 和 v2
-baseline exact match。
+`PR_MATERIAL.md` 就绪可交给 vllm-ascend maintainer，V1.4 entropy_loss
+和 v2 baseline exact match。
 
 ## 人工 G2 验证（可选，但推荐）
 
