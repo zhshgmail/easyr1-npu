@@ -139,7 +139,12 @@ Per `_shared/references/patterns/domains/day0-deploy-artifacts.md`.
 
 ### Phase F — handoff
 
-- Push `ascend-day0-<delta>-$SESSION_TAG` to personal fork
+- Write `PR_MATERIAL.md` containing diff + rationale ready for the
+  vllm-ascend maintainer to drop into their own tree (do NOT assume
+  session operator owns push rights to vllm-ascend/main)
+- If a fork-branch push is needed for traceability (e.g. you work on
+  a mirror fork with push rights), that is a session-local trace —
+  the authoritative output is `PR_MATERIAL.md` + the file-level patches
 - PROGRESS.md incrementally written
 - Cleanup: preserve patched overlay image; remove only the validation
   tags
@@ -155,9 +160,9 @@ Handoff JSON. No prose.
   "target_delta": "torch-2.11",
   "outcome": "A|B|C-patch|C-report",
   "base_image": "<from torch-day0 deploy>",
-  "patched_branch": "ascend-day0-torch211-..." | null,
-  "patched_branch_url": "https://github.com/zhshgmail/vllm-ascend/tree/..." | null,
-  "patched_image_tag": "...-vllmascend-fixb:..." | null,
+  "patched_branch": "ascend-day0-torch211-..." | null,  // session-local trace only; authoritative output is pr_material_path
+  "patched_branch_url": "<URL of wherever session operator pushed the trace branch>" | null,
+  "patched_image_tag": "...-vllmascend-fixb:..." | null,  // demo image proving the diff passes smoke; maintainer rebuilds equivalent
   "affected_call_sites": [...],
   "fix_level": "env-var | plugin-entry-guard | per-call-site | cpp-rebuild",
   "smoke_results": {"V1.3": "PASS (marker matched)"},

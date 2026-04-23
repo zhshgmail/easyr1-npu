@@ -189,4 +189,5 @@ Accept when:
 - `../KB_INDEX.md` — known drift surfaces + fix patterns
 - `../ALWAYS_LOADED_RULES.md` — Fix level selection order (§ OL-08)
 - Concrete session: `workspace/vllm-ascend-day0-{analysis,deploy}-20260423-*/`
-- Upstream patch branch: `zhshgmail/vllm-ascend/ascend-day0-torch211-20260423`
+  — contains reference `.py.patched` files + `PR_MATERIAL.md` the
+  maintainer can apply in their own tree

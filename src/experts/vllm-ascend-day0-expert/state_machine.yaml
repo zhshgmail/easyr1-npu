@@ -114,10 +114,11 @@ phases:
   P6_handoff:
     order: 7
     required_actions:
-      - "Push ascend-day0-<delta>-<SESSION> branch to personal fork"
-      - "Write RESULTS.md with outcome + patched branch URL + PR material path"
+      - "Ensure PR_MATERIAL.md is the authoritative handoff (audience = vllm-ascend maintainer landing in their own tree)"
+      - "Optional: push ascend-day0-<delta>-<SESSION> to a trace branch on a mirror fork if operator has push rights — traceability only, not the deliverable"
+      - "Write RESULTS.md with outcome + PR material path + trace branch URL (if any) + patched image tag"
       - "cleanup_session.sh preserving patched overlay image"
     required_artifacts:
       - path: "workspace/vllm-ascend-day0-deploy-{SESSION_TAG}/RESULTS.md"
-        content_must_contain: ["outcome:", "patched_branch_url:", "patched_image_tag:"]
+        content_must_contain: ["outcome:", "pr_material_path:", "patched_image_tag:"]
     next: []

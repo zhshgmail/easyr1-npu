@@ -29,12 +29,15 @@
   - `vllm_ascend/ops/layernorm.py:73` AscendRMSNorm.forward_oot
   - `vllm_ascend/sample/sampler.py:139` _apply_top_k_top_p_ascendc
   - Any other site using `torch.ops._C_ascend.*` ops
-- Mitigation landed: Fix B+ patch (2 commits on
-  `ascend-day0-torch211-20260423` branch of `zhshgmail/vllm-ascend`):
-  1. `vllm_ascend/utils.py` — `_torch_abi_safe_for_custom_ops()` +
-     guard in `enable_custom_op()`
-  2. `vllm_ascend/__init__.py` — set `VLLM_BATCH_INVARIANT=1` at
-     plugin import time (before vllm caches it)
+- Mitigation to land upstream (Fix B+, 2 call-site edits in your
+  vllm-ascend tree):
+  1. `vllm_ascend/utils.py` — add `_torch_abi_safe_for_custom_ops()` +
+     guard in `enable_custom_op()` to early-return when torch major.minor
+     != the one `vllm_ascend_C.so` was built against
+  2. `vllm_ascend/__init__.py` — set `VLLM_BATCH_INVARIANT=1` at plugin
+     import time (before vllm caches it), only when the ABI-guard above
+     returns False, so users hitting the mismatch get a working fallback
+     automatically
 
 ## Known vllm API removals that affect vllm-ascend (2026-04-23)
 
@@ -80,10 +83,12 @@ it bypasses every affected call site in one shot.
 - Reproducers: `workspace/vllm-ascend-day0-analysis-20260423-0636/isolate_segfault_v*.py`
 - Deploy artifacts: `workspace/vllm-ascend-day0-deploy-20260423-0655/`
   (Dockerfile overlay patch, utils.py.patched, __init__.py.patched,
-  smoke, deploy, ONBOARDING, PR_MATERIAL)
-- Patched branch: `zhshgmail/vllm-ascend/ascend-day0-torch211-20260423`
-  (commits `7c2078e7` + `caa55fed`)
-- Patched overlay image on A3: `easyr1-npu-torch211-vllmascend-fixb:ascend-day0-torch211-20260423`
+  smoke, deploy, ONBOARDING, PR_MATERIAL — PR_MATERIAL includes the
+  rendered diff + commit message body vllm-ascend maintainers can
+  cherry-pick into their own tree)
+- Validated overlay image on A3: `easyr1-npu-torch211-vllmascend-fixb:ascend-day0-torch211-20260423`
+  (demonstration of Fix B+ passing V1.3 smoke; maintainers rebuild
+  equivalent in their own CI)
 
 ## Validated smoke matrix for Fix B+ / Fix C patches (2026-04-23, 4 iterations)
 
@@ -99,9 +104,9 @@ removed monkey-patches, not inductor backward graph.
 **Iter 4 = Fix C applied**: rebuild `vllm_ascend_C.so` against torch
 2.11 ABI inside the patched container. Build succeeds once
 `CMakeLists.txt:26` hard-pin `VERSION_EQUAL "2.9.0"` is widened to
-accept `2.11.x` (commit `ab26a534` on personal fork). Resulting `.so`
-is 472KB (vs previous torch-2.9-built version). New overlay image
-tagged `easyr1-npu-torch211-fixc:ascend-day0-torch211-20260423`.
+accept `2.11.x` — maintainer edit in your vllm-ascend tree. Resulting
+`.so` is 472KB (vs previous torch-2.9-built version). Demonstration
+overlay image tagged `easyr1-npu-torch211-fixc:ascend-day0-torch211-20260423`.
 
 Native-op reproducer (`torch.ops._C_ascend.npu_add_rms_norm_bias`):
 - **Pre-Fix C**: SIGSEGV through `torch._ops.py:1269 __call__`
@@ -130,12 +135,25 @@ This makes the iter-4 Fix C overlay **production-ready** for both
 inference (V1.3) and training (V1.4) workloads — no
 batch-invariant fallback, no env-var tuning needed.
 
-### Commits comprising full Fix (on personal fork ascend-day0-torch211-20260423)
+### The 4 edits comprising the full Fix — for vllm-ascend maintainers
 
-1. `7c2078e7` — utils.py torch-ABI guard
-2. `caa55fed` — __init__.py early VLLM_BATCH_INVARIANT
-3. `87b507ed` — linear_batch_invariant reshape for 3D inputs
-4. `ab26a534` — CMakeLists.txt widen to accept torch 2.11.x
+Apply these in your own tree; reference implementation exists at the
+session workspace (`workspace/vllm-ascend-day0-{analysis,deploy}-20260423-*/`)
+and the demo overlay image `easyr1-npu-torch211-fixc:ascend-day0-torch211-20260423`.
+
+1. **`vllm_ascend/utils.py`** — add torch-ABI guard that short-circuits
+   `enable_custom_op()` when torch major.minor != the version
+   `vllm_ascend_C.so` was built against
+2. **`vllm_ascend/__init__.py`** — auto-set `VLLM_BATCH_INVARIANT=1` at
+   plugin import time when the above guard fails, giving users a working
+   fallback until Fix C ships
+3. **`vllm_ascend/ops/linear.py` `linear_batch_invariant`** — reshape
+   arbitrary-leading-dims input to 2D before calling
+   `linear_persistent` (the triton-ascend kernel only accepts 2D),
+   restore shape after. Required for FSDP training paths where F.linear
+   receives 3D tensors
+4. **`CMakeLists.txt`** — widen hard-pin `VERSION_EQUAL "2.9.0"` to
+   accept 2.11.x so the C extension can be rebuilt against torch 2.11
 
 **Limitation of Fix B+ batch-invariant escape hatch**: works for inference
 paths (V1.3) where linear inputs are 2D-flattened, breaks on training
@@ -144,11 +162,11 @@ paths (V1.4) where FSDP + trainer emit 3D tensors to F.linear directly.
 batch-invariant linear kernel itself has a dim-restriction assert
 (`matmul.py:261`). Presumably written with inference shapes in mind.
 
-### Option 1 — applied 2026-04-23 dusk as commit `87b507ed` on ascend-day0-torch211-20260423 branch
+### Option 1 — the reshape edit (maintainer patch)
 
-Added arbitrary-leading-dims reshape to `linear_batch_invariant`
-wrapper (not `linear_persistent` itself — the wrapper is the right place
-since it matches `F.linear`'s contract):
+Add arbitrary-leading-dims reshape to `linear_batch_invariant` wrapper
+(not `linear_persistent` itself — the wrapper is the right place since
+it matches `F.linear`'s contract):
 
 ```python
 def linear_batch_invariant(input_, weight, bias=None):

@@ -132,15 +132,25 @@ passes on the formal "non-empty output" criterion. Quality tuning
 would be a vllm-ascend side follow-up but out of scope for Day-0
 compatibility validation.
 
-Concrete artifacts: `workspace/vllm-day0-vllm0200-20260423-1623/findings.md`
-+ personal fork branch `ascend-day0-torch211-20260423` commits
-`149393a0..335d99eb` (6 drift-patch commits on top of torch 2.11 Fix B+/C).
+Reference artifacts (for the vllm-ascend maintainer landing this):
+`workspace/vllm-day0-vllm0200-20260423-1623/findings.md` +
+`*.py.patched` under that same directory — each corresponds to one
+file-level diff you apply in your own vllm-ascend tree. Session ran
+13 drift patches on top of torch 2.11 Fix B+/C (file-level patches
+spanning `utils.py`, `ascend_config.py`, `sample/sampler.py`,
+`batch_invariant.py`, `patch/worker/patch_qwen3_{next,5}.py`,
+`spec_decode/draft_proposer.py`, `platform.py`, `worker/npu_input_batch.py`,
+`worker/worker.py`, `worker/model_runner_v1.py`,
+`attention/attention_v1.py`, `worker/block_table.py`).
 
-**Takeaway**: Day-0 probe past 1-2 minor versions of vllm-ascend cursor
-can expose 6+ drift layers. First 6 are each 1-file point patches the
-skill can apply iteratively. Beyond that, sync work belongs to the
-vllm-ascend team's main2main skill (they have one per PR #6983), not
-our iterative Day-0 loop.
+**Takeaway for the vllm-ascend team**: when vllm community tip moves
+~150 commits ahead of your adapter, first ~6 drift layers are
+1-file point patches easy to batch. Beyond that (PR #32951 CpuGpuBuffer→tensor
+refactor, PR #37487 kv_cache list→tensor) the drift becomes structural
+— these overlap heavily with whatever main-branch sync you already
+run (e.g. PR #6983). This skill surfaces them early so you can plan
+the main-branch sync cadence ahead of the next vllm release, rather
+than debugging consumers' breakage reports post-ship.
 
 ## Pre-probe discipline (2026-04-23 lesson)
 
