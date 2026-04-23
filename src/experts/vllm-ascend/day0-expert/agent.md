@@ -183,5 +183,5 @@ Handoff JSON. No prose.
 
 - `SKILL.md` / `state_machine.yaml` / `README.md`
 - `references/patterns/domains/vllm-ascend-probe.md`
-- `../torch-day0-expert/` — upstream sibling whose output is our base
+- `../torch-npu/day0-expert/` — upstream sibling whose output is our base
 - `../../_shared/references/patterns/domains/day0-deploy-artifacts.md`

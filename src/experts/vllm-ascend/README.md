@@ -15,14 +15,14 @@ This folder holds all experts, patterns, and references specific to the
 
 ## Related folders (other upstream repos)
 
-- [`../torch-day0-expert/`](../torch-day0-expert/) — Day-0 for community torch + Huawei torch_npu stack (not yet folder-organized)
-- [`../vllm-day0-expert/`](../vllm-day0-expert/) — Day-0 probe for community vllm itself (C-report only since we're not vllm maintainers)
-- [`../transformers-day0-expert/`](../transformers-day0-expert/) — Day-0 for community transformers incl. NPU integrations
+- [`../torch-npu/day0-expert/`](../torch-npu/day0-expert/) — Day-0 for community torch + Huawei torch_npu stack (not yet folder-organized)
+- [`../vllm/day0-expert/`](../vllm/day0-expert/) — Day-0 probe for community vllm itself (C-report only since we're not vllm maintainers)
+- [`../transformers/day0-expert/`](../transformers/day0-expert/) — Day-0 for community transformers incl. NPU integrations
 - [`../_shared/`](../_shared/) — cross-expert templates + OL rules
 
 ## Why per-upstream folders
 
-Previously experts were flat (`vllm-ascend-day0-expert/` `vllm-day0-expert/`) with
+Previously experts were flat (`vllm-ascend-day0-expert/` `vllm/day0-expert/`) with
 no hint which upstream each one targeted. User correction 2026-04-23T22:17Z:
 "create folder using upstream repo name like vLLM-ascend so that people
 know where to find necessary md or skills". Per-upstream folders = one

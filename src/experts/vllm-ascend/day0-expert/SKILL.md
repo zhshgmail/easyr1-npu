@@ -88,5 +88,5 @@ PR-ready patches for the vllm-ascend team.
 - `references/ALWAYS_LOADED_RULES.md` — OL-03 / OL-08 specific to this expert
 - `references/KB_INDEX.md` — known vllm-ascend Day-0 patterns + 2026-04-23 wet-run findings
 - `references/patterns/domains/vllm-ascend-probe.md` — reproducer minimization, call-site location, fix-level selection
-- `../torch-day0-expert/` — sibling whose deploy output is this expert's base image
+- `../torch-npu/day0-expert/` — sibling whose deploy output is this expert's base image
 - `../../_shared/references/patterns/domains/day0-deploy-artifacts.md` — Phase E deliverables

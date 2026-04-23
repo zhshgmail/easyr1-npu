@@ -103,6 +103,6 @@ A3 time.
 
 - `README.md` — product definition
 - `../../experts/dep-analysis-expert/` — step 1 expert
-- `../../experts/transformers-upgrade-expert/` — step 2 candidate
+- `../../experts/transformers/upgrade-expert/` — step 2 candidate
 - `../../experts/easyr1-expert/` — step 3 consumer port
 - `../../experts/_shared/` — universal OL rules + reference hooks/scripts

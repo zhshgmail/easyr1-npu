@@ -1,7 +1,7 @@
 # _shared/ — cross-expert templates
 
 Reusable material for any NPU-port expert. Each expert directory (e.g.
-`easyr1-expert/`, `transformers-upgrade-expert/`) includes its own
+`easyr1-expert/`, `transformers/upgrade-expert/`) includes its own
 SKILL.md/agent.md/state_machine.yaml, but can pull in these templates
 instead of writing them from scratch.
 

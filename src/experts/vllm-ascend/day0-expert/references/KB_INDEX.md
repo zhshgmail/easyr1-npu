@@ -237,9 +237,9 @@ that skill exists.
 
 ## Related KB (sibling experts)
 
-- `torch-day0-expert/` — produces the base image this expert builds on
-- `vllm-day0-expert/` — Day-0 for vllm itself on a stable vllm-ascend
+- `torch-npu/day0-expert/` — produces the base image this expert builds on
+- `vllm/day0-expert/` — Day-0 for vllm itself on a stable vllm-ascend
   (usually runs after this expert's Day-0 on vllm-ascend)
-- `transformers-day0-expert/` — sibling scaffold
+- `transformers/day0-expert/` — sibling scaffold
 - `../../_shared/references/patterns/domains/day0-deploy-artifacts.md`
   — Phase E deploy deliverables

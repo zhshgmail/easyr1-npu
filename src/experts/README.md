@@ -55,22 +55,22 @@ session can pick the right entry point.
 
 When the NPU ecosystem **has shipped** the target version in an image:
 
-- **[transformers-upgrade-expert/](transformers-upgrade-expert/)** —
+- **[transformers/upgrade-expert/](transformers/upgrade-expert/)** —
   transformers version in NPU image but consumer needs shim work
-- **[vllm-upgrade-expert/](vllm-upgrade-expert/)** — vllm-ascend version
+- **[vllm/upgrade-expert/](vllm/upgrade-expert/)** — vllm-ascend version
   bumped but consumer needs shim work
-- **[torch-npu-upgrade-expert/](torch-npu-upgrade-expert/)** — torch_npu
+- **[torch-npu/upgrade-expert/](torch-npu/upgrade-expert/)** — torch_npu
   bumped within same transformers/vllm window
 
 ### Stage 3 — Day-0 (community has, NPU hasn't caught up)
 
 When the NPU ecosystem **has NOT shipped** the target version:
 
-- **[transformers-day0-expert/](transformers-day0-expert/)** — community
+- **[transformers/day0-expert/](transformers/day0-expert/)** — community
   transformers version with NPU shim needed
-- **[vllm-day0-expert/](vllm-day0-expert/)** — community vllm whose
+- **[vllm/day0-expert/](vllm/day0-expert/)** — community vllm whose
   matching vllm-ascend isn't released
-- **[torch-day0-expert/](torch-day0-expert/)** — community PyTorch whose
+- **[torch-npu/day0-expert/](torch-npu/day0-expert/)** — community PyTorch whose
   stable torch_npu isn't released (torch_npu rc on PyPI used)
 - **[vllm-ascend/day0-expert/](vllm-ascend/day0-expert/)** — vllm-ascend
   itself needs patching for a deeper upstream move (new torch ABI drift,
