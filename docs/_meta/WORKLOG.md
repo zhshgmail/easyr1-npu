@@ -35,41 +35,66 @@
 - [ ] T1.6 rewrite 所有交叉引用路径（sed 一遍）
 - [ ] T1.7 README 首屏指向 `docs/_meta/WORKLOG.md` 作为汇报入口
 
-### Phase 2 — src/ 结构清理
+### Phase 2 — `src/` 全面对齐 per-upstream（结合 user 2026-04-23T22:29 重申）
 
-- [ ] T2.1 把每个上游的 `day0-expert/` 和 `upgrade-expert/` 合并为单一 `<upstream>/port-expert/`（4 个 upstream × 2 expert = 8 个目录 → 4 个）
-- [ ] T2.2 更新每个 port-expert 的 SKILL.md + agent.md + state_machine.yaml 描述为"端到端 port"，不再分 day0/upgrade
-- [ ] T2.3 更新 `src/experts/README.md` + `src/experts/<upstream>/README.md` 反映新结构
-- [ ] T2.4 rewrite 路径引用
+**User 确定的目标结构**：
+```
+src/
+├── skills/                       ← 原 src/experts/ 改名，因为 "expert" 是实现细节
+│   ├── _shared/
+│   ├── vllm-ascend/
+│   │   └── port-expert/          ← 合并了 day0 + upgrade
+│   ├── vllm/
+│   │   └── port-expert/
+│   ├── torch-npu/
+│   │   └── port-expert/
+│   ├── transformers/
+│   │   └── port-expert/
+│   ├── easyr1/
+│   │   └── port-expert/          ← 原 easyr1-expert
+│   └── dep-analysis/
+│       └── expert/               ← 原 dep-analysis-expert
+└── scripts/                      ← 原顶层 scripts/ 搬到 src/ 下
+    └── ...（+ 每个上游独有的 scripts 搬到对应 skills/<upstream>/ 下）
+```
 
-### Phase 3 — skills/ 老目录处理
+同时处理遗留 `skills/` 顶层（老格式）：
+- `skills/upstream-branch-hygiene/` — 通用 git 流程规则 → `src/skills/_shared/upstream-branch-hygiene/`
+- `skills/codex-review/` + `skills/codex-signoff` — 评审流程 → `src/skills/_shared/codex-review/`
+- `skills/dep-gap-detect/` — 通用依赖分析 → `src/skills/dep-analysis/` 合并
+- `skills/image-upgrade-drill/` — 作为 consumer 的 EasyR1 port → `src/skills/easyr1/port-expert/` 的 drill 模式
+- `skills/npu-code-path-sweep/`, `skills/npu-image-inspect/` — 通用 NPU 工具 → `src/skills/_shared/`
+- `skills/npu-container-runner/` — 通用运行器 → `src/scripts/`
+- `skills/ray-npu-shim/` — ray 相关通用 → `src/skills/_shared/`（consumer 用）
 
-- [ ] T3.1 审计 `skills/` 下 8 个老 skill（codex-review, dep-gap-detect, image-upgrade-drill, npu-code-path-sweep, npu-container-runner, npu-image-inspect, ray-npu-shim, upstream-branch-hygiene）
-- [ ] T3.2 决定每个：
-  - 保留（还在活用，比如 `upstream-branch-hygiene` 是 git 流程通用规则） → 迁移到 `src/` 合适位置
-  - 已过时 → 删除
-  - 内容合并到某个 expert → 合并
-- [ ] T3.3 删除空 `skills/` 目录
+具体任务：
+- [ ] T2.1 `src/experts/` → `src/skills/`（rename）
+- [ ] T2.2 `scripts/` (top) → `src/scripts/`
+- [ ] T2.3 在每个 `src/skills/<upstream>/` 下合并 day0-expert + upgrade-expert → `port-expert/`
+- [ ] T2.4 把顶层 `skills/` 的 8 个老 skill 按上面清单迁入 `src/skills/_shared/` 或 `src/scripts/`
+- [ ] T2.5 删除空的顶层 `skills/` 和 `scripts/`
+- [ ] T2.6 更新每个 port-expert 的 SKILL.md + agent.md + state_machine.yaml 描述为"端到端 port"，不再分 day0/upgrade
+- [ ] T2.7 更新 `src/skills/README.md` + `src/skills/<upstream>/README.md`
+- [ ] T2.8 rewrite 所有路径引用（docs/ + src/ + knowledge/）
 
-### Phase 4 — workspace/ 重组
+### Phase 3 — workspace/ 重组
 
-- [ ] T4.1 把 workspace/ 下 21 个扁平 session 目录按上游分类：
+- [ ] T3.1 把 workspace/ 下 21 个扁平 session 目录按上游分类：
   - `torch-day0-*`, `torch-npu-upgrade-*` → `workspace/torch-npu/`
   - `transformers-day0-*`, `transformers-upgrade-*` → `workspace/transformers/`
-  - `vllm-day0-*` → `workspace/vllm/`
+  - `vllm-day0-*`, `vllm-upgrade-*` → `workspace/vllm/`
   - `vllm-ascend-day0-*` → `workspace/vllm-ascend/`
-  - `vllm-upgrade-*` → `workspace/vllm/`
   - `easyr1-port-*`, `dep-analysis-*`, `npu-port-*` → `workspace/easyr1/`
-- [ ] T4.2 更新 MODULE-PORT-STATUS.md 路径
-- [ ] T4.3 A3 上 `/tmp/z00637938/` 对应调整（可选，远端不一定必须重组）
+- [ ] T3.2 更新 MODULE-PORT-STATUS.md 路径
+- [ ] T3.3 A3 上 `/tmp/z00637938/` 对应调整（可选，远端不一定必须重组）
 
-### Phase 5 — GLOSSARY 更新，去掉 day0/upgrade 二分
+### Phase 4 — GLOSSARY 更新，去掉 day0/upgrade 二分
 
-- [ ] T5.1 GLOSSARY.md 把 "Day-0 skill outcome matrix" 改为 "port outcome matrix"，不再区分 day0/upgrade
-- [ ] T5.2 删除 Fix-level 阶梯中隐含的 day0/upgrade 假设
-- [ ] T5.3 "Fix A/B/B+/C" 部分继续保留（torch 2.11 历史速记），但注记为 legacy
+- [ ] T4.1 GLOSSARY.md 把 "Day-0 skill outcome matrix" 改为 "port outcome matrix"，不再区分 day0/upgrade
+- [ ] T4.2 删除 Fix-level 阶梯中隐含的 day0/upgrade 假设
+- [ ] T4.3 "Fix A/B/B+/C" 部分继续保留（torch 2.11 历史速记），但注记为 legacy
 
-### Phase 6 — V1.4 debug 回归（结构重组完成后继续）
+### Phase 5 — V1.4 debug 回归（结构重组完成后继续）
 
 - [ ] T6.1 iter 19：把 `(k_cache, v_cache)` tuple 替换为**直接从 `raw_kv_tensor` view 出的连续 5D tensor**（不经 stack，避免拷贝到独立 buffer）
 - [ ] T6.2 rebuild overlay + V1.3 token diff + V1.4 smoke
