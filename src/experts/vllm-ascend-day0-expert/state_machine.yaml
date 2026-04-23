@@ -65,12 +65,13 @@ phases:
 
   P3_design_fix:
     order: 4
-    description: "Choose fix level per ALWAYS_LOADED_RULES §'Fix level selection' (env-var / plugin-entry guard / per-call-site / C++ rebuild)."
+    description: "Choose fix level (5 levels) per patterns/domains/vllm-ascend-probe.md §Phase D. Level 4 (C++ rebuild) IS in scope as of 2026-04-23."
     required_actions:
-      - "Try level 1 (env-var only) first: does VLLM_BATCH_INVARIANT=1 fix reproducer?"
-      - "If yes AND all call sites guard-gated → Fix level 2 (auto-set at __init__.py)"
-      - "If not → per-call-site patch at level 3"
-      - "Level 4 (C++ rebuild) → separate tech debt task, outside this session"
+      - "Level 1: does VLLM_BATCH_INVARIANT=1 fix reproducer? If yes, outcome B (user-set) or C-patch level 2"
+      - "Level 2 (plugin-entry guard): auto-set env var in vllm_ascend/__init__.py; always goes with level 1"
+      - "Level 3 (per-call-site): python patch where only a few specific sites break (e.g. linear_batch_invariant 3D reshape — fixes forward but not autograd backward)"
+      - "**Level 4 (C++ rebuild, Fix C)**: rebuild vllm_ascend_C.so against running torch ABI. Often the real training-path fix when levels 1-3 only cover inference. Recipe in patterns/domains/vllm-ascend-probe.md §'Level 4 rebuild recipe'. First patch: CMakeLists.txt:26 hard-pin on torch version. Output: new .so + updated overlay image."
+      - "Level 5 (C-report): fix belongs to community upstream or CANN kernel team"
     required_artifacts:
       - path: "workspace/vllm-ascend-day0-analysis-{SESSION_TAG}/fix-design.md"
         content_must_contain: ["chosen level:", "rationale:", "affected files:"]

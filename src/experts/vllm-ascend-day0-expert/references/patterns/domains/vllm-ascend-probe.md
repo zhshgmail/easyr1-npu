@@ -76,23 +76,77 @@ Fix B+ pattern — the cheapest valid fix.
 If any unguarded call sites exist, they need explicit per-site patches
 (version-check + fallback branch).
 
-## Phase D: fix-level selection
+## Phase D: fix-level selection (5 levels as of 2026-04-23 dusk)
 
-Walk the levels in order, pick the lowest that works:
+Walk the levels in order, pick the lowest that works. Empirically we've
+found levels 1-3 often fix **inference** (V1.3 rollout) but leave
+**training** (V1.4) broken; level 4 C++ rebuild is usually needed for
+full training path.
 
 1. **Env-var only**: does setting `VLLM_BATCH_INVARIANT=1` (before any
    vllm import) make the failing reproducer work? If yes, outcome **B**
-   or **C-patch** (auto-set at plugin entry).
+   (user sets it) or **C-patch** (auto-set at plugin entry).
 2. **Python patch at plugin entry**: add guard in `vllm_ascend/__init__.py`
    to auto-detect the bad condition + set the env-var. Users get fixed
    behavior without CLI intervention.
 3. **Python patch at call site**: if only 1-2 sites affected, a direct
    version-check branch there is cleaner than the broad env-var
-   approach.
-4. **C++ rebuild**: tracked as tech debt; not this expert's scope
-   unless explicitly requested.
+   approach. Example: `linear_batch_invariant` reshape 3D→2D (covers
+   training forward but not backward).
+4. **C++ rebuild** (Fix C — in scope as of 2026-04-23):
+   rebuild `vllm_ascend_C` against the running torch's ABI. Usually
+   the "one real fix" for training, because it eliminates the need
+   for batch-invariant fallback entirely, and autograd backward goes
+   through native PrivateUse1 impl (where all linear/rmsnorm/etc.
+   backwards are registered).
+5. **C-report**: fix belongs to a different upstream (community torch,
+   CANN kernel team). Blocker report only.
 
-Each level narrows scope — favor lower levels.
+Each level narrows scope — favor lower levels, but skip to level 4 if
+the issue is known from past sessions to be ABI-drift training-time
+(2026-04-23 torch-2.11 case: levels 1-3 bought inference but we had
+to do level 4 for training).
+
+### Level 4 rebuild recipe (from 2026-04-23 torch-2.11 session)
+
+```bash
+# Inside the Fix B+ overlay container with NPU devices mounted:
+docker run --rm --privileged \
+    -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+    -v /usr/local/dcmi:/usr/local/dcmi \
+    -v /etc/ascend_install.info:/etc/ascend_install.info \
+    -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+    -v /tmp/CMakeLists-widen.txt:/vllm-ascend/CMakeLists.txt:ro \
+    -v /tmp/fixc-out:/host-out \
+    --device=/dev/davinci0 --device=/dev/davinci_manager \
+    --device=/dev/devmm_svm --device=/dev/hisi_hdc \
+    <fix-B+-overlay> \
+    bash -c '
+      source /usr/local/Ascend/ascend-toolkit/set_env.sh
+      export SOC_VERSION=ascend910_9391  # adjust per hardware
+      rm -rf /vllm-ascend/build /vllm-ascend/.deps
+      cd /vllm-ascend && python3 setup.py build_ext --inplace
+      mkdir -p /host-out
+      cp /vllm-ascend/vllm_ascend/vllm_ascend_C.cpython-*.so /host-out/
+      cp /vllm-ascend/vllm_ascend/libvllm_ascend_kernels.so /host-out/
+      cp -r /vllm-ascend/vllm_ascend/lib /host-out/
+      cp -r /vllm-ascend/vllm_ascend/_cann_ops_custom /host-out/
+    '
+```
+
+Gotcha: `CMakeLists.txt:26` hard-pins `torch == 2.9.0`. Patch this
+first (accept 2.x minor range you're targeting). This is itself an
+upstream patch worth committing and PR-ing.
+
+Then build Fix C image: `FROM <fix-B+-overlay> + COPY /host-out/...`.
+
+Verify native-op reproducer no longer SIGSEGVs (now RuntimeError at
+worst, usually PASS).
+
+Re-run V1.4 training smoke with `VLLM_BATCH_INVARIANT=0` explicitly set
+(force native custom-op path, bypass Fix B+'s auto-batch-invariant
+that's now redundant). Expected: PASS with entropy_loss in baseline
+band.
 
 ## Phase E: patch application
 
