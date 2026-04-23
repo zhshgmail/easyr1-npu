@@ -2,9 +2,24 @@
 
 **给下一个 session / 另一个 dedicated agent 接手本项目时用**。只读这一篇文档 + `README`/`CLAUDE.md` 就能接着干。本文件补那些**不在其他 md 里、但下一个人必须知道的一次性 / stateful / 未解决事项**。
 
-最新更新：**2026-04-23**（今天大幅扩展：Stage 2 三个 shim-adapt experts + Stage 3 两个 Day-0 experts + user-facing example guide + Day-0 reframing 进 design doc）。本次更新覆盖 §3 (git 分支)、§6 (未结工作)、§7 (skills 系统)、§11 (下一步)。上一版是 2026-04-19（Stage 0 only）。
+最新更新：**2026-04-23 (晚班更新)**。早班：Stage 2 + Stage 3 初版
+(transformers-day0, vllm-day0) scaffolding。**晚班（本次）：3-layer Day-0
+chain 完整打通 + codified**：torch 2.11 manual port → deploy artifacts →
+vllm-ascend Fix B+ patch → V1.3 PASS → 2 个新 skill
+(`torch-day0-expert`, `vllm-ascend-day0-expert`) + shared deploy-artifacts
+pattern。详见 §6.5 (晚班工作) / §7.2 (3-layer chain) / §11 (next-session
+cold-drive)。
 
-**本轮 session 的关键 pivot**（user 2026-04-22T21:51）：原先 Stage 2 三个 upgrade experts 假设"NPU 已经 ship 好新版 image"——这只是**最简单的 shim-adapt 场景**。真问题是 **Day-0**：community 刚发版、NPU 生态没跟上，用户还想跑。新建 Stage 3 `transformers-day0-expert` + `vllm-day0-expert` 才是**真正的产品**。详见 [`design/SKILLS_ARCH_TARGET.md`](design/SKILLS_ARCH_TARGET.md) §Day-0 Reframing。
+**本轮 session 关键指引链**（user 2026-04-22T21:51 + 2026-04-23 反复迭代）：
+1. **Day-0 = community 新版 × NPU 配套没跟上**（原先 shim-adapt 假设是最简单场景）
+2. **Skills 的受众是 upstream owner**（transformers / vllm-ascend / torch_npu 维护者），不是 EasyR1 porter
+3. **可以改代码，有时候只能改**——outcome C 分 C-report (社区仓，我们无权改) vs C-patch (华为开源，我们直接 patch)
+4. **真正 Day-0 target = upstream Huawei 维护层还没适配**的版本；旧版已修过的不是 target
+5. **如果表层 gap 追到更深 dep**（torch_npu 2.11 stable 没出来），**换 session 的上游到根 dep**
+6. **Skill 生产顺序**：analysis → manual port → deploy artifacts → codify → 0-交互 cold-drive validate
+7. **每层之间插 Phase 2.5 deploy artifacts**：下层 upstream 团队从已部署状态开始，不重做
+8. **C-patch scope 限华为开源**（vllm-ascend / torch_npu / triton-ascend / transformers NPU integrations）
+9. **Autonomous 模式 = 不 pause 在 trivial 判断**；路径失败记 memory + 走下一条；fill build time 做独立工作
 
 ---
 
@@ -238,6 +253,45 @@ drill image 同样，`--image easyr1-npu-852:drill`。
 ### 6.5 PORT-SUMMARY.md 升级里的 N 个 open follow-up（非阻塞）
 
 详见 `PORT-SUMMARY.md` §"Known debt" 和 `transformers-upgrade-drill.md` §"Follow-ups status"。都标过状态。
+
+### 6.6 ⏸️ 2026-04-23 晚班：3-layer Day-0 chain codified，但 **cold-drive 未做**
+
+**Status**: 今晚在 session 内用 manual port 把 torch 2.11 + torch_npu 2.11.0rc1 + vllm-ascend Fix B+ 全链路跑通，V1.3 PASS 生成文字：
+- `"Hello, my name is"` → `" Sarah and I am a 20"`
+- `"The capital of France is"` → `" ______.\nA. Paris\nB."`
+- `"2 + 2 equals"` → `" 4. 2 + 2"`
+
+两个新 skill codified + pushed：
+- `src/experts/torch-day0-expert/` (commit `b1d05a3`)
+- `src/experts/vllm-ascend-day0-expert/` (commit `8efd236`)
+
+Shared pattern codified：
+- `src/experts/_shared/references/patterns/domains/day0-deploy-artifacts.md` (commit `fb0f78c`)
+
+Upstream patch shipped：
+- Branch `ascend-day0-torch211-20260423` on personal fork `zhshgmail/vllm-ascend`
+- 2 commits：`7c2078e7` (utils.py torch-ABI guard) + `caa55fed` (init.py early VLLM_BATCH_INVARIANT set)
+
+Workspace artifacts（未 commit，session 内）：
+- `workspace/torch-day0-analysis-20260423-0531/analysis.md` — Phase 1 feasibility
+- `workspace/torch-day0-manual-20260423-0537/` — Phase 2 manual port log
+- `workspace/torch-day0-deploy-20260423-0548/` — torch Phase 2.5 artifacts
+- `workspace/vllm-ascend-day0-analysis-20260423-0636/` — Phase 5.1 root-cause analysis + reproducers
+- `workspace/vllm-ascend-day0-deploy-20260423-0655/` — vllm-ascend Phase 2.5 artifacts
+
+Overlay images on A3 (preserved)：
+- `easyr1-npu-torch211:torch-day0-manual-20260423-0537` (torch layer PASS)
+- `easyr1-npu-torch211-vllmascend-fixb:ascend-day0-torch211-20260423` (vllm-ascend patch PASS)
+
+**真正 cold-drive 没做**——session 内手动推进不算 0-interaction skill validation。这是 Phase 8（task #73）的事，留给下个 session。接手指南：
+1. 新开 Claude Code session + fresh state
+2. 用 user-visible 形式调用：`/torch-day0 --target-torch-version 2.11.0 --target-torch-npu-version 2.11.0rc1 --base-image easyr1-npu-852:trans-upg-e2e-20260422-2200`
+3. 让 skill 自己产出和本次 manual port 等效的结果
+4. 看 state_machine 的 7 phases 是否都正常走过，有没有 gap / 不合理的步骤
+5. 再用 `/vllm-ascend-day0 --target-delta torch-2.11 --base-image <torch-day0 output>` 跑 downstream
+6. 预期：两个 skill 的 cold-drive 都 PASS，V1.3 marker 匹配。如果 FAIL，是 KB / state_machine 有 gap，按 memory `end_to_end_vs_described.md` 的原则修 KB 再 retry
+
+**Fix C tech debt**（task #77）：rebuild vllm_ascend_C.so against torch 2.11 headers to restore full custom-op performance without batch-invariant fallback. 需要 vllm-ascend CI 升 torch 2.11 或私有 build。
 
 ---
 
