@@ -35,7 +35,7 @@ no docker/A3 chip actions). Deterministic: same inputs → same output.
 
 1. `../../_shared/references/ALWAYS_LOADED_UNIVERSAL.md`
 2. `references/ALWAYS_LOADED_RULES.md` — especially OL-03 denylist (NO
-   reading `docs/easyr1-dep-chain-audit.md`, which is the answer key)
+   reading `docs/easyr1/easyr1-dep-chain-audit.md`, which is the answer key)
 3. `references/KB_INDEX.md` + `references/NPU_ECOSYSTEM_MAP.md`
 
 ## Environment
@@ -101,7 +101,7 @@ no docker/A3 chip actions). Deterministic: same inputs → same output.
 
 ## Prohibited
 
-- **Reading `docs/easyr1-dep-chain-audit.md`** (OL-03, answer key)
+- **Reading `docs/easyr1/easyr1-dep-chain-audit.md`** (OL-03, answer key)
 - Editing / writing anywhere outside `$WORKSPACE`
 - Running `docker build` / any A3 chip-binding operation
 - Speculating a classification without citing a PACKAGE_RULES row or

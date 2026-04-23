@@ -58,12 +58,12 @@ Functional target met per `design.md §1.1-1.4`:
 
 | Asset | Purpose |
 |---|---|
-| `docs/design.md` | Formal design doc (requirements, background, restrictions, tasks). |
-| `docs/dep-matrix.md` | Per-package matrix across EasyR1 source / veRL source / 8.5.0 image / 8.5.2 image, plus Code-path blockers table. |
-| `docs/porting-journal.md` | Dated log of every session. Full traceability. |
-| `docs/npu-gap-plan.md` | v1 / v2+ / deferred work and rationale. |
-| `docs/skills-design.md` | System design for the multi-repo port skills. |
-| `docs/DELIVERABLE.md` | This file. |
+| `docs/_meta/design.md` | Formal design doc (requirements, background, restrictions, tasks). |
+| `docs/easyr1/dep-matrix.md` | Per-package matrix across EasyR1 source / veRL source / 8.5.0 image / 8.5.2 image, plus Code-path blockers table. |
+| `docs/easyr1/porting-journal.md` | Dated log of every session. Full traceability. |
+| `docs/easyr1/npu-gap-plan.md` | v1 / v2+ / deferred work and rationale. |
+| `docs/_meta/skills-design.md` | System design for the multi-repo port skills. |
+| `docs/easyr1/DELIVERABLE.md` | This file. |
 | `knowledge/easyr1-master-deps.md` | EasyR1 source deps. |
 | `knowledge/verl-master-deps.md` | veRL source deps (GPU + NPU reqs). |
 | `knowledge/upstream-refs.md` | Maps each image to the matching upstream refs (avoid reviewing master). |
@@ -233,8 +233,8 @@ The expectation is that a second similar port (another Ray-based RL framework ta
 
 ## 9. Sign-off
 
-- **v1 milestone**: APPROVED WITH FOLLOW-UPS (codex proxy, 2026-04-18). Archived at `docs/codex-signoff.md`.
-- **v2 milestone**: APPROVED WITH FOLLOW-UPS (codex proxy, 2026-04-19). Archived at `docs/codex-signoff-v2.md`.
+- **v1 milestone**: APPROVED WITH FOLLOW-UPS (codex proxy, 2026-04-18). Archived at `docs/_archive/codex-signoff.md`.
+- **v2 milestone**: APPROVED WITH FOLLOW-UPS (codex proxy, 2026-04-19). Archived at `docs/_archive/codex-signoff-v2.md`.
 
 User delegated final sign-off to the `codex-review` skill. Summary of v1:
 
@@ -255,6 +255,6 @@ User delegated final sign-off to the `codex-review` skill. Summary of v1:
 
 **v2 follow-ups captured** (non-blocking):
 
-- `MAJOR / M` — `NPU-BUG-003` stabilization: decide whether `use_torch_compile=false` stays the permanent default on NPU or a narrower guard is sufficient. See `docs/codex-signoff-v2.md`.
+- `MAJOR / M` — `NPU-BUG-003` stabilization: decide whether `use_torch_compile=false` stays the permanent default on NPU or a narrower guard is sufficient. See `docs/_archive/codex-signoff-v2.md`.
 - `MEDIUM / S` — V2.2 (4-chip + ulysses padding_free) is the first missing smoke above V2.1's envelope. Same machinery; ~half-hour to run once hardware time is allocated.
 - `MINOR / S` — residual v1-era wording — addressed in this commit.

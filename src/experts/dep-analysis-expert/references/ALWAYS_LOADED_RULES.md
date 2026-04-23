@@ -8,15 +8,15 @@
 ## OL-03 (dep-analysis-worker denylist)
 
 **禁读**：
-- `docs/easyr1-dep-chain-audit.md` — **本 expert 的答案 spoiler**。本 expert
+- `docs/easyr1/easyr1-dep-chain-audit.md` — **本 expert 的答案 spoiler**。本 expert
   的工作是独立从 reqs.txt + image pip-freeze 出发重新分类；读了 audit doc
   等于抄答案。round 作废。
-- `docs/PORT-SUMMARY.md` / `docs/dep-matrix.md` — 同 topic 历史结论，
+- `docs/easyr1/PORT-SUMMARY.md` / `docs/easyr1/dep-matrix.md` — 同 topic 历史结论，
   同理禁读
-- `docs/HANDOVER.md` / `docs/porting-journal.md` / `docs/design.md` /
-  `docs/P2-WORKFLOW.md` / `docs/DELIVERABLE.md` / `docs/codex-*.md` /
-  `docs/design/SKILLS_ARCH_TARGET.md` / `docs/skill-dry-run-2026-04-20.md` /
-  `docs/handoff-2026-04-19.md` — 通用 denylist
+- `docs/_meta/HANDOVER.md` / `docs/easyr1/porting-journal.md` / `docs/_meta/design.md` /
+  `docs/_archive/P2-WORKFLOW.md` / `docs/easyr1/DELIVERABLE.md` / `docs/_archive/codex-*.md` /
+  `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` / `docs/_archive/skill-dry-run-2026-04-20.md` /
+  `docs/_archive/handoff-2026-04-19.md` — 通用 denylist
 
 **允许读**：
 - `references/NPU_ECOSYSTEM_MAP.md` — 本 expert 自己的 rule table（A/B/C/D/E

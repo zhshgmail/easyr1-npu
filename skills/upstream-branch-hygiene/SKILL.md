@@ -127,6 +127,6 @@ When reviewing a proposed upstream change:
 - [ ] Does `git log personal/<branch>` show the commit?
 - [ ] Does the NPU host's checkout show the commit after `git pull personal <branch>`?
 - [ ] Has any downstream image rebuild happened if the change touches the Dockerfile layer?
-- [ ] Is the change documented in `docs/porting-journal.md` if it's non-trivial?
+- [ ] Is the change documented in `docs/easyr1/porting-journal.md` if it's non-trivial?
 
 If any box is unchecked, the change is not properly landed yet.

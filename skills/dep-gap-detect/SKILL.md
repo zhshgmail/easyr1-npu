@@ -20,7 +20,7 @@ Emits a classification report in markdown:
 
 Exit code:
 - `0` if all deps fall in A/B/C/E (scenario P1 — proceed to image-upgrade-drill)
-- `1` if any D found (scenario P2 — stop, file a task in `docs/npu-adaptation-tasks.md`, complete adaptation first)
+- `1` if any D found (scenario P2 — stop, file a task in `docs/easyr1/npu-adaptation-tasks.md`, complete adaptation first)
 - `2` on usage / input errors
 
 ## When to use
@@ -67,7 +67,7 @@ update it when:
 
 **Do not silently edit the rules without also**:
 1. Recording the rationale in `knowledge/npu-patterns.md` as a stable ID (if the rule reflects a recurring pattern)
-2. Noting the change in `docs/porting-journal.md` dated
+2. Noting the change in `docs/easyr1/porting-journal.md` dated
 3. Re-running the detection on EasyR1 master + all target images to confirm the new rule doesn't flip prior verdicts
 
 ## Interpretation
@@ -85,7 +85,7 @@ No new adaptation work needed from sister projects or Ascend team.
 
 Stop. Before running drill:
 1. For each D-tier dep, manually verify — is there really no NPU version under a different name? Is it actually required or can the feature be disabled?
-2. If genuinely required, file a task in `docs/npu-adaptation-tasks.md` at the correct tier:
+2. If genuinely required, file a task in `docs/easyr1/npu-adaptation-tasks.md` at the correct tier:
    - **Tier 1** (this repo): if a Python shim in EasyR1 suffices (moves dep to C)
    - **Tier 2** (delegate): if kernel / Python-library port needed → sister projects (`ascend-fused-accuracy-probe` for A3 kernel verification, `a5_ops` for A5 kernel gen, A3 kernel repo for A3)
    - **Tier 3** (escalate): if CANN runtime C layer bug → Ascend team
@@ -121,6 +121,6 @@ Stable-format enough that future tooling (e.g. CI regression) can parse the Summ
 
 - [`npu-image-inspect`](../npu-image-inspect/SKILL.md) — produces the image inventory input
 - [`image-upgrade-drill`](../image-upgrade-drill/SKILL.md) — the next step after P1 verdict
-- [`docs/easyr1-dep-chain-audit.md`](../../docs/easyr1-dep-chain-audit.md) — the manual baseline audit that this skill's rules are seeded from
-- [`docs/npu-adaptation-tasks.md`](../../docs/npu-adaptation-tasks.md) — where D-tier findings become tracked tasks
+- [`docs/easyr1/easyr1-dep-chain-audit.md`](../../docs/easyr1/easyr1-dep-chain-audit.md) — the manual baseline audit that this skill's rules are seeded from
+- [`docs/easyr1/npu-adaptation-tasks.md`](../../docs/easyr1/npu-adaptation-tasks.md) — where D-tier findings become tracked tasks
 - [`knowledge/npu-patterns.md`](../../knowledge/npu-patterns.md) — stable-ID NPU patterns some rules reference

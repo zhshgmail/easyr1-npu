@@ -104,7 +104,7 @@ bash scripts/dep-gap-detect.sh \
 
 **决策点**：
 - 退出码 0（**D = 0，场景 P1**）→ 继续 Step 2 的 drill 流程
-- 退出码 1（**D ≥ 1，场景 P2**）→ **停下来**。按 [`P2-WORKFLOW.md`](P2-WORKFLOW.md) 的端到端流程走（识别 gap → 分档 tier 1/2/3 → 建任务 → 执行 → 验证 → 接回 P1）。task 登记在 [`docs/npu-adaptation-tasks.md`](npu-adaptation-tasks.md)
+- 退出码 1（**D ≥ 1，场景 P2**）→ **停下来**。按 [`P2-WORKFLOW.md`](P2-WORKFLOW.md) 的端到端流程走（识别 gap → 分档 tier 1/2/3 → 建任务 → 执行 → 验证 → 接回 P1）。task 登记在 [`docs/easyr1/npu-adaptation-tasks.md`](npu-adaptation-tasks.md)
 
 这个 skill 的内置 PACKAGE_RULES 就是 NPU 生态知识库的编码。识别出新 pattern 要更新它（见 `skills/dep-gap-detect/SKILL.md`）。
 
@@ -167,7 +167,7 @@ git checkout -b ascend-port origin/main
 bash scripts/code-path-sweep.sh "$HOME/workspace/easyr1-npu/upstream/EasyR1"
 ```
 
-**输出**：`docs/code-path-sweep-EasyR1.md`，按 `NPU-CP-001` / `NPU-CP-002` / ... 分段的 hit 表格。
+**输出**：`docs/easyr1/code-path-sweep-EasyR1.md`，按 `NPU-CP-001` / `NPU-CP-002` / ... 分段的 hit 表格。
 
 **决策点**：每个 hit 三选一
 - **现在修** —— 写 device accessor + 替换（参考 §3.2、3.3 的 `verl/utils/device.py` pattern）
@@ -229,7 +229,7 @@ cat /tmp/review-prompt.txt | \
 | 时刻 | 谁决定 | 看哪里 |
 |---|---|---|
 | 用哪个 target image | 你 / user | `knowledge/images/*.md` 的已验证版本；`PORT-GUIDE.md §2` |
-| 一个 CUDA-only 调用要现修还是 defer | 你 | `npu-patterns.md` 是否已覆盖；`docs/npu-gap-plan.md` 是否已计划 |
+| 一个 CUDA-only 调用要现修还是 defer | 你 | `npu-patterns.md` 是否已覆盖；`docs/easyr1/npu-gap-plan.md` 是否已计划 |
 | 新发现的 bug 是否要加 stable ID | 你 | 判断标准：下次还会撞吗？撞了能通过这个 ID 的 "Generalizable rule" 行在 5 分钟内定位吗？能就加 |
 | 是否切新 image（upgrade） | user | `image-upgrade-drill` 输出的 PASS / BLOCKED verdict + cost report |
 | 跑 smoke 用哪些 chip | 你 + A3 状态 | `npu-smi info` + `npu-container-runner` 的自动检查 |
@@ -260,7 +260,7 @@ cat /tmp/review-prompt.txt | \
 - EasyR1 自己的源码改动（device 路由、版本 compat shim、Ray 集成、Dockerfile）
 - Python 层 shim / fork 来桥接 CUDA-only 包 → NPU 替代（e.g. flash_attn → `transformers.integrations.npu_flash_attention`）
 - 向 vllm-ascend / triton-ascend / torch_npu 的 **Python 层**提 issue 或 PR
-- 识别 NPU 适配 gap，记入 `docs/npu-adaptation-tasks.md`（待建）
+- 识别 NPU 适配 gap，记入 `docs/easyr1/npu-adaptation-tasks.md`（待建）
 
 ### 档 2：委托给姐妹项目 / 独立仓（本仓 track 适配，实现在别的仓）
 
@@ -268,7 +268,7 @@ cat /tmp/review-prompt.txt | \
   - A3 kernel 精度验证 → 委托给 [`ascend-fused-accuracy-probe`](https://gitcode.com/zhengshencn_hwca/ascend-fused-accuracy-probe)
   - A5 kernel 生成 → 委托给 [`a5_ops`](https://gitcode.com/zhengshencn_hwca/a5_ops)
   - A3 kernel 生成 → 有类似的独立仓（按需调用）
-  - **本仓做的事**：识别 "EasyR1 需要某个 fused op 但没现成 NPU 实现" → 建 `docs/npu-adaptation-tasks.md` 任务 → 协调姐妹项目完成 → 接回 EasyR1 使用
+  - **本仓做的事**：识别 "EasyR1 需要某个 fused op 但没现成 NPU 实现" → 建 `docs/easyr1/npu-adaptation-tasks.md` 任务 → 协调姐妹项目完成 → 接回 EasyR1 使用
 
 - **torch_npu C++ 扩展层的 op 实现**：同上，委托给 Ascend PyTorch 团队 / 相关 kernel 项目。本仓 track
 
@@ -282,7 +282,7 @@ cat /tmp/review-prompt.txt | \
 
 **关键**：档 2 和档 3 的"委托"和"提需求"**不是推卸**。每一条 gap 都要：
 1. 识别并记录（哪个功能需要、当前状态、blocker 在哪）
-2. 建对应任务到 `docs/npu-adaptation-tasks.md`（谁来做、预计什么时间、怎么 track）
+2. 建对应任务到 `docs/easyr1/npu-adaptation-tasks.md`（谁来做、预计什么时间、怎么 track）
 3. Track 进度到完成
 4. 完成后接回 EasyR1 使用
 

@@ -25,9 +25,9 @@
 **Agent 能读的**（冷启动需要的）：
 
 - `README.md`
-- `docs/PORT-GUIDE.md`（路径 1 — "跑起来"）
-- `docs/SKILLS-GUIDE.md`（路径 2 — "从 0 重做"）
-- `docs/DOCS-CONVENTION.md`（所有文档的 place-of-record map）
+- `docs/easyr1/PORT-GUIDE.md`（路径 1 — "跑起来"）
+- `docs/_meta/SKILLS-GUIDE.md`（路径 2 — "从 0 重做"）
+- `docs/_meta/DOCS-CONVENTION.md`（所有文档的 place-of-record map）
 - 所有 `skills/*/SKILL.md`
 - 所有 `scripts/*`（包括 smoke 脚本）
 - `knowledge/npu-patterns.md`（坑目录 — 合理的快捷通道）
@@ -37,14 +37,14 @@
 
 **Agent 不能读的**（这些会**让它作弊**，因为内容是"我曾经做过了什么"）：
 
-- `docs/HANDOVER.md`（§6 是 transit state，含过去具体命令 / 结果）
-- `docs/porting-journal.md`（我手工干活的流水账，看了等于抄答案）
-- `docs/transformers-upgrade-drill.md`（drill 过程答案）
-- `docs/UPGRADE-DRILL-STATUS.md`（drill 结果 + 数值）
-- `docs/P2-WORKFLOW.md`（过去场景的设计，可能有硬编码信息）
-- `docs/skill-dry-run-2026-04-20.md`（之前作弊性质的 dry-run 记录）
-- `docs/DELIVERABLE.md` / `docs/codex-*.md`（历史结论）
-- `docs/design.md` / `docs/dep-matrix.md`（过度细节）
+- `docs/_meta/HANDOVER.md`（§6 是 transit state，含过去具体命令 / 结果）
+- `docs/easyr1/porting-journal.md`（我手工干活的流水账，看了等于抄答案）
+- `docs/transformers/transformers-upgrade-drill.md`（drill 过程答案）
+- `docs/transformers/UPGRADE-DRILL-STATUS.md`（drill 结果 + 数值）
+- `docs/_archive/P2-WORKFLOW.md`（过去场景的设计，可能有硬编码信息）
+- `docs/_archive/skill-dry-run-2026-04-20.md`（之前作弊性质的 dry-run 记录）
+- `docs/easyr1/DELIVERABLE.md` / `docs/_archive/codex-*.md`（历史结论）
+- `docs/_meta/design.md` / `docs/easyr1/dep-matrix.md`（过度细节）
 - 历史 commit message（`git log` 里能看到过去手动 fix 的细节）
 
 > 第三类文档（HANDOVER / journal / drill）**就是** agent 作弊会拿的东西。禁读的理由不是"它们不对"，而是"看了就等于给了它我已经踩过的坑 + 具体 fix，就不叫 cold-drive 了"。

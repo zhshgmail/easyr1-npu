@@ -4,7 +4,7 @@
 # Any change here MUST be mirrored in src/skills/easyr1-port/SKILL.md
 # (pre-commit hook enforces drift check).
 #
-# Modeled on a5_ops's docs/workflow/opgen_state_machine.yaml (V3.2). Scope
+# Modeled on a5_ops's docs/_archive/workflow/opgen_state_machine.yaml (V3.2). Scope
 # adapted: we port RL frameworks (EasyR1, OpenRLHF, TRL) to Ascend NPU, not
 # kernel generation. But the pipeline-criticism pattern is the same.
 #
@@ -115,7 +115,7 @@ phases:
     preconditions: [P1_dep_audit]
     required_actions:
       - "Write needs-adaptation-tasks.md naming each D-tier dep"
-      - "Append entries to docs/npu-adaptation-tasks.md"
+      - "Append entries to docs/easyr1/npu-adaptation-tasks.md"
     required_artifacts:
       - path: "workspace/port-{timestamp}/needs-adaptation-tasks.md"
         must_exist: true
@@ -263,7 +263,7 @@ phases:
       - "Write final report to workspace/port-{timestamp}/RESULTS.md"
       - "Per-artifact provenance: produced_by: port-worker | smoke-probe | orchestrator | human-intervention"
       - "Classify overall: CLOSED (all ladder green + zero human-intervention artifacts) | PARTIAL | FAILED"
-      - "If CLOSED, append line to docs/porting-journal.md"
+      - "If CLOSED, append line to docs/easyr1/porting-journal.md"
       - "Invoke self-critic skill for second-eye check"
     required_artifacts:
       - path: "workspace/port-{timestamp}/RESULTS.md"

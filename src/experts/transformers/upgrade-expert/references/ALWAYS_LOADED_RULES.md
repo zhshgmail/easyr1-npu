@@ -13,12 +13,12 @@
 
 在 agent context 里**禁读**：
 
-- `docs/HANDOVER.md` / `docs/porting-journal.md` / `docs/P2-WORKFLOW.md` /
-  `docs/DELIVERABLE.md` / `docs/codex-*.md` / `docs/design/SKILLS_ARCH_TARGET.md` /
-  `docs/design.md` / `docs/dep-matrix.md` / `docs/PORT-SUMMARY.md` /
-  `docs/easyr1-dep-chain-audit.md` / `docs/handoff-2026-04-19.md` /
-  `docs/skill-dry-run-2026-04-20.md`
-- `docs/UPGRADE-DRILL-STATUS.md`（同 topic 的 status 历史，会 leak 结论）
+- `docs/_meta/HANDOVER.md` / `docs/easyr1/porting-journal.md` / `docs/_archive/P2-WORKFLOW.md` /
+  `docs/easyr1/DELIVERABLE.md` / `docs/_archive/codex-*.md` / `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` /
+  `docs/_meta/design.md` / `docs/easyr1/dep-matrix.md` / `docs/easyr1/PORT-SUMMARY.md` /
+  `docs/easyr1/easyr1-dep-chain-audit.md` / `docs/_archive/handoff-2026-04-19.md` /
+  `docs/_archive/skill-dry-run-2026-04-20.md`
+- `docs/transformers/UPGRADE-DRILL-STATUS.md`（同 topic 的 status 历史，会 leak 结论）
 - **`upstream/EasyR1` 中 `ascend-port`、`ascend-port-e2e-round*`、
   `ascend-port-round3-*`、`ascend-port-round4-*` 分支的任何内容**
   （这些是 easyr1-expert 的答案域，本 expert 不看）
@@ -30,7 +30,7 @@
 - `upstream/EasyR1` 中 `ascend-port-transformers-upgrade` / 
   `ascend-port-transformers-upgrade-reproduce` 分支 — 这是本 expert 的
   **先行 drill**，commit history 就是本 expert 的 prior art，可以参考
-- `docs/transformers-upgrade-drill.md` — 本 expert 的 drill report，是
+- `docs/transformers/transformers-upgrade-drill.md` — 本 expert 的 drill report，是
   reference material，不是 cheat sheet
 
 原因：denylist 的目的是"让 cold-drive 每次都面对 upstream 原始状态"。对

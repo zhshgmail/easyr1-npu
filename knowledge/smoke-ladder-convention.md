@@ -83,5 +83,5 @@ Generalization: **when you introduce a new feature-milestone, reset the smoke le
 ## Related knowledge
 
 - `repo/knowledge/npu-patterns.md` — the stable-ID catalog for NPU-specific findings. Smoke-ladder levels surface specific patterns; e.g. V1.4 typically surfaces `NPU-CP-001` (torch.cuda.* sweep), V2.1 surfaced `NPU-BUG-003` (triton-ascend inductor shape-sensitive crash).
-- `repo/docs/skills-design.md` — the overall harness plan; this convention is a sub-element of how we organize the `npu-smoke-test` skill area.
-- `repo/docs/porting-journal.md` — dated log of each smoke level being run and its outcome. Use the smoke label as a grep anchor (`grep -n '^V1\.4\|^V2\.1' journal`).
+- `repo/docs/_meta/skills-design.md` — the overall harness plan; this convention is a sub-element of how we organize the `npu-smoke-test` skill area.
+- `repo/docs/easyr1/porting-journal.md` — dated log of each smoke level being run and its outcome. Use the smoke label as a grep anchor (`grep -n '^V1\.4\|^V2\.1' journal`).

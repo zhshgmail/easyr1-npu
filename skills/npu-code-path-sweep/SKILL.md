@@ -37,7 +37,7 @@ bash scripts/code-path-sweep.sh <source-tree>
 # or with explicit output:
 bash scripts/code-path-sweep.sh \
   "$HOME/workspace/easyr1-npu/upstream/EasyR1" \
-  --out docs/code-path-sweep-EasyR1.md
+  --out docs/easyr1/code-path-sweep-EasyR1.md
 ```
 
 Default output path: `docs/code-path-sweep-<basename-of-tree>.md`.
@@ -100,4 +100,4 @@ Total hits: <N>
 ## Related
 
 - `knowledge/npu-patterns.md` — the catalog the IDs point to.
-- `docs/dep-matrix.md` §Code-path blockers — manual analog; eventually this skill should feed that section directly.
+- `docs/easyr1/dep-matrix.md` §Code-path blockers — manual analog; eventually this skill should feed that section directly.

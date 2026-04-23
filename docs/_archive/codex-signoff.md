@@ -3,7 +3,7 @@
 Date: 2026-04-18.
 Context: user delegated final sign-off to the `codex-review` skill with the message "我没时间 sign off，需要的话可以让 codex review 代为 sign off."
 
-Codex verdict is archived verbatim below. The three Small follow-ups were addressed in the same commit that landed this sign-off doc; see `docs/DELIVERABLE.md` §9.
+Codex verdict is archived verbatim below. The three Small follow-ups were addressed in the same commit that landed this sign-off doc; see `docs/easyr1/DELIVERABLE.md` §9.
 
 ---
 
@@ -15,7 +15,7 @@ The v1 milestone clears the functional bar and is durable enough to hand off. Th
 
 ## FOLLOW-UP LIST
 
-- `MINOR / S` — Update `docs/DELIVERABLE.md` so the executive summary matches the shipped state: replace "10 stable IDs" with 16, remove the stale "see §4 for status at time of read" wording, and close or delete the unchecked sign-off checklist at the end.
+- `MINOR / S` — Update `docs/easyr1/DELIVERABLE.md` so the executive summary matches the shipped state: replace "10 stable IDs" with 16, remove the stale "see §4 for status at time of read" wording, and close or delete the unchecked sign-off checklist at the end.
 - `MINOR / S` — Tighten `skills/ray-npu-shim/SKILL.md` headline/positioning so it stays explicit that the shim solves Ray-specific integration only and still requires an `NPU-CP-001` source sweep in any second port.
 - `MINOR / S` — Normalize the `npu-image-inspect` output contract against the examples in `knowledge/images/` so a future user can tell at a glance which sections are mandatory versus best-effort.
 

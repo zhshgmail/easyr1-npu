@@ -15,7 +15,7 @@ v2 clears the stated functional bar, but not the "standalone with no material de
 
 - `MAJOR / M` — Treat `NPU-BUG-003` as owner-TBD stabilization debt: investigate triton-ascend inductor failure on `log_probs_from_logits` under varlen shapes, and determine whether v2 should keep compile permanently disabled on NPU or gain a narrower guard.
 - `MEDIUM / S` — Run `V2.2` exactly as planned: 4-chip + ulysses-enabled validation for the padding-free path. Not required to sign off V2.1; it is the first missing smoke above the shipped envelope.
-- `MINOR / S` — Clean up residual v1-era wording in `docs/DELIVERABLE.md` so sections describing the attention backend and deferred v2 work no longer preserve pre-v2 phrasing. **Addressed in this sign-off commit.**
+- `MINOR / S` — Clean up residual v1-era wording in `docs/easyr1/DELIVERABLE.md` so sections describing the attention backend and deferred v2 work no longer preserve pre-v2 phrasing. **Addressed in this sign-off commit.**
 
 ## RESIDUAL RISKS
 

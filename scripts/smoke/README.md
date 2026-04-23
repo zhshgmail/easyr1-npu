@@ -49,7 +49,7 @@ the deps — stop and re-inspect via `skills/npu-image-inspect/`.
 
 ## How to run
 
-See `docs/PORT-GUIDE.md` §"Run the smoke ladder" for the full recipe.
+See `docs/easyr1/PORT-GUIDE.md` §"Run the smoke ladder" for the full recipe.
 Short version:
 
 ```bash

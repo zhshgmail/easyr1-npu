@@ -4,7 +4,7 @@
 > Load when: Phase C build / Phase D smoke fails on the target image.
 
 All entries derived from the 2026-04-19 transformers 4.57→5.3 drill
-(docs/transformers-upgrade-drill.md) plus subsequent finds. Each has a
+(docs/transformers/transformers-upgrade-drill.md) plus subsequent finds. Each has a
 concrete commit or dated observation as proof.
 
 ---

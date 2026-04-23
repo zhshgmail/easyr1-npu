@@ -103,4 +103,4 @@ Full sequence + invariants: see `state_machine.yaml`.
 - `agent.md` — transformers-upgrade-worker definition
 - `references/ALWAYS_LOADED_RULES.md` — agent's mandatory first read
 - `../_shared/references/ALWAYS_LOADED_UNIVERSAL.md` — universal OL rules
-- `docs/design/SKILLS_ARCH_TARGET.md` — target architecture (multi-expert layer)
+- `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` — target architecture (multi-expert layer)

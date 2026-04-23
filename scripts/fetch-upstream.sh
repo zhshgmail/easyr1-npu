@@ -113,4 +113,4 @@ echo "  1. In upstream/EasyR1/, set up the personal remote + ascend-port branch:
 echo "       cd ${TARGET}/EasyR1"
 echo "       git remote add personal <your-fork-url>   # if not using zhshgmail"
 echo "       git checkout ascend-port"
-echo "  2. Read docs/SKILLS-GUIDE.md step-by-step for the rest of the workflow."
+echo "  2. Read docs/_meta/SKILLS-GUIDE.md step-by-step for the rest of the workflow."

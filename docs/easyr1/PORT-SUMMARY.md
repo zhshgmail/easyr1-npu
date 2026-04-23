@@ -84,16 +84,16 @@ Most of the "scary" port work is in categories 1-4 (8 commits). Half of the comm
 ## 3. Changes to the harness repo (`easyr1-npu`)
 
 ### 3.1 Docs
-- `docs/design.md` — formal design doc (requirements, background, restrictions, task decomposition).
-- `docs/dep-matrix.md` — per-package matrix (EasyR1 / veRL / 8.5.0 image / 8.5.2 image) + code-path blockers table.
-- `docs/porting-journal.md` — dated session log; every V1.x and V2.x bring-up recorded.
-- `docs/npu-gap-plan.md` — v1 / v2+ scope boundaries.
-- `docs/skills-design.md` — system design for the multi-repo port skills (V0.2, with status table).
-- `docs/DELIVERABLE.md` — sign-off summary (updated for v1 and v2).
-- `docs/codex-signoff.md` — v1 codex sign-off record.
-- `docs/codex-signoff-v2.md` — v2 codex sign-off record.
-- `docs/codex-review-skills-audit.md` — archived second codex review.
-- `docs/PORT-SUMMARY.md` — this file.
+- `docs/_meta/design.md` — formal design doc (requirements, background, restrictions, task decomposition).
+- `docs/easyr1/dep-matrix.md` — per-package matrix (EasyR1 / veRL / 8.5.0 image / 8.5.2 image) + code-path blockers table.
+- `docs/easyr1/porting-journal.md` — dated session log; every V1.x and V2.x bring-up recorded.
+- `docs/easyr1/npu-gap-plan.md` — v1 / v2+ scope boundaries.
+- `docs/_meta/skills-design.md` — system design for the multi-repo port skills (V0.2, with status table).
+- `docs/easyr1/DELIVERABLE.md` — sign-off summary (updated for v1 and v2).
+- `docs/_archive/codex-signoff.md` — v1 codex sign-off record.
+- `docs/_archive/codex-signoff-v2.md` — v2 codex sign-off record.
+- `docs/_archive/codex-review-skills-audit.md` — archived second codex review.
+- `docs/easyr1/PORT-SUMMARY.md` — this file.
 
 ### 3.2 Knowledge
 - `knowledge/easyr1-master-deps.md` — EasyR1 source dep extraction.
@@ -199,7 +199,7 @@ Based on this port's time spend (~2 days from zero to v2):
 - **Same EasyR1 version, different machine**: ~half day, most of it setup (image pulls, host onboarding, chip access).
 - **Newer EasyR1 commit (minor upstream changes)**: ~0.5-1 day. Assume 2-4 catalog patterns hit, each 30-60 minutes to confirm the fix pattern applies and run smoke levels.
 - **Different Ray-based RL framework (OpenRLHF, TRL with Ray)**: ~1-1.5 days. Same sweep + shim + smoke pattern; new framework-specific quirks cost 0.5 day of new-ID work.
-- **Major transformers upgrade (4.57 → 5.0+)**: ~45 min if you hit a new image-infra pit, ~20 min if not. **Measured 2026-04-19** on the `ascend-port-transformers-upgrade` drill branch: 45 min wall-clock (transformers 4.57 → 5.3.0.dev0, vllm 0.13 → 0.18, torch_npu 2.7 → 2.9 simultaneously), **4 LOC of code changes** across 2 files, step-1 `entropy_loss` matched V1.4 baseline exactly. Code diff was cheaper than the 0.5-2 day estimate; infra cost dominated (3 new image-infra pits surfaced — see NPU-OPS-006/007/008). See `repo/docs/transformers-upgrade-drill.md` for the full report.
+- **Major transformers upgrade (4.57 → 5.0+)**: ~45 min if you hit a new image-infra pit, ~20 min if not. **Measured 2026-04-19** on the `ascend-port-transformers-upgrade` drill branch: 45 min wall-clock (transformers 4.57 → 5.3.0.dev0, vllm 0.13 → 0.18, torch_npu 2.7 → 2.9 simultaneously), **4 LOC of code changes** across 2 files, step-1 `entropy_loss` matched V1.4 baseline exactly. Code diff was cheaper than the 0.5-2 day estimate; infra cost dominated (3 new image-infra pits surfaced — see NPU-OPS-006/007/008). See `repo/docs/transformers/transformers-upgrade-drill.md` for the full report.
 
 These are estimates based on **two data points** (initial port + transformers upgrade drill). Code cost is reliably low once the helper-layer is in place (`verl/utils/device.py` + hasattr-gated vllm imports absorb API drift automatically). **Infra cost is where you get surprised**: budget 10-15 min per new image-infra pit and expect 1-2 pits on any new base image. The drill's 30% overrun came entirely from hitting these reactively rather than checking them in pre-flight (Step 2 now covers this).
 
@@ -211,7 +211,7 @@ Non-blocking but named:
 
 1. `NPU-BUG-003` stabilization — triton-ascend inductor shape-sensitive crash. Currently worked around via `use_torch_compile=false`. Status on CANN 8.5.1 probed 2026-04-19 (drill branch `bug003_probe` script): **not fixed, and arguably worse** — the inductor kernel runs without crashing at step 1 but returns silently corrupted values (`grad_norm` 60000× baseline), then step-2's propagated garbage trips the same `aclnnNonzero` vector-core exception. Keep the workaround. Also surfaced NPU-BUG-004 (upstream triton 3.6 + triton-ascend 3.2 coexistence) which had to be fixed in the drill Dockerfile before the probe could reach the inductor path.
 2. V2.2 passing is the last ladder level — once confirmed, v2 is fully closed. (This doc gets a status update in the journal.)
-3. 8.5.2 image migration — transformers 5.3.0.dev0 + huggingface_hub 1.11 + vllm_ascend 0.17. **Drill status (2026-04-19): validated end-to-end** on `ascend-port-transformers-upgrade` branch; step-1 entropy_loss matches V1.4 baseline. Two code commits (`no_init_weights` import move, `SamplingParams.eos_token_id` read-only property) cherry-picked onto `ascend-port` as `1f716ea` / `ecce71d`. Image still non-default pending a longer (20-step) trajectory smoke to confirm stability past step-1. See `repo/docs/transformers-upgrade-drill.md`.
+3. 8.5.2 image migration — transformers 5.3.0.dev0 + huggingface_hub 1.11 + vllm_ascend 0.17. **Drill status (2026-04-19): validated end-to-end** on `ascend-port-transformers-upgrade` branch; step-1 entropy_loss matches V1.4 baseline. Two code commits (`no_init_weights` import move, `SamplingParams.eos_token_id` read-only property) cherry-picked onto `ascend-port` as `1f716ea` / `ecce71d`. Image still non-default pending a longer (20-step) trajectory smoke to confirm stability past step-1. See `repo/docs/transformers/transformers-upgrade-drill.md`.
 4. Multi-node scaling — only validated single-node.
 5. Long-context (>2k response length) — not exercised.
 

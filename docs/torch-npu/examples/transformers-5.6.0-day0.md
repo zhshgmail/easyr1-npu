@@ -176,7 +176,7 @@ skill 跑这次发现了 2 条模板层缺陷，**已经进 KB**（commit a53403
 
 ## 相关文档
 
-- `docs/design/SKILLS_ARCH_TARGET.md` §"Day-0 Reframing" —— 这个 skill 存在的
+- `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` §"Day-0 Reframing" —— 这个 skill 存在的
   原因：社区有了但 NPU 没跟上的场景才是真问题，shim-adapt 只能解决 NPU 已
   ship 的情况
 - `src/experts/transformers/day0-expert/README.md` —— skill 定义 + 当日

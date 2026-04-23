@@ -155,8 +155,8 @@ Long-term fixes (tracked):
 ## See also
 
 - Project root: [../../../README.md](../../../README.md)
-- HANDOVER: [../../../docs/HANDOVER.md](../../../docs/HANDOVER.md)
+- HANDOVER: [../../../docs/_meta/HANDOVER.md](../../../docs/_meta/HANDOVER.md)
 - User-facing examples:
-  - [../../../docs/examples/transformers-5.6.0-day0.md](../../../docs/examples/transformers-5.6.0-day0.md)
-  - [../../../docs/examples/torch-2.11-day0.md](../../../docs/examples/torch-2.11-day0.md)
-- Design doc: [../../../docs/design/SKILLS_ARCH_TARGET.md](../../../docs/design/SKILLS_ARCH_TARGET.md)
+  - [../../../docs/torch-npu/examples/transformers-5.6.0-day0.md](../../../docs/torch-npu/examples/transformers-5.6.0-day0.md)
+  - [../../../docs/torch-npu/examples/torch-2.11-day0.md](../../../docs/torch-npu/examples/torch-2.11-day0.md)
+- Design doc: [../../../docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md](../../../docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md)

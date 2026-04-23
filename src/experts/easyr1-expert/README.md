@@ -10,10 +10,10 @@
   - Smoke ladder 报告：V1.1 / V1.3 / V1.4 / V1.5 / V2.1 / V2.2 各自 PASS/FAIL + 数值
   - `PROGRESS.md` + `RESULTS.md` 工作日志
 
-**Scope 前提（Stage 0）**：当前 EasyR1 master 在 v1 image 上 D=0（见 `docs/easyr1-dep-chain-audit.md`）。本 expert 处理的就是这个 D=0 场景 —— 所有 port 工作都是 EasyR1 自己源码改动，不依赖新的 NPU 上游适配。
+**Scope 前提（Stage 0）**：当前 EasyR1 master 在 v1 image 上 D=0（见 `docs/easyr1/easyr1-dep-chain-audit.md`）。本 expert 处理的就是这个 D=0 场景 —— 所有 port 工作都是 EasyR1 自己源码改动，不依赖新的 NPU 上游适配。
 
 **不在 scope**（Stage 0）：
-- ❌ EasyR1 某个新 commit 引入 D≥1 依赖（新的 CUDA-only 包 NPU 还没移植）—— 那时需要拆 `*-expert` 出来（见 `docs/design/SKILLS_ARCH_TARGET.md` 附录 A）
+- ❌ EasyR1 某个新 commit 引入 D≥1 依赖（新的 CUDA-only 包 NPU 还没移植）—— 那时需要拆 `*-expert` 出来（见 `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` 附录 A）
 - ❌ 非 EasyR1 框架（OpenRLHF / TRL）—— 另一个消费者 expert
 
 ---
@@ -71,7 +71,7 @@ easyr1-expert/
 
 ## 验证标准
 
-见 `docs/design/SKILLS_ARCH_TARGET.md` §3 Acceptance T0.1 / T0.2 / T0.3。
+见 `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` §3 Acceptance T0.1 / T0.2 / T0.3。
 
 PASS 标志：冷启动 agent 自己跑通 V1.4 smoke 数值在 baseline 带。
 
@@ -80,7 +80,7 @@ PASS 标志：冷启动 agent 自己跑通 V1.4 smoke 数值在 baseline 带。
 ## 历史 & 演进
 
 - 2026-04-22 创建（V3.0 Stage 0 S2）
-- 见 `docs/design/SKILLS_ARCH_TARGET.md` 历史版本 V1.0 → V2.0 → V3.0 的教训
+- 见 `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` 历史版本 V1.0 → V2.0 → V3.0 的教训
 
 **预期演进**：
 - Stage 0 证明通过后（round 3 PASS），expert 结构稳定

@@ -13,7 +13,7 @@
 > - 🤝 **委托给姐妹项目 / 独立仓**：CANN 算子实现、kernel 数值精度验证 —— 用 `ascend-fused-accuracy-probe`（A3 kernel 验证）和 `a5_ops`（A5 kernel 生成，A3 有类似的独立仓）这些专门的项目做。本仓**识别 gap + 建接口 + track 适配**，不把 kernel commit 放本仓
 > - 📣 **提需求给 Ascend 团队**：CANN runtime 框架级的 bug（ACL C 层本身的 crash、HCCL C 层协议问题）—— 这类我们做 workaround + 提 issue，修是 Ascend 团队的事
 >
-> **关键原则**：如果新 EasyR1 版本依赖一个 NPU 还没覆盖的包 / 算子，"不在 scope" 不是可接受答案 —— 项目目标就死了。**必须建任务推动适配**，哪怕具体 commit 落到别的仓。见路径 4 + `docs/npu-adaptation-tasks.md`（待建）。
+> **关键原则**：如果新 EasyR1 版本依赖一个 NPU 还没覆盖的包 / 算子，"不在 scope" 不是可接受答案 —— 项目目标就死了。**必须建任务推动适配**，哪怕具体 commit 落到别的仓。见路径 4 + `docs/easyr1/npu-adaptation-tasks.md`（待建）。
 
 ---
 
@@ -23,10 +23,10 @@
 
 | # | 你想要 | 路径 | 读哪本 |
 |---|---|---|---|
-| 1 | **只想在 A3 上把 EasyR1 跑起来** | 用 v1 已验证发布路径（`ascend-port` 分支 + CANN 8.5.0 image） | [`docs/PORT-GUIDE.md`](docs/PORT-GUIDE.md) |
-| 2 | **复现 / 自动化 EasyR1 移植** | 从 0 跑移植流程（用 8 个 skill + `fetch-upstream.sh`） | [`docs/SKILLS-GUIDE.md`](docs/SKILLS-GUIDE.md) |
-| 3 | **用带新依赖（transformers 5 / CANN 8.5.1）的 EasyR1** | 看 drill 演练当前状态 + 自行验证 | [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md) |
-| 4 | **复现"把 EasyR1 + 新依赖一起移植到 NPU"的自动流程** | 走 `image-upgrade-drill` skill 7 步流程 | [`docs/SKILLS-GUIDE.md`](docs/SKILLS-GUIDE.md) §8 + [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md) |
+| 1 | **只想在 A3 上把 EasyR1 跑起来** | 用 v1 已验证发布路径（`ascend-port` 分支 + CANN 8.5.0 image） | [`docs/easyr1/PORT-GUIDE.md`](docs/easyr1/PORT-GUIDE.md) |
+| 2 | **复现 / 自动化 EasyR1 移植** | 从 0 跑移植流程（用 8 个 skill + `fetch-upstream.sh`） | [`docs/_meta/SKILLS-GUIDE.md`](docs/_meta/SKILLS-GUIDE.md) |
+| 3 | **用带新依赖（transformers 5 / CANN 8.5.1）的 EasyR1** | 看 drill 演练当前状态 + 自行验证 | [`docs/transformers/UPGRADE-DRILL-STATUS.md`](docs/transformers/UPGRADE-DRILL-STATUS.md) |
+| 4 | **复现"把 EasyR1 + 新依赖一起移植到 NPU"的自动流程** | 走 `image-upgrade-drill` skill 7 步流程 | [`docs/_meta/SKILLS-GUIDE.md`](docs/_meta/SKILLS-GUIDE.md) §8 + [`docs/transformers/UPGRADE-DRILL-STATUS.md`](docs/transformers/UPGRADE-DRILL-STATUS.md) |
 
 ---
 
@@ -65,7 +65,7 @@ bash scripts/run-npu-container.sh --chips 0,1 \
     -- bash /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh
 ```
 
-完整细节 + 期望数值 + 遇到问题怎么办 → [`docs/PORT-GUIDE.md`](docs/PORT-GUIDE.md)
+完整细节 + 期望数值 + 遇到问题怎么办 → [`docs/easyr1/PORT-GUIDE.md`](docs/easyr1/PORT-GUIDE.md)
 
 ---
 
@@ -89,7 +89,7 @@ bash scripts/fetch-upstream.sh --include-optional
 # 4. 按 SKILLS-GUIDE.md 的 9 步 workflow 走
 ```
 
-完整 workflow（什么 skill 在什么时候调用、输入输出是什么、决策点在哪）→ [`docs/SKILLS-GUIDE.md`](docs/SKILLS-GUIDE.md)
+完整 workflow（什么 skill 在什么时候调用、输入输出是什么、决策点在哪）→ [`docs/_meta/SKILLS-GUIDE.md`](docs/_meta/SKILLS-GUIDE.md)
 
 ---
 
@@ -99,13 +99,13 @@ bash scripts/fetch-upstream.sh --include-optional
 
 **但**：没跑完整 V1.1 → V2.2 smoke 梯子，没做长训练收敛验证。**不推荐生产切过去**。
 
-详细状态 + caveat + 要不要切的决策建议 → [`docs/UPGRADE-DRILL-STATUS.md`](docs/UPGRADE-DRILL-STATUS.md)
+详细状态 + caveat + 要不要切的决策建议 → [`docs/transformers/UPGRADE-DRILL-STATUS.md`](docs/transformers/UPGRADE-DRILL-STATUS.md)
 
 ### 路径 3.5：社区刚发了新 transformers / vllm / torch，NPU 没跟上 —— Day-0 场景
 
 这是**真正最难**的场景：community 刚 release 新版本，NPU 生态还没 ship 配套 image / wheel，你又想用。`/transformers-day0` / `/vllm-day0` / `/torch-day0` skills 就是为这个设计的。
 
-**0 交互示例**（实测 2026-04-23，community transformers 5.6.0 前一天发布，NPU 原本无适配）→ [`docs/examples/transformers-5.6.0-day0.md`](docs/examples/transformers-5.6.0-day0.md)
+**0 交互示例**（实测 2026-04-23，community transformers 5.6.0 前一天发布，NPU 原本无适配）→ [`docs/torch-npu/examples/transformers-5.6.0-day0.md`](docs/torch-npu/examples/transformers-5.6.0-day0.md)
 
 示例包含：1 行 skill 调用、skill 在 5 个 Phase 里做什么、预期 3 种 outcome（works-as-is / forward-port / blocked）、反作弊独立 verify 步骤、真实测得的数字（step-1 entropy_loss=1.31 在 v2 band 内）。
 
@@ -115,13 +115,13 @@ bash scripts/fetch-upstream.sh --include-optional
 
 适合：NPU 软件栈升级（CANN 9.x、torch_npu 2.10、transformers 6 之类）发布后，你要评估 "我们的 EasyR1 port 能不能跟上新 image"，**以及**识别出哪些新依赖是 NPU 生态还没适配的，驱动相应的 NPU 适配任务。
 
-**第一性原则重申**：本项目的目标是"让 EasyR1 master 在 A3 上跑"。如果新 EasyR1 版本或新 image 引入一个 NPU 还没适配的依赖，**我们不能说"不在 scope" 就结束** —— 那等于放弃项目目标。正确的做法是**识别这个 gap，建 NPU 适配任务，推动它完成**（可能是我们自己做，可能是协调 Ascend / upstream 团队做）。见 [`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)（live task registry）+ [`docs/P2-WORKFLOW.md`](docs/P2-WORKFLOW.md)（端到端 P2 workflow 设计）。
+**第一性原则重申**：本项目的目标是"让 EasyR1 master 在 A3 上跑"。如果新 EasyR1 版本或新 image 引入一个 NPU 还没适配的依赖，**我们不能说"不在 scope" 就结束** —— 那等于放弃项目目标。正确的做法是**识别这个 gap，建 NPU 适配任务，推动它完成**（可能是我们自己做，可能是协调 Ascend / upstream 团队做）。见 [`docs/easyr1/npu-adaptation-tasks.md`](docs/easyr1/npu-adaptation-tasks.md)（live task registry）+ [`docs/_archive/P2-WORKFLOW.md`](docs/_archive/P2-WORKFLOW.md)（端到端 P2 workflow 设计）。
 
 **本路径明确在 scope**：
 - 验证新 image 的一整套新依赖（torch_npu、vllm_ascend、triton_ascend、transformers 等）跟我们的 EasyR1 `ascend-port` 分支是否兼容，做数值 smoke 验证
 - 修复 EasyR1 自己源码里的版本 compat 问题（e.g. transformers 5 改了 import 路径 → EasyR1 里加 try/except）
 - 换 base image + rebuild 层叠 image
-- **识别 NPU 适配 gap**：新 EasyR1 依赖某个 CUDA-only 包、或某个包的 NPU 移植还没跟上 → 用 `dep-gap-detect` skill 自动识别，建任务 track。见 [`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)（live registry）+ [`docs/P2-WORKFLOW.md`](docs/P2-WORKFLOW.md)（端到端 workflow）
+- **识别 NPU 适配 gap**：新 EasyR1 依赖某个 CUDA-only 包、或某个包的 NPU 移植还没跟上 → 用 `dep-gap-detect` skill 自动识别，建任务 track。见 [`docs/easyr1/npu-adaptation-tasks.md`](docs/easyr1/npu-adaptation-tasks.md)（live registry）+ [`docs/_archive/P2-WORKFLOW.md`](docs/_archive/P2-WORKFLOW.md)（端到端 workflow）
 - **协调 NPU 适配工作落地**：比如需要给 vllm-ascend / triton-ascend 提 issue 或 PR、或跟 Ascend 团队提适配需求、或自己写 shim/fork
 
 **本路径的工作委托给姐妹项目**（本仓识别 + 建接口 + track，具体实现在别的仓）：
@@ -140,14 +140,14 @@ bash scripts/fetch-upstream.sh --include-optional
 - PASS / BLOCKED 决策依据（区分"EasyR1 代码 compat 完成" vs "NPU 适配 gap 完成"两件事）
 
 **当前状态**：
-- 🟡 **`ascend-port` V1.4 smoke 单 rung PASS on 两套 image**（2026-04-22，手动跑）：step1=0.991 exact on 8.5.0；step1=1.275 on 8.5.2（新 baseline）。**没**跑 V1.1/V1.3/V1.5/V2.1/V2.2 完整 ladder；**没**让 skill chain 端到端冷启动驱动。见 [`docs/HANDOVER.md §6.2`](docs/HANDOVER.md) + `knowledge/npu-patterns.md#npu-ops-010`（针对"skill 闭环"的诚实定义）
-- ✅ **NPU 适配 gap 清单已建立**：[`docs/npu-adaptation-tasks.md`](docs/npu-adaptation-tasks.md)。EasyR1 master 当前 D 类 blocker 为 0（见 [`docs/easyr1-dep-chain-audit.md`](docs/easyr1-dep-chain-audit.md)），所以 tier-2 active 任务为空；tier-3 有 2 条（BUG-003/004）等上游修
-- ✅ **P2 端到端 workflow 已设计**：[`docs/P2-WORKFLOW.md`](docs/P2-WORKFLOW.md)（"EasyR1 需要 NPU 没覆盖的东西时怎么闭环"）。但**尚未在真实 D ≥ 1 场景下实测**（当前 D = 0 还没真的触发过）—— 下次遇到时按 workflow 跑 + 修文档
+- 🟡 **`ascend-port` V1.4 smoke 单 rung PASS on 两套 image**（2026-04-22，手动跑）：step1=0.991 exact on 8.5.0；step1=1.275 on 8.5.2（新 baseline）。**没**跑 V1.1/V1.3/V1.5/V2.1/V2.2 完整 ladder；**没**让 skill chain 端到端冷启动驱动。见 [`docs/_meta/HANDOVER.md §6.2`](docs/_meta/HANDOVER.md) + `knowledge/npu-patterns.md#npu-ops-010`（针对"skill 闭环"的诚实定义）
+- ✅ **NPU 适配 gap 清单已建立**：[`docs/easyr1/npu-adaptation-tasks.md`](docs/easyr1/npu-adaptation-tasks.md)。EasyR1 master 当前 D 类 blocker 为 0（见 [`docs/easyr1/easyr1-dep-chain-audit.md`](docs/easyr1/easyr1-dep-chain-audit.md)），所以 tier-2 active 任务为空；tier-3 有 2 条（BUG-003/004）等上游修
+- ✅ **P2 端到端 workflow 已设计**：[`docs/_archive/P2-WORKFLOW.md`](docs/_archive/P2-WORKFLOW.md)（"EasyR1 需要 NPU 没覆盖的东西时怎么闭环"）。但**尚未在真实 D ≥ 1 场景下实测**（当前 D = 0 还没真的触发过）—— 下次遇到时按 workflow 跑 + 修文档
 - 🟡 **"skill 自动化端到端复现" 没充分证明**：2026-04-20 dry-run 发现当时 SKILL.md 直接写了答案（已修 commit `66c5ce9`）。agent 能否在**真未知 break** 下独立发现 gap 未验证。等下次真升级做 clean test
 
 完整 skill 说明 → [`skills/image-upgrade-drill/SKILL.md`](skills/image-upgrade-drill/SKILL.md)
-v2 drill 的首次实证报告 → [`docs/transformers-upgrade-drill.md`](docs/transformers-upgrade-drill.md)
-Skill dry-run 验证 → [`docs/skill-dry-run-2026-04-20.md`](docs/skill-dry-run-2026-04-20.md)
+v2 drill 的首次实证报告 → [`docs/transformers/transformers-upgrade-drill.md`](docs/transformers/transformers-upgrade-drill.md)
+Skill dry-run 验证 → [`docs/_archive/skill-dry-run-2026-04-20.md`](docs/_archive/skill-dry-run-2026-04-20.md)
 
 ---
 
@@ -233,7 +233,7 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
     └── transformers/
 ```
 
-每类文件的**归属规则 + 更新触发**见 [`docs/DOCS-CONVENTION.md`](docs/DOCS-CONVENTION.md)。新建文件前先查那里的 place-of-record map。
+每类文件的**归属规则 + 更新触发**见 [`docs/_meta/DOCS-CONVENTION.md`](docs/_meta/DOCS-CONVENTION.md)。新建文件前先查那里的 place-of-record map。
 
 `upstream/` 不是本仓的一部分。走路径 2 的人用 `scripts/fetch-upstream.sh` 现拉现用，拉到 `../upstream/`（跟 `easyr1-npu/` 同级，不 track）。
 
@@ -261,16 +261,16 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 
 **第一性原则**：README 是入口 + 索引，**不**往 README 塞具体内容。重要文档从 README 出发**都能**通过链接 2 跳以内可达。
 
-完整规则见 [`docs/DOCS-CONVENTION.md`](docs/DOCS-CONVENTION.md)，贡献者（人 + agent）**必读**。简要摘要：
+完整规则见 [`docs/_meta/DOCS-CONVENTION.md`](docs/_meta/DOCS-CONVENTION.md)，贡献者（人 + agent）**必读**。简要摘要：
 
 - **每类信息有唯一归属（single source of truth）**。完整 place-of-record map 见 DOCS-CONVENTION.md §1
-  - 常见入口：坑目录 `knowledge/npu-patterns.md` · 日记 `docs/porting-journal.md` · 状态 `docs/HANDOVER.md` · 适配任务 `docs/npu-adaptation-tasks.md` · 依赖审计 `docs/easyr1-dep-chain-audit.md`
+  - 常见入口：坑目录 `knowledge/npu-patterns.md` · 日记 `docs/easyr1/porting-journal.md` · 状态 `docs/_meta/HANDOVER.md` · 适配任务 `docs/easyr1/npu-adaptation-tasks.md` · 依赖审计 `docs/easyr1/easyr1-dep-chain-audit.md`
 - **什么时候更新什么**：见 DOCS-CONVENTION §2 的触发表
 - **Language**：项目文档中文，代码 / commit / SKILL.md frontmatter 英文（详见 DOCS-CONVENTION §4）
 - **Session 起手**：读 README → **NEXT-SESSION-STARTER** → HANDOVER → DOCS-CONVENTION（4 篇）就能接手。详见 DOCS-CONVENTION §7
-- **术语对不上时**：所有 "Fix A/B/B+/C"、"Level 1-4"、"outcome A/B/C-patch/C-report"、"V1.x smoke rung"、"session-tag" 的**单一权威定义**在 [`docs/GLOSSARY.md`](docs/GLOSSARY.md)。如果本 repo 里某处术语和 GLOSSARY 冲突，以 GLOSSARY 为准。
+- **术语对不上时**：所有 "Fix A/B/B+/C"、"Level 1-4"、"outcome A/B/C-patch/C-report"、"V1.x smoke rung"、"session-tag" 的**单一权威定义**在 [`docs/_meta/GLOSSARY.md`](docs/_meta/GLOSSARY.md)。如果本 repo 里某处术语和 GLOSSARY 冲突，以 GLOSSARY 为准。
 - **当前 session 汇报入口**（任何查看状态从这里开始）：[`docs/_meta/WORKLOG.md`](docs/_meta/WORKLOG.md)——任务序列 + 当前状态 + V1.3/V1.4 debug backlog + 重构进度。**每完成一步或发现新问题都要更新**。
-- **模块化 NPU 移植总览**：所有上游模块（transformers / torch_npu / vllm-ascend / vllm 等）的 port 状态、skill、trace branch、V1.3/V1.4 结果统一在 [`docs/MODULE-PORT-STATUS.md`](docs/MODULE-PORT-STATUS.md)。**每做完一次 port session 加一行**。
+- **模块化 NPU 移植总览**：所有上游模块（transformers / torch_npu / vllm-ascend / vllm 等）的 port 状态、skill、trace branch、V1.3/V1.4 结果统一在 [`docs/_meta/MODULE-PORT-STATUS.md`](docs/_meta/MODULE-PORT-STATUS.md)。**每做完一次 port session 加一行**。
 - **进行中 session 的工作计划 + 工作记录**：活跃 session 的 ground-truth log 在 `workspace/<session-tag>/PROGRESS.md`（**每完成一小步或发现新问题都要追加**），auto-compact 之后下一 session 要依赖它续跑。活跃 session 列表见 MODULE-PORT-STATUS §"活跃 session"。
 
 commit message **不要**加 Claude 相关文字（`CLAUDE.md` 规定）。

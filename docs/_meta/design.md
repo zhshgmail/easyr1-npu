@@ -103,7 +103,7 @@ Work that does not require hardware is prioritized. Hardware-gated items are tra
 - **4.1.2** [DONE] Extract veRL master's declared deps (GPU + NPU). Output: `repo/knowledge/verl-master-deps.md`.
 - **4.1.3** [DONE] Inspect `verl-8.5.0-a3`. Output: `repo/knowledge/images/verl-8.5.0-a3.md` (CANN 8.5.0, torch 2.8.0, transformers 4.57.6).
 - **4.1.4** [DONE] Inspect `verl-8.5.0-a3`. Output: `repo/knowledge/images/verl-8.5.0-a3.md` (CANN 8.5.1, torch 2.9.0, transformers 5.3.0.dev0).
-- **4.1.5** [DONE] Build `repo/docs/dep-matrix.md`.
+- **4.1.5** [DONE] Build `repo/docs/easyr1/dep-matrix.md`.
 - **4.1.6** [DONE] Gap classification applied in-matrix. Three real gaps: flash-attn (R), liger-kernel (R/D), pillow (A). One image-choice gap: transformers `<5.0.0` excludes 8.5.2 image.
 - **4.1.7** [DONE] Prioritized sub-task list landed in `porting-journal.md` (2026-04-17 entry).
 
@@ -165,7 +165,7 @@ Strategy: target the **8.5.0 image first** (EasyR1's `transformers<5.0.0` exclud
 ├──────────────────────────────────────────────────────────────────────┤
 │ 3. Build dep matrix                                                   │
 │    rows: packages  cols: EasyR1 / veRL-GPU / verl-A3-8.5.0 / 8.5.2    │
-│    output: repo/docs/dep-matrix.md                                    │
+│    output: repo/docs/easyr1/dep-matrix.md                                    │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 4. Classify each gap                                                  │
 │    - version-bump only                                                │

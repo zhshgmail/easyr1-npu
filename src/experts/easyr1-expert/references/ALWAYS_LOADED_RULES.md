@@ -41,18 +41,18 @@ bash src/experts/easyr1-expert/scripts/static_check.py --files <edited-files> --
 
 在 agent context 里**禁读**：
 
-- `docs/HANDOVER.md`（§6 有过去具体命令）
-- `docs/porting-journal.md`（手工工作日志）
-- `docs/transformers-upgrade-drill.md`
-- `docs/UPGRADE-DRILL-STATUS.md`
-- `docs/P2-WORKFLOW.md`
-- `docs/skill-dry-run-2026-04-20.md`
-- `docs/DELIVERABLE.md`
-- `docs/codex-*.md`
-- `docs/design/SKILLS_ARCH_TARGET.md`（会偏向"参考过去经验"思维）
-- `docs/design.md` / `docs/dep-matrix.md` / `docs/PORT-SUMMARY.md`（历史版本）
-- `docs/easyr1-dep-chain-audit.md`（答案 spoiler）
-- `docs/handoff-2026-04-19.md`
+- `docs/_meta/HANDOVER.md`（§6 有过去具体命令）
+- `docs/easyr1/porting-journal.md`（手工工作日志）
+- `docs/transformers/transformers-upgrade-drill.md`
+- `docs/transformers/UPGRADE-DRILL-STATUS.md`
+- `docs/_archive/P2-WORKFLOW.md`
+- `docs/_archive/skill-dry-run-2026-04-20.md`
+- `docs/easyr1/DELIVERABLE.md`
+- `docs/_archive/codex-*.md`
+- `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md`（会偏向"参考过去经验"思维）
+- `docs/_meta/design.md` / `docs/easyr1/dep-matrix.md` / `docs/easyr1/PORT-SUMMARY.md`（历史版本）
+- `docs/easyr1/easyr1-dep-chain-audit.md`（答案 spoiler）
+- `docs/_archive/handoff-2026-04-19.md`
 - **zhshgmail/EasyR1 的 `ascend-port*` 分支的任何内容（git log、git show、grep、甚至 `git diff main..ascend-port`）**
 
 读了这些 = 作弊，round 被作废。

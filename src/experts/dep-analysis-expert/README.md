@@ -92,6 +92,6 @@ upgraded image.
   image tag), OL-05 (chip precheck) all N/A. OL-02 (PASS with evidence),
   OL-09 (provenance) still apply.
 - Its own ALWAYS_LOADED_RULES.md has OL-03 denylist (no classification
-  answer-keys, specifically `docs/easyr1-dep-chain-audit.md`) and OL-08
+  answer-keys, specifically `docs/easyr1/easyr1-dep-chain-audit.md`) and OL-08
   (read-only; the ONLY writable path is `workspace/dep-analysis-.../`).
 - Pinned to `_shared/` via `SHARED_VERSION.txt`.

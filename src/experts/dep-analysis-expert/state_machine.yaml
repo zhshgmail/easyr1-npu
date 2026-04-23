@@ -98,7 +98,7 @@ phases:
       - "Every dep from reqs.txt MUST have a classification (no skipped rows)"
       - "Each D-class entry MUST name a specific upgrade-expert that can fix it (or be explicitly marked 'unsupported: requires manual port')"
     prohibited_actions:
-      - "Reading docs/easyr1-dep-chain-audit.md (OL-03; answer-key)"
+      - "Reading docs/easyr1/easyr1-dep-chain-audit.md (OL-03; answer-key)"
     next: [P4_report]
 
   P4_report:

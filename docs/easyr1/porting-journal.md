@@ -24,7 +24,7 @@ Full details in `repo/knowledge/images/verl-8.5.{0,2}-a3.md`.
 
 ### Matrix built
 
-`repo/docs/dep-matrix.md` — per-package rows covering EasyR1, veRL-core, veRL-NPU, both images. Main findings:
+`repo/docs/easyr1/dep-matrix.md` — per-package rows covering EasyR1, veRL-core, veRL-NPU, both images. Main findings:
 
 - **15 of EasyR1's 20 deps already ship in the A3 images** matching or exceeding EasyR1's pins.
 - **3 real gaps**: `flash-attn` (NPU replacement), `liger-kernel` (drop or triton-ascend port), `pillow` (add to install list).
@@ -207,7 +207,7 @@ Ran three kinds of smoke test inside the image on this x86 host, with `TORCH_DEV
 
 Not formally authored as a "skill" beyond `codex-review`, but the following knowledge artifacts have accumulated and are reusable:
 
-- `repo/docs/dep-matrix.md` template — per-package rows with gap classification. Reusable for any future version bump or adjacent RL stack port.
+- `repo/docs/easyr1/dep-matrix.md` template — per-package rows with gap classification. Reusable for any future version bump or adjacent RL stack port.
 - `repo/knowledge/images/verl-8.5.{0,2}-a3.md` — the image inventory pattern.
 - `repo/knowledge/upstream-refs.md` — version-aware refs pattern. Explicitly generalizable.
 - `repo/knowledge/{easyr1,verl}-master-deps.md` — source-dep extraction pattern.
@@ -407,7 +407,7 @@ Second codex review flagged the catalog and skill implementation as not-yet-hand
 
 - `scripts/code-path-sweep.sh`: replaced broken `IFS='|' read` parser with parallel bash arrays. Canonicalized emitted IDs to match `npu-patterns.md` — no more invented `NPU-CP-001a/b/c` ad-hoc sub-IDs.
 - `knowledge/npu-patterns.md`: rewritten with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema for every entry. Extended NPU-CP-001 to the full CUDA-API family. Promoted 4 latent risks to stable IDs: NPU-CP-005 (flash_attn/liger import), NPU-CP-006 (torch.backends.cuda knobs), NPU-ENV-003 (HCCL determinism), NPU-ENV-004 (RNG portability), NPU-OPS-003 (shared-host contention), NPU-OPS-004 (disk pressure). **Total: 16 IDs** across CP/BUG/ENV/OPS.
-- `docs/skills-design.md`: status table (planned/shipped/deferred/superseded) so the 10-vs-6 mismatch is no longer a gap. Registered `ray-npu-shim` as an emergent unplanned shipment. Struck the "stable IDs TODO" note — DONE.
+- `docs/_meta/skills-design.md`: status table (planned/shipped/deferred/superseded) so the 10-vs-6 mismatch is no longer a gap. Registered `ray-npu-shim` as an emergent unplanned shipment. Struck the "stable IDs TODO" note — DONE.
 - `skills/ray-npu-shim/ray_npu_shim.py`: `apply_actor_options()` now pops any preexisting `num_gpus` on the NPU path, so upstream frameworks that default to `num_gpus=1` don't cause Ray to look for a mixed CUDA+NPU claim.
 - `skills/ray-npu-shim/SKILL.md`: clarified that the shim is necessary-but-not-sufficient. A real second port also needs the `NPU-CP-001` sweep over the framework's own CUDA-named calls.
 
@@ -421,9 +421,9 @@ Harness handoff is now credible per the reviewer's verdict.
 
 ### Done
 
-- **`docs/DOCS-CONVENTION.md`** — documented convention file for doc organization; ends the "replan per session" cycle. README is index-only; HANDOVER is transit; DOCS-CONVENTION is stable rules. README 2-hop reachability to all important docs enforced.
-- **`docs/easyr1-dep-chain-audit.md`** — systematic A/B/C/D/E classification of EasyR1 master's 20 runtime deps against v1 (8.5.0) image. **D = 0**. Proves P1 scenario is structurally closed (no new NPU development required).
-- **`docs/npu-adaptation-tasks.md`** — tier-1/2/3 adaptation task registry, the single source of truth for "NPU gap" tracking.
+- **`docs/_meta/DOCS-CONVENTION.md`** — documented convention file for doc organization; ends the "replan per session" cycle. README is index-only; HANDOVER is transit; DOCS-CONVENTION is stable rules. README 2-hop reachability to all important docs enforced.
+- **`docs/easyr1/easyr1-dep-chain-audit.md`** — systematic A/B/C/D/E classification of EasyR1 master's 20 runtime deps against v1 (8.5.0) image. **D = 0**. Proves P1 scenario is structurally closed (no new NPU development required).
+- **`docs/easyr1/npu-adaptation-tasks.md`** — tier-1/2/3 adaptation task registry, the single source of truth for "NPU gap" tracking.
 - **`scripts/dep-gap-detect.sh` + `skills/dep-gap-detect/`** — automated A/B/C/D/E classifier. Takes requirements.txt + image inventory; exit 0 = P1 (proceed), exit 1 = P2 (stop + file task). Tested positive + negative cases pass.
 - **`knowledge/npu-patterns.md` NPU-OPS-009** — new stable ID. Initial framing as "host driver state class" was too vague; see specific root cause below + refined NPU-OPS-009 entry.
 

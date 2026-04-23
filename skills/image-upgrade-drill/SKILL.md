@@ -9,7 +9,7 @@ description: Rehearse a major base-image / framework upgrade (e.g. CANN 8.5.0→
 
 Takes a candidate image/framework upgrade target and runs it through a structured rehearsal on a throwaway branch. Output is a drill report (`docs/<target>-upgrade-drill.md`) that either clears the upgrade to ship or documents why it's blocked. Along the way any new recurring pits land as stable IDs in `npu-patterns.md`.
 
-The first concrete instance of this playbook is the transformers-upgrade drill on 2026-04-19 — `docs/transformers-upgrade-drill.md`. Read that before touching this skill; it's the ground truth for how the pieces fit.
+The first concrete instance of this playbook is the transformers-upgrade drill on 2026-04-19 — `docs/transformers/transformers-upgrade-drill.md`. Read that before touching this skill; it's the ground truth for how the pieces fit.
 
 ## When to use
 
@@ -29,7 +29,7 @@ The first concrete instance of this playbook is the transformers-upgrade drill o
 - Working V1.4 + V2.2 smokes on the current (pre-upgrade) image as your **baseline reference** — you cannot evaluate drift without one.
 - Access to the target image (pulled or available via a CN mirror per NPU-OPS-006).
 - A3 host reachable with the user's chip quota.
-- `docs/PORT-SUMMARY.md` up to date — step 6 of this skill feeds back into it.
+- `docs/easyr1/PORT-SUMMARY.md` up to date — step 6 of this skill feeds back into it.
 
 ## How to invoke
 
@@ -93,7 +93,7 @@ For the **method** — how to identify, grep, and fix breaks — follow this pat
    - **API renamed**: `try` new name, `except AttributeError/ImportError` fall back to old
 4. Commit without the `[drill]` prefix
 
-Worked example: **`repo/docs/transformers-upgrade-drill.md`** is the 2026-04 drill's full report — includes both API breaks, both diffs, and the reasoning. **Do not open it during a dry-run skill test** — it's the answer key. Open it only after you've attempted the drill yourself (or for a post-mortem).
+Worked example: **`repo/docs/transformers/transformers-upgrade-drill.md`** is the 2026-04 drill's full report — includes both API breaks, both diffs, and the reasoning. **Do not open it during a dry-run skill test** — it's the answer key. Open it only after you've attempted the drill yourself (or for a post-mortem).
 
 Expected size: **1-3 commits, 2-20 LOC** is typical for a major bump when the helper-layer is doing its job; if you find yourself writing 100+ LOC you're probably also refactoring, stop and narrow scope.
 
@@ -151,8 +151,8 @@ Then:
 
 ## Related
 
-- `docs/transformers-upgrade-drill.md` — the first instance; treat as the reference implementation.
-- `docs/PORT-SUMMARY.md` §5-6 — the upstream playbook this skill operationalizes.
+- `docs/transformers/transformers-upgrade-drill.md` — the first instance; treat as the reference implementation.
+- `docs/easyr1/PORT-SUMMARY.md` §5-6 — the upstream playbook this skill operationalizes.
 - `knowledge/npu-patterns.md` — where new findings from a drill land.
 - `knowledge/smoke-ladder-convention.md` — baseline smoke levels (V1.1 → V2.2) referenced by Step 1.
 - `skills/npu-image-inspect/` — Step 1's input.

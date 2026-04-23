@@ -44,7 +44,7 @@ P4: Return task plan JSON to caller
   No repo edits, no image pulls, no Dockerfile touches, no A3 actions
   that bind NPUs.
 - **No answer-key docs**. OL-03 denylist covers
-  `docs/easyr1-dep-chain-audit.md` specifically — that's the reference
+  `docs/easyr1/easyr1-dep-chain-audit.md` specifically — that's the reference
   classification history, not a cheat sheet; the agent must reproduce
   the classification from rules not from the doc.
 

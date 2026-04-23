@@ -6,12 +6,12 @@
 ## OL-03 (torch-npu-upgrade-worker denylist)
 
 **禁读**：
-- 通用 denylist：`docs/HANDOVER.md` / `docs/porting-journal.md` /
-  `docs/P2-WORKFLOW.md` / `docs/DELIVERABLE.md` / `docs/codex-*.md` /
-  `docs/design/SKILLS_ARCH_TARGET.md` / `docs/design.md` /
-  `docs/dep-matrix.md` / `docs/PORT-SUMMARY.md` /
-  `docs/easyr1-dep-chain-audit.md` / `docs/handoff-2026-04-19.md` /
-  `docs/skill-dry-run-2026-04-20.md` / `docs/UPGRADE-DRILL-STATUS.md`
+- 通用 denylist：`docs/_meta/HANDOVER.md` / `docs/easyr1/porting-journal.md` /
+  `docs/_archive/P2-WORKFLOW.md` / `docs/easyr1/DELIVERABLE.md` / `docs/_archive/codex-*.md` /
+  `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` / `docs/_meta/design.md` /
+  `docs/easyr1/dep-matrix.md` / `docs/easyr1/PORT-SUMMARY.md` /
+  `docs/easyr1/easyr1-dep-chain-audit.md` / `docs/_archive/handoff-2026-04-19.md` /
+  `docs/_archive/skill-dry-run-2026-04-20.md` / `docs/transformers/UPGRADE-DRILL-STATUS.md`
 - `upstream/EasyR1` 中 `ascend-port*` / `ascend-port-e2e-*` /
   `ascend-port-round{3,4}-*` 分支（easyr1-expert 的答案域）
 - 其他 expert 的 workspace：`workspace/easyr1-port-*/`、

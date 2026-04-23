@@ -24,24 +24,24 @@
 | **目标 image 的依赖快照** | `knowledge/images/<slug>.md`（每个 image 一份） | README → knowledge/images/ |
 | **upstream ref 对应版本** | `knowledge/upstream-refs.md` | README → knowledge/ |
 | **smoke 梯子命名约定 + 基准数值** | `knowledge/smoke-ladder-convention.md` + `scripts/smoke/README.md` | README → scripts/smoke/ |
-| **EasyR1 依赖链分级** | `docs/easyr1-dep-chain-audit.md` | README → PORT-GUIDE.md §依赖 → audit |
-| **NPU 适配 task 清单（档 1/2/3）** | `docs/npu-adaptation-tasks.md` | README 路径 4 → 直接链接 |
-| **P2 端到端 workflow**（D ≥ 1 时怎么闭环） | `docs/P2-WORKFLOW.md` | README 路径 4 + SKILLS-GUIDE Step 1.5 引用 |
-| **"怎么跑起来" 手册** | `docs/PORT-GUIDE.md` | README 路径 1 |
-| **"怎么重做移植" 手册** | `docs/SKILLS-GUIDE.md` | README 路径 2 |
-| **升级演练当前状态（v2/新 image）** | `docs/UPGRADE-DRILL-STATUS.md` | README 路径 3 |
-| **v2 drill 完整实证报告** | `docs/transformers-upgrade-drill.md` | UPGRADE-DRILL-STATUS → transformers-upgrade-drill |
-| **Skill 验证实验记录**（dry-run / 回归结果） | `docs/skill-dry-run-<date>.md` 每次独立文件 | SKILLS-GUIDE + HANDOVER 引用 |
-| **移植时间线 / 日记** | `docs/porting-journal.md` 单文件，按日期追加 | HANDOVER → porting-journal |
-| **原始需求 + 任务拆解** | `docs/design.md` | HANDOVER → design |
-| **正式 sign-off 报告** | `docs/DELIVERABLE.md` | README / HANDOVER 引用 |
-| **当前状态 + 未结工作 + 交接清单** | `docs/HANDOVER.md` | README 的仓库布局 + 相关文档段 |
+| **EasyR1 依赖链分级** | `docs/easyr1/easyr1-dep-chain-audit.md` | README → PORT-GUIDE.md §依赖 → audit |
+| **NPU 适配 task 清单（档 1/2/3）** | `docs/easyr1/npu-adaptation-tasks.md` | README 路径 4 → 直接链接 |
+| **P2 端到端 workflow**（D ≥ 1 时怎么闭环） | `docs/_archive/P2-WORKFLOW.md` | README 路径 4 + SKILLS-GUIDE Step 1.5 引用 |
+| **"怎么跑起来" 手册** | `docs/easyr1/PORT-GUIDE.md` | README 路径 1 |
+| **"怎么重做移植" 手册** | `docs/_meta/SKILLS-GUIDE.md` | README 路径 2 |
+| **升级演练当前状态（v2/新 image）** | `docs/transformers/UPGRADE-DRILL-STATUS.md` | README 路径 3 |
+| **v2 drill 完整实证报告** | `docs/transformers/transformers-upgrade-drill.md` | UPGRADE-DRILL-STATUS → transformers-upgrade-drill |
+| **Skill 验证实验记录**（dry-run / 回归结果） | `docs/_archive/skill-dry-run-<date>.md` 每次独立文件 | SKILLS-GUIDE + HANDOVER 引用 |
+| **移植时间线 / 日记** | `docs/easyr1/porting-journal.md` 单文件，按日期追加 | HANDOVER → porting-journal |
+| **原始需求 + 任务拆解** | `docs/_meta/design.md` | HANDOVER → design |
+| **正式 sign-off 报告** | `docs/easyr1/DELIVERABLE.md` | README / HANDOVER 引用 |
+| **当前状态 + 未结工作 + 交接清单** | `docs/_meta/HANDOVER.md` | README 的仓库布局 + 相关文档段 |
 | **每个 skill 的权威说明** | `skills/<name>/SKILL.md` (legacy pre-2026-04-23) **或** `src/experts/<name>/{SKILL.md,agent.md,state_machine.yaml,references/ALWAYS_LOADED_RULES.md}` (新 expert 架构) | SKILLS-GUIDE §1 表引用；新架构 → HANDOVER §7 expert 清单 |
-| **新 expert 架构设计 + Day-0 reframing** | `docs/design/SKILLS_ARCH_TARGET.md` (V3.0 + Day-0 段) | HANDOVER §7 + README 路径 3.5 |
+| **新 expert 架构设计 + Day-0 reframing** | `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` (V3.0 + Day-0 段) | HANDOVER §7 + README 路径 3.5 |
 | **跨 expert 共享层（OL rules、hook 模板、state_machine skeleton）** | `src/experts/_shared/` + `_shared/README.md` | `_shared/README.md` 本身 + HANDOVER §7.1 |
 | **项目指令（给 Claude Code 用）** | `CLAUDE.md` | README 的仓库布局 |
-| **本 convention（给贡献者用）** | `docs/DOCS-CONVENTION.md`（本文件） | README → 维护小节 |
-| **用户侧 0-交互 skill 使用示例**（针对具体版本 / 具体场景） | `docs/examples/<skill>-<trigger>.md`（每个示例独立文件；zero-interaction reproduce 路径 + 反作弊 verify 步骤） | README → PORT-GUIDE / SKILLS-GUIDE → examples 目录 |
+| **本 convention（给贡献者用）** | `docs/_meta/DOCS-CONVENTION.md`（本文件） | README → 维护小节 |
+| **用户侧 0-交互 skill 使用示例**（针对具体版本 / 具体场景） | `docs/torch-npu/examples/<skill>-<trigger>.md`（每个示例独立文件；zero-interaction reproduce 路径 + 反作弊 verify 步骤） | README → PORT-GUIDE / SKILLS-GUIDE → examples 目录 |
 
 **不要**：
 - 把同一信息写在多个地方（会 drift；以上表里每一条都是 **single source of truth**）
@@ -61,7 +61,7 @@
 | 完成一个 cherry-pick / patch | `porting-journal.md` + HANDOVER 的 open items 标记 | 涉及 backward-compat → UPGRADE-DRILL-STATUS |
 | 新建 / 修改 skill | 对应 `skills/<name>/SKILL.md` + SKILLS-GUIDE §1 表 + HANDOVER 里的 skill 状态 | skills-design.md（如果是架构级变动） |
 | 拿到新 base image | `knowledge/images/<slug>.md`（跑 npu-image-inspect skill）+ `upstream-refs.md` | 可能触发 drill，写 `docs/<target>-upgrade-drill.md` |
-| 识别出一个 NPU 适配 gap（档 1/2/3） | `docs/npu-adaptation-tasks.md` 追加 task + 状态 | README 路径 4 如果 scope 变了 |
+| 识别出一个 NPU 适配 gap（档 1/2/3） | `docs/easyr1/npu-adaptation-tasks.md` 追加 task + 状态 | README 路径 4 如果 scope 变了 |
 | 完成一个 adaptation task | 同上（标完成 + 结果） | `npu-patterns.md` 如果留下 stable pattern |
 | kb 库的事实发生变化（版本 / 路径 / host 状态） | 对应 knowledge 文件 | HANDOVER |
 | 计划 / 方向调整 | HANDOVER §11（候选工作）+ 相关 guide 文档 | design.md 如果是原始需求变了 |
@@ -81,7 +81,7 @@
 
 不随 session 状态变动的东西：
 - **仓库 / 文件夹 / 文件结构说明** → **仅** 放在 `README.md` 的"仓库布局"段。改布局时改 README，**不要在 HANDOVER 等状态类文档里重复布局树**（会 drift）
-- **文档归属 + 更新规则** → `docs/DOCS-CONVENTION.md`（本文件）
+- **文档归属 + 更新规则** → `docs/_meta/DOCS-CONVENTION.md`（本文件）
 - **项目 working preferences**（commit message 风格、语言约定、Discord 同步规则）→ `CLAUDE.md`
 - **四条用户路径** → `README.md`
 - **每类文档的完整使用说明** → 各自的手册文件（PORT-GUIDE / SKILLS-GUIDE / UPGRADE-DRILL-STATUS 等）
@@ -137,7 +137,7 @@
 
 接手本项目第一件事（按顺序）：
 1. 读 `README.md`（整篇）—— 理解目标 + 四条用户路径 + scope 三档
-2. 读 `docs/HANDOVER.md`（整篇）—— 当前状态 + 未结工作
+2. 读 `docs/_meta/HANDOVER.md`（整篇）—— 当前状态 + 未结工作
 3. 读本文件（`DOCS-CONVENTION.md`）—— 理解文档怎么组织、哪里该写什么
 4. 按任务需要，遵循 place-of-record map 找对应权威文档
 5. 开工前 TaskCreate 记录计划；每完成一步立即 TaskUpdate + 更新对应权威文档

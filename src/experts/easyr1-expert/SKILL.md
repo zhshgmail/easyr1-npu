@@ -49,7 +49,7 @@ Full sequence + invariants G1-G3: see `state_machine.yaml`.
 ## Stage 0 constraints
 
 This skill is specifically for **D=0 scenarios**. If P1 dep-gap-detect returns
-D≥1, halt and escalate per `docs/P2-WORKFLOW.md` (future work: that scenario
+D≥1, halt and escalate per `docs/_archive/P2-WORKFLOW.md` (future work: that scenario
 spawns a dedicated dep expert, not handled by this skill at Stage 0).
 
 ## Invariants the skill enforces
@@ -68,4 +68,4 @@ spawns a dedicated dep expert, not handled by this skill at Stage 0).
 - `state_machine.yaml` — authoritative workflow spec
 - `agent.md` — easyr1-port-worker definition
 - `references/ALWAYS_LOADED_RULES.md` — agent's mandatory first read
-- `docs/design/SKILLS_ARCH_TARGET.md` — target architecture, Stage 0 scope
+- `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` — target architecture, Stage 0 scope

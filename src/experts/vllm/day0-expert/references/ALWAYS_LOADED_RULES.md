@@ -5,11 +5,11 @@
 ## OL-03 denylist
 
 **禁读**：
-- 通用：`docs/HANDOVER.md` / `docs/porting-journal.md` / `docs/P2-WORKFLOW.md`
-  / `docs/DELIVERABLE.md` / `docs/codex-*.md` / `docs/design.md` /
-  `docs/dep-matrix.md` / `docs/PORT-SUMMARY.md` / `docs/easyr1-dep-chain-audit.md`
-  / `docs/handoff-2026-04-19.md` / `docs/skill-dry-run-2026-04-20.md` /
-  `docs/UPGRADE-DRILL-STATUS.md` / `docs/transformers-upgrade-drill.md`
+- 通用：`docs/_meta/HANDOVER.md` / `docs/easyr1/porting-journal.md` / `docs/_archive/P2-WORKFLOW.md`
+  / `docs/easyr1/DELIVERABLE.md` / `docs/_archive/codex-*.md` / `docs/_meta/design.md` /
+  `docs/easyr1/dep-matrix.md` / `docs/easyr1/PORT-SUMMARY.md` / `docs/easyr1/easyr1-dep-chain-audit.md`
+  / `docs/_archive/handoff-2026-04-19.md` / `docs/_archive/skill-dry-run-2026-04-20.md` /
+  `docs/transformers/UPGRADE-DRILL-STATUS.md` / `docs/transformers/transformers-upgrade-drill.md`
 - `upstream/EasyR1` 上 `ascend-port*` / `round3-*` / `round4-*` /
   `ascend-port-e2e-*` 分支
 - 其他 expert 的 workspace，特别是 `workspace/vllm-upgrade-*/` —— Stage 2
@@ -26,7 +26,7 @@
   / git fetch / pip download） —— Day-0 证据的核心源头
 - `vllm_utils.py` / `vllm_rollout_spmd.py` / `fsdp_vllm.py` 在 UPSTREAM_REF
   里的当前状态 —— 确定是否已有 shim
-- `docs/design/SKILLS_ARCH_TARGET.md` 的 **Day-0 reframing 段**
+- `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` 的 **Day-0 reframing 段**
 
 ## OL-08 edit scope
 

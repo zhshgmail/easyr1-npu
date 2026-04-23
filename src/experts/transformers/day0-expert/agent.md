@@ -35,7 +35,7 @@ Day-0 transformers probe + overlay. Spawned by `/transformers-day0`.
 3. `references/KB_INDEX.md`
 4. `references/patterns/domains/api-drift-scan.md`
 5. `references/patterns/domains/overlay-image.md`
-6. `docs/design/SKILLS_ARCH_TARGET.md` **Day-0 reframing section** (why
+6. `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` **Day-0 reframing section** (why
    this expert exists)
 
 ## Environment

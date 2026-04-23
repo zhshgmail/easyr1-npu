@@ -36,7 +36,7 @@ Day-0 PyTorch probe. Spawned by `/torch-day0`.
 4. `references/patterns/domains/torch-overlay-probe.md`
 5. `references/patterns/domains/overlay-image.md`
 6. `../../_shared/references/patterns/domains/day0-deploy-artifacts.md`
-7. `docs/design/SKILLS_ARCH_TARGET.md` Day-0 reframing section
+7. `docs/_meta/design-subdocs/SKILLS_ARCH_TARGET.md` Day-0 reframing section
 
 ## Environment
 

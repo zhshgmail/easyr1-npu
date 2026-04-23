@@ -17,8 +17,8 @@ EasyR1 is a slimmed-down fork of veRL. veRL has already been ported to NPU (see 
 ## Current state (2026-04-17)
 
 - No A3 hardware access yet; we're on an H100 Ubuntu box (`115.190.166.102`, x86 CPU for these images — NPU images can't execute here, only be inspected).
-- Deferred A3-hardware work goes on a blocked list in `docs/design.md`.
-- See `docs/design.md` for requirements, task decomposition, and status.
+- Deferred A3-hardware work goes on a blocked list in `docs/_meta/design.md`.
+- See `docs/_meta/design.md` for requirements, task decomposition, and status.
 
 ## Repository layout
 
@@ -61,7 +61,7 @@ CANN source is **not** in `upstream/` — it lives at `gitcode.com/cann`. Pull o
 
 ## Working preferences
 
-- **Docs organization is governed by `docs/DOCS-CONVENTION.md`.** Every kind of information (bugs, status, decisions, plans, kb updates, skill changes, version bumps) has a single authoritative file. README is **index only, never content sink**. Read DOCS-CONVENTION at session start; don't reinvent the place-of-record each time.
+- **Docs organization is governed by `docs/_meta/DOCS-CONVENTION.md`.** Every kind of information (bugs, status, decisions, plans, kb updates, skill changes, version bumps) has a single authoritative file. README is **index only, never content sink**. Read DOCS-CONVENTION at session start; don't reinvent the place-of-record each time.
 - **README must be 2-hop-reachable to every important doc.** If you add a doc, wire it into README (either directly or via an index doc like HANDOVER / DOCS-CONVENTION).
 - **Mirror milestones and waiting-for-input responses to Discord.** User is primarily reachable via Discord, not the terminal. Use `mcp__plugin_discord_discord__reply` with chat_id `1494825170399924366`.
 - **Commit messages:** no Claude-related text.

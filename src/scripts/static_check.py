@@ -13,7 +13,7 @@ fsdp_workers.py. py_compile would have caught it immediately.
 
 This script is called:
   - By port-worker agent's Stop hook (check_port_worker.sh)
-  - By docs/workflow/port_state_machine.yaml P5 invariant
+  - By docs/_archive/workflow/port_state_machine.yaml P5 invariant
   - Can be run manually too
 
 Exit codes:

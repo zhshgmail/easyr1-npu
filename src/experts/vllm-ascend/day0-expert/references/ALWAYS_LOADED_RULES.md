@@ -5,7 +5,7 @@
 ## OL-03 denylist
 
 **禁读**：
-- 通用：`docs/HANDOVER.md` / `docs/porting-journal.md` / `docs/*-drill.md`
+- 通用：`docs/_meta/HANDOVER.md` / `docs/easyr1/porting-journal.md` / `docs/*-drill.md`
 - 其他 expert 的 workspace：`workspace/torch-day0-*` 只读 deploy-/manual-/
   analysis- 里的 PROGRESS.md 和 ONBOARDING.md，不读 analysis 里的
   intermediate artifacts（太长，误导）；`workspace/vllm-day0-*`、

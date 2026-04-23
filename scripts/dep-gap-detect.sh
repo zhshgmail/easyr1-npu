@@ -11,7 +11,7 @@
 #
 # Exit 0 if all deps are A/B/C/E (P1 scenario — no new NPU work needed).
 # Exit 1 if any D found (P2 scenario — STOP and file a task in
-#   docs/npu-adaptation-tasks.md).
+#   docs/easyr1/npu-adaptation-tasks.md).
 # Exit 2 on usage / input errors.
 #
 # Usage:
@@ -308,7 +308,7 @@ done < "$REQS"
   if [[ ${count[D]:-0} -eq 0 ]]; then
     echo '**Verdict**: ✅ **Scenario P1** — all deps are A/B/C/E, no new NPU adaptation work needed. Proceed with standard `image-upgrade-drill`.'
   else
-    echo '**Verdict**: 🟥 **Scenario P2** — at least one D-tier blocker. **DO NOT** run drill yet. File tasks in `docs/npu-adaptation-tasks.md` (tier 1/2/3) and complete adaptation first.'
+    echo '**Verdict**: 🟥 **Scenario P2** — at least one D-tier blocker. **DO NOT** run drill yet. File tasks in `docs/easyr1/npu-adaptation-tasks.md` (tier 1/2/3) and complete adaptation first.'
   fi
   echo
   echo "## Per-package classification"
@@ -334,7 +334,7 @@ done < "$REQS"
     echo "For each D-tier package above:"
     echo "1. Manually inspect — is there an NPU version under a different name?"
     echo "2. Is it actually required, or can the feature be turned off?"
-    echo "3. If genuinely required, file a task in \`docs/npu-adaptation-tasks.md\`:"
+    echo "3. If genuinely required, file a task in \`docs/easyr1/npu-adaptation-tasks.md\`:"
     echo "   - Tier 1: if Python shim in EasyR1 suffices"
     echo "   - Tier 2: if kernel / C++ work required — delegate to \`ascend-fused-accuracy-probe\` / \`a5_ops\` / A3 kernel repo"
     echo "   - Tier 3: if CANN runtime bug — file Ascend issue"
