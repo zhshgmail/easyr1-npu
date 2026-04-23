@@ -293,6 +293,47 @@ Overlay images on A3 (preserved)：
 
 **Fix C tech debt**（task #77）：rebuild vllm_ascend_C.so against torch 2.11 headers to restore full custom-op performance without batch-invariant fallback. 需要 vllm-ascend CI 升 torch 2.11 或私有 build。
 
+### 6.7 ⏸️ 2026-04-23 08:35Z：A3 磁盘 100% 全满 + V1.4 trailing状态
+
+**状态**：`/dev/mapper/openeuler-root` 3.5T 全满。非我方消耗（/home/model 1.2T、
+/home/dxq 351G 他人），我的只 13M + workspace/ + /tmp/z00637938/ 21M。自己
+能清的都清了（6.1G 训练 checkpoint 清了、vllm0191 image 尝试 rmi 被 no-space
+拒绝），**没改善**。
+
+**影响**：
+- 无法再 `docker rmi`（metadata json 写不下）
+- 无法 git commit 在 A3 端 (`.git/index.lock` write fail)
+- 无法再跑 V1.4 smoke（containers 起不来）
+
+**A3 上残留的 dirty state**（等磁盘释放后第一件事）：
+- `/home/z00637938/workspace/easyr1-npu/upstream/EasyR1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh`
+  被我 sed 加了两行：`export TORCH_NPU_USE_COMPATIBLE_IMPL=1` 和
+  `worker.actor.use_torch_compile=false \` — **git checkout 恢复原状，我的改动不要 keep**
+- /tmp/z00637938/easyr1_smoke_ckpt 目录已 rm 干净（无残留）
+- torch-day0 / vllm-ascend-day0 workspace rsync 产物留在 /tmp/z00637938/
+  下（session artifacts，空间够了再决定清不清）
+
+**V1.4 训练路径 trailing status**（2 iter 尝试）：
+1. Iter 1 (Fix B+ only, commit caa55fed)：FAIL `AssertionError: x must be a 2D tensor` 在
+   `vllm_ascend/ops/triton/batch_invariant/matmul.py:261 linear_persistent`
+2. Iter 2 (+ Option 1 reshape, commit 87b507ed)：过 2D assert，训练进到
+   "Update policy 25%"，FAIL `NotImplementedError: aten::linear_backward on CPU backend`
+   （torch.compile backward graph 经 batch-invariant override 路径最终回落到 CPU，
+   CPU 没实现 linear_backward）
+3. Iter 3（被 disk-full 阻断）：试 TORCH_NPU_USE_COMPATIBLE_IMPL=1 +
+   use_torch_compile=false —— 第一次 docker run 失败在 overlay2 `no space left on device`
+
+**Fix C 依然是 V1.4 根治方案**（task #77）：rebuild `vllm_ascend_C.so` against
+torch 2.11 让 custom op 走 native NPU impl 而不是 batch-invariant fallback。
+只要 custom op 生效，batch-invariant 不启用，linear 的 autograd backward
+就走正常 NPU path，不经过 CPU fallback。
+
+**下次 session 醒来第一件事**（磁盘释放后）：
+1. `ssh ... 'df -h /'` 看磁盘状态
+2. 若 `/home/model` 等大户释放 → cd EasyR1 && git checkout -- examples/qwen2_0_5b_math_grpo_npu_smoke.sh 把我的 dirty state 清了
+3. 若想继续推 V1.4，就走 Fix C（task #77）而不是继续堆 Fix B+ 变种
+4. 若想换 target，就换（比如 Phase 8 cold-drive 两个新 skill，task #73）
+
 ---
 
 ## 7. Skills 系统 —— **2026-04-23 大改**
