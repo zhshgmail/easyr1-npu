@@ -1,0 +1,140 @@
+# easyr1-npu expert skills — directory
+
+Each subdirectory is a Claude Code skill (an "expert") for a specific
+NPU-porting scenario. This README maps scenarios → experts so a new
+session can pick the right entry point.
+
+## Decision tree
+
+```
+"I want to run X (a community release) on NPU."
+│
+├─ X is transformers ─ consumers commonly bump it
+│   ├─ NPU ecosystem already ships X in a base image?
+│   │   ├─ yes → /transformers-upgrade
+│   │   └─ no  → /transformers-day0
+│   │
+├─ X is vllm ─ consumers' rollout path
+│   ├─ vllm-ascend already released matching version?
+│   │   ├─ yes → /vllm-upgrade
+│   │   └─ no  → /vllm-day0
+│   │        │
+│   │        (if vllm-day0 discovers the problem is actually in vllm-ascend
+│   │         C++/python source vs new torch, route next to:)
+│   │        → /vllm-ascend-day0
+│
+├─ X is torch / torch_npu ─ stack foundation
+│   ├─ stable torch_npu already ships X?
+│   │   ├─ yes → /torch-npu-upgrade
+│   │   └─ no  → /torch-day0
+│   │        │
+│   │        (after torch-day0 deploys a base image, downstream C++
+│   │         extensions (vllm-ascend, triton-ascend) may need their own
+│   │         Day-0 patch:)
+│   │        → /vllm-ascend-day0 (+ future /triton-ascend-day0)
+│
+└─ X is the consumer framework itself (EasyR1 master, custom RL stack)
+    → /npu-port  (orchestrates dep-analysis + routes to sub-experts)
+```
+
+## Experts (by stage)
+
+### Stage 0 — base porting
+
+- **[easyr1-expert/](easyr1-expert/)** — reference porting expert for
+  EasyR1 itself on NPU (original Stage 0 skill)
+
+### Stage 1 — dependency analysis
+
+- **[dep-analysis-expert/](dep-analysis-expert/)** — analyzes consumer's
+  `requirements.txt` against NPU base image + shipped NPU-ecosystem
+  versions, classifies each dep (A/B/C/D/E), and routes blockers to
+  the right upgrade/day0 expert
+
+### Stage 2 — shim-adapt (NPU has, but different version)
+
+When the NPU ecosystem **has shipped** the target version in an image:
+
+- **[transformers-upgrade-expert/](transformers-upgrade-expert/)** —
+  transformers version in NPU image but consumer needs shim work
+- **[vllm-upgrade-expert/](vllm-upgrade-expert/)** — vllm-ascend version
+  bumped but consumer needs shim work
+- **[torch-npu-upgrade-expert/](torch-npu-upgrade-expert/)** — torch_npu
+  bumped within same transformers/vllm window
+
+### Stage 3 — Day-0 (community has, NPU hasn't caught up)
+
+When the NPU ecosystem **has NOT shipped** the target version:
+
+- **[transformers-day0-expert/](transformers-day0-expert/)** — community
+  transformers version with NPU shim needed
+- **[vllm-day0-expert/](vllm-day0-expert/)** — community vllm whose
+  matching vllm-ascend isn't released
+- **[torch-day0-expert/](torch-day0-expert/)** — community PyTorch whose
+  stable torch_npu isn't released (torch_npu rc on PyPI used)
+- **[vllm-ascend-day0-expert/](vllm-ascend-day0-expert/)** — vllm-ascend
+  itself needs patching for a deeper upstream move (new torch ABI drift,
+  new vllm symbol removal, etc.). Usually chained downstream of
+  torch-day0 or transformers-day0.
+
+### Orchestration
+
+- **[../commands/npu-port.md](../commands/npu-port.md)** — orchestrator
+  command that runs dep-analysis then routes to the right upgrade or
+  day0 expert per dep
+
+## Shared infrastructure
+
+- **[_shared/](_shared/)** — common references, scripts, hooks reused
+  across experts:
+  - `references/ALWAYS_LOADED_UNIVERSAL.md` — OL rules every worker
+    reads in Phase A (OL-01 thru OL-12)
+  - `references/patterns/domains/day0-deploy-artifacts.md` — 5
+    deploy-artifact deliverables mandatory for Day-0 sessions with
+    outcome A / C-patch
+  - `scripts/` — reference copies of `static_check.py` etc. that
+    experts fork and specialize
+
+## Upstream fork & PR-material workflow
+
+When a Day-0 expert produces outcome **C-patch** (Huawei-owned upstream
+needs source change):
+
+1. Worker opens branch `ascend-day0-<delta>-<SESSION>` on the relevant
+   `upstream/<huawei-repo>/` checkout
+2. Worker commits minimal patch with `[BugFix]` / `[Feature]` prefix
+3. Worker pushes branch to user's personal fork (`zhshgmail/<repo>`)
+4. Worker writes `PR_MATERIAL.md` with title, description, before/after
+   table, reproducer
+5. User reviews and opens PR to upstream from their personal fork
+
+Enabled Huawei-owned targets for C-patch:
+- `github.com/vllm-project/vllm-ascend`
+- `gitcode.com/Ascend/pytorch` (torch_npu)
+- `gitcode.com/Ascend/triton-ascend`
+- `github.com/huggingface/transformers` (only files under
+  `src/transformers/integrations/npu_*`; community transformers core
+  stays off-limits)
+
+**NOT in scope** (C-report only — we file issues, don't patch):
+- `github.com/vllm-project/vllm` (community vllm core)
+- `github.com/pytorch/pytorch` (community PyTorch)
+- `github.com/huggingface/transformers` (non-NPU files)
+
+## 2026-04-23 validated combinations
+
+| Stack | Transformers | vllm | vllm-ascend | torch | torch_npu | CANN | V1.3 Qwen2-0.5B |
+|---|---|---|---|---|---|---|---|
+| v1 | 4.57 | 0.13.0 | 0.13.1.dev18 | 2.7.x | 2.7.x | 8.4.0 | (historic) |
+| v2 | 5.3.0.dev0 | 0.18.0 | 0.17.0rc2.dev109 | 2.9.0 | 2.9.0 | 8.5.1 | PASS |
+| v2 + torch 2.11 overlay | 5.3.0.dev0 | 0.18.0 | 0.17.0rc2.dev109 + Fix B+ | **2.11.0+cpu** | **2.11.0rc1** | 8.5.1 | **PASS** |
+| v2 + transformers 5.6.0 overlay | **5.6.0** | 0.18.0 | 0.17.0rc2.dev109 | 2.9.0 | 2.9.0 | 8.5.1 | PASS |
+
+## See also
+
+- Project root: [../../../README.md](../../../README.md)
+- HANDOVER: [../../../docs/HANDOVER.md](../../../docs/HANDOVER.md)
+- User-facing examples:
+  - [../../../docs/examples/transformers-5.6.0-day0.md](../../../docs/examples/transformers-5.6.0-day0.md)
+  - [../../../docs/examples/torch-2.11-day0.md](../../../docs/examples/torch-2.11-day0.md)
+- Design doc: [../../../docs/design/SKILLS_ARCH_TARGET.md](../../../docs/design/SKILLS_ARCH_TARGET.md)
