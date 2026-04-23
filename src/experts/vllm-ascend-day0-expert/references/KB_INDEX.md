@@ -85,6 +85,56 @@ it bypasses every affected call site in one shot.
   (commits `7c2078e7` + `caa55fed`)
 - Patched overlay image on A3: `easyr1-npu-torch211-vllmascend-fixb:ascend-day0-torch211-20260423`
 
+## Validated smoke matrix for Fix B+ patch (2026-04-23 late dusk)
+
+| Rung | Result | Notes |
+|---|---|---|
+| V1.3 (Qwen2-0.5B rollout, 1 chip, enforce_eager, no training) | **PASS** | marker `V1.3 ROLLOUT SMOKE PASSED`; 3/3 prompts produce text. See `workspace/.../deploy/smoke.log` |
+| V1.4 (Qwen2-0.5B GRPO training, 2 chips, full trainer loop) | **FAIL** | `AssertionError: x must be a 2D tensor` in `vllm-ascend/ops/triton/batch_invariant/matmul.py:261 linear_persistent`. Training path passes 3D `[batch, seq, hidden]` to `F.linear`, but batch-invariant's `linear_batch_invariant` Triton kernel only supports 2D inputs. Log: `/tmp/z00637938/easyr1-logs/V1.4-easyr1-npu-torch211-vllmascend-fixb-*20260423-011007.log` |
+
+**Limitation of Fix B+ batch-invariant escape hatch**: works for inference
+paths (V1.3) where linear inputs are 2D-flattened, breaks on training
+paths (V1.4) where FSDP + trainer emit 3D tensors to F.linear directly.
+**Root cause**: not an ABI-drift issue anymore — the triton-ascend
+batch-invariant linear kernel itself has a dim-restriction assert
+(`matmul.py:261`). Presumably written with inference shapes in mind.
+
+### Option 1 (quick): loosen the assert to handle 3D via reshape
+
+vllm-ascend patch candidate (untested, but clean):
+
+```python
+# vllm_ascend/ops/triton/batch_invariant/matmul.py linear_persistent
+def linear_persistent(x, weight, bias=None, ...):
+    orig_shape = x.shape
+    if x.dim() == 3:
+        x = x.reshape(-1, x.shape[-1])  # flatten batch*seq × hidden
+        output = <existing 2D kernel call>
+        return output.reshape(*orig_shape[:-1], output.shape[-1])
+    assert x.dim() == 2, "x must be a 2D tensor"
+    ...
+```
+
+### Option 2 (simpler for user): skip batch-invariant on linear
+
+Add per-op check in Fix B+ guard: if running torch ABI-unsafe AND
+training mode (which can be detected via `torch.is_grad_enabled()`
+or an env var), don't register the batch-invariant `linear` impl at
+all — fall back to torch's native `F.linear` (slower but correct).
+
+### Option 3 (tracks separately): this is actually a triton-ascend-day0
+issue, not vllm-ascend — the `linear_batch_invariant` kernel lives in
+`vllm_ascend/ops/triton/batch_invariant/matmul.py` but is a triton
+kernel. Could be routed to a future `triton-ascend-day0-expert` when
+that skill exists.
+
+## Session status (as of dusk 2026-04-23)
+
+- Outcome **A-with-note (V1.3 only)**: Fix B+ patch PR-material ready,
+  V1.3 PASS, but V1.4 training mode surfaces a separate 3D-tensor
+  issue in batch-invariant linear. Documented as known-broken in
+  ONBOARDING.md + PR_MATERIAL.md should mention it as follow-up.
+
 ## Related KB (sibling experts)
 
 - `torch-day0-expert/` — produces the base image this expert builds on

@@ -123,12 +123,23 @@ Enabled Huawei-owned targets for C-patch:
 
 ## 2026-04-23 validated combinations
 
-| Stack | Transformers | vllm | vllm-ascend | torch | torch_npu | CANN | V1.3 Qwen2-0.5B |
-|---|---|---|---|---|---|---|---|
-| v1 | 4.57 | 0.13.0 | 0.13.1.dev18 | 2.7.x | 2.7.x | 8.4.0 | (historic) |
-| v2 | 5.3.0.dev0 | 0.18.0 | 0.17.0rc2.dev109 | 2.9.0 | 2.9.0 | 8.5.1 | PASS |
-| v2 + torch 2.11 overlay | 5.3.0.dev0 | 0.18.0 | 0.17.0rc2.dev109 + Fix B+ | **2.11.0+cpu** | **2.11.0rc1** | 8.5.1 | **PASS** |
-| v2 + transformers 5.6.0 overlay | **5.6.0** | 0.18.0 | 0.17.0rc2.dev109 | 2.9.0 | 2.9.0 | 8.5.1 | PASS |
+| Stack | Transformers | vllm | vllm-ascend | torch | torch_npu | CANN | V1.3 rollout | V1.4 training |
+|---|---|---|---|---|---|---|---|---|
+| v1 | 4.57 | 0.13.0 | 0.13.1.dev18 | 2.7.x | 2.7.x | 8.4.0 | (historic) | (historic) |
+| v2 | 5.3.0.dev0 | 0.18.0 | 0.17.0rc2.dev109 | 2.9.0 | 2.9.0 | 8.5.1 | PASS | PASS |
+| v2 + torch 2.11 overlay | 5.3.0.dev0 | 0.18.0 | 0.17.0rc2.dev109 + Fix B+ | **2.11.0+cpu** | **2.11.0rc1** | 8.5.1 | **PASS** | **FAIL (batch-invariant linear 3D)** |
+| v2 + transformers 5.6.0 overlay | **5.6.0** | 0.18.0 | 0.17.0rc2.dev109 | 2.9.0 | 2.9.0 | 8.5.1 | PASS | PASS (step1 entropy_loss 1.310 in band) |
+
+**Note on torch 2.11 overlay V1.4 FAIL**: Fix B+ forces batch-invariant
+mode to bypass broken `_C_ascend` custom ops; batch-invariant's Triton
+`linear_batch_invariant` kernel asserts 2D input. Training passes 3D
+`[batch, seq, hidden]` to `F.linear` → AssertionError.
+
+Long-term fixes (tracked):
+- Fix C (task #77): rebuild `vllm_ascend_C.so` against torch 2.11 —
+  eliminates need for batch-invariant fallback
+- vllm-ascend `linear_batch_invariant` patch to reshape 3D → 2D →
+  restore (see vllm-ascend-day0-expert KB_INDEX Option 1)
 
 ## See also
 
