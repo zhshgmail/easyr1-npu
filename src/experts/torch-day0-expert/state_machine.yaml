@@ -1,0 +1,125 @@
+# torch-day0 workflow state machine.
+
+version: 1
+schema_version: "0.1"
+workflow_name: torch-day0
+stage: 0
+last_updated: "2026-04-23"
+
+global_invariants:
+
+  - id: G1
+    description: "Orchestrator MUST NOT Edit consumer source, torch source, or torch_npu source. Worker edits $WORKSPACE + upstream/torch-npu only on ascend-day0-torch<M><m>-<SESSION> branch (C-patch scope)."
+    check: "PreToolUse on Edit: block paths unless $CLAUDE_AGENT_NAME == 'torch-day0-worker'"
+    severity: BLOCKING
+
+  - id: G2
+    description: "Container runtime smoke (6 steps: pip metadata / import torch / import torch_npu / device count / NPU op / API presence) MUST PASS inside overlay image before session closes. Day-0 torch claim is a runtime-compat claim."
+    check: "Stop hook: grep 'ALL SMOKE STEPS PASSED' in workspace/.../smoke.log"
+    severity: BLOCKING
+
+  - id: G3
+    description: "Outcome evidence: A needs 6/6 smoke PASS + deploy artifacts dir populated; A-with-note adds known-broken entry in ONBOARDING; C-patch needs patched branch + re-verified smoke; C-report needs blocker-report.md with reproducer."
+    check: "Stop hook: verify outcome-matching artifact set present in workspace"
+    severity: BLOCKING
+
+phases:
+
+  P0_parse_args:
+    order: 1
+    required_actions:
+      - "Determine TARGET_TORCH_VERSION / TARGET_TORCH_NPU_VERSION / BASE_IMAGE / SESSION_TAG"
+      - "Create workspace/torch-day0-analysis-{SESSION_TAG}/, -manual-, -deploy- subdirs"
+    required_artifacts:
+      - path: "workspace/torch-day0-analysis-{SESSION_TAG}/PROGRESS.md"
+        content_must_contain: ["TARGET_TORCH_VERSION:", "TARGET_TORCH_NPU_VERSION:", "BASE_IMAGE:", "SESSION_TAG:"]
+    next: [P1_probe]
+
+  P1_probe:
+    order: 2
+    description: "Pre-probe: does Ascend/pytorch main already handle this target? What rc wheel exists? What CANN pairs? API-drift classification."
+    required_actions:
+      - "cd upstream/torch-npu && git fetch --tags && grep target in tags + main"
+      - "pip index versions torch-npu → get rc list"
+      - "grep CANN pairing in upstream/torch-npu/README.md"
+      - "Diff PyTorch N → N+1: native_functions.yaml (new ops: CUDA-only vs Composite), DispatchKey.h (enum stability), distributed/, torch/_ops.py"
+      - "Assess each gap: python-fallback-feasible / needs-native-kernel / ABI-blocker"
+    required_artifacts:
+      - path: "workspace/torch-day0-analysis-{SESSION_TAG}/analysis.md"
+        content_must_contain: ["PyTorch N → N+1 delta", "Gap table", "CANN window", "Install combo", "Verdict"]
+    stop_conditions:
+      - "Ascend/pytorch main already adapted with stable release → switch target to newer torch or mark session deferred"
+      - "rc wheel not on PyPI → session blocked on Ascend/pytorch release cadence, emit advisory"
+    next: [P2_overlay]
+
+  P2_overlay:
+    order: 3
+    description: "Build overlay Dockerfile. Build-time VERSION-only checks (no `import torch` — 2.11 auto-load trap). Pip from download.pytorch.org/whl/cpu/ with aliyun mirror."
+    required_actions:
+      - "Write Dockerfile.overlay-torch<M><m> with ARG BASE_IMAGE"
+      - "pip install --no-deps torch + torchvision + torchaudio + torch_npu rc"
+      - "Build-time RUN `python3 -c 'from importlib.metadata import version...'` for version checks only"
+      - "docker build and capture sha256"
+    required_artifacts:
+      - path: "workspace/torch-day0-manual-{SESSION_TAG}/Dockerfile.overlay-torch<M><m>"
+      - path: "workspace/torch-day0-manual-{SESSION_TAG}/PROGRESS.md"
+        content_must_contain: ["overlay image tag", "sha256"]
+    next: [P3_smoke]
+
+  P3_smoke:
+    order: 4
+    description: "Runtime smoke inside container with NPU devices + CANN libs mounted. 6-step battery."
+    preconditions: [P2_overlay]
+    required_actions:
+      - "Write smoke_torch<M><m>.sh (6 steps: metadata, import torch, import torch_npu, device count, NPU op, API presence)"
+      - "docker run --privileged --device=/dev/davinci0 ... overlay bash smoke.sh"
+      - "Capture log; fail if 'ALL SMOKE STEPS PASSED' marker missing"
+    required_artifacts:
+      - path: "workspace/torch-day0-manual-{SESSION_TAG}/smoke.log"
+        content_must_contain: ["ALL SMOKE STEPS PASSED"]
+    next: [P4_classify]
+
+  P4_classify:
+    order: 5
+    description: "Classify outcome A / A-with-note / B / C-patch / C-report based on smoke + analysis."
+    required_actions:
+      - "If smoke 6/6 PASS → A (or A-with-note if analysis surfaced a known gap not in smoke)"
+      - "If smoke fails on consumer-pin-loosen only → B"
+      - "If smoke fails in a way fixable in upstream/torch-npu → C-patch (open branch, patch, rebuild, re-smoke)"
+      - "If fix belongs to community PyTorch → C-report"
+    required_artifacts:
+      - path: "workspace/torch-day0-manual-{SESSION_TAG}/PROGRESS.md"
+        content_must_contain: ["Phase 2 outcome:"]
+      - path: "workspace/torch-day0-deploy-{SESSION_TAG}/blocker-report.md"
+        must_exist: "if outcome in {C-patch, C-report}"
+    next: [P5_deploy]
+
+  P5_deploy:
+    order: 6
+    description: "Phase 2.5 deploy artifacts (mandatory for A / A-with-note / C-patch). See _shared pattern."
+    preconditions: [P4_classify]
+    required_actions:
+      - "Copy frozen Dockerfile + smoke.sh into workspace/torch-day0-deploy-{SESSION_TAG}/"
+      - "Write deploy_torch<M><m>.sh"
+      - "Cold-drive deploy_*.sh with --image-tag <tag>-deploy-validation-{SESSION_TAG}; on PASS, `docker rmi` the validation image"
+      - "Write ONBOARDING.md (audience: next-layer downstream maintainer)"
+      - "If C-patch: write PR_MATERIAL.md"
+    required_artifacts:
+      - path: "workspace/torch-day0-deploy-{SESSION_TAG}/Dockerfile.overlay-torch<M><m>"
+      - path: "workspace/torch-day0-deploy-{SESSION_TAG}/smoke_torch<M><m>.sh"
+      - path: "workspace/torch-day0-deploy-{SESSION_TAG}/deploy_torch<M><m>.sh"
+      - path: "workspace/torch-day0-deploy-{SESSION_TAG}/ONBOARDING.md"
+      - path: "workspace/torch-day0-deploy-{SESSION_TAG}/PR_MATERIAL.md"
+        must_exist: "if outcome == C-patch"
+    next: [P6_handoff]
+
+  P6_handoff:
+    order: 7
+    required_actions:
+      - "Update `_shared/references/patterns/domains/day0-deploy-artifacts.md` `Cross-reference` section with this session if any new lesson emerged"
+      - "Write RESULTS.md with final outcome + Handoff payload"
+      - "cleanup_session.sh preserving overlay image (downstream experts will base on it)"
+    required_artifacts:
+      - path: "workspace/torch-day0-deploy-{SESSION_TAG}/RESULTS.md"
+        content_must_contain: ["outcome:", "overlay_image_tag:", "downstream_handoff:"]
+    next: []
