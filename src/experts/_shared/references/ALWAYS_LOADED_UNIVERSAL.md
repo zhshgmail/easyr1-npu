@@ -141,6 +141,43 @@ Phase D 断言失败时，**先 grep expert 自己的 `references/ERROR_CORRECTI
 若无 EC 匹配，先读 `patterns/domains/` 里相关的 .md，再不行记 new finding 到
 PROGRESS.md 的 "unclassified failures" 段，`stuck` 或 `@review-fail` 退出。
 
+### OL-11: PyTorch 2.11+ 不能在 `docker build` 里 `import torch`（Day-0 全体适用）
+
+2026-04-23 实测：PyTorch 2.11 的 `_import_device_backends()` 机制会在
+`import torch` 时 eager 加载所有注册的 device backend（含 torch_npu）。
+torch_npu 在 import 时 dlopen `libascend_hal.so` from CANN，需要 runtime
+CANN device mount 才行 — `docker build` 容器里没 mount。所以 Dockerfile
+RUN 层**不能**做 `python3 -c 'import torch'` 类型的 sanity check。
+
+**建议**（任何 day0/upgrade expert 产生 Dockerfile 的要遵守）：
+- Build-time 校验只做 pip metadata (`importlib.metadata.version`) 和
+  `python3 -m py_compile <file>` 之类的 AST-level check
+- 真正的 runtime import 校验放到第一个 smoke container（有 NPU mounts）里做
+- 逃生阀：`ENV TORCH_DEVICE_BACKEND_AUTOLOAD=0` 可临时关掉 auto-load，但
+  会让很多正常使用场景的 torch_npu 需要显式 import；默认**不**用这个逃生阀
+
+**为什么无条件**：踩过的 1 次 = 白 build 55 分钟（pip download ~2GB over
+A3 proxy）然后 RUN `import torch` 炸。
+
+### OL-12: `VLLM_BATCH_INVARIANT` 是 module-import-time cached（vllm 0.18+）
+
+`vllm/model_executor/layers/batch_invariant.py` 在 line 997 左右把
+`VLLM_BATCH_INVARIANT` env var 读到一个 module-level 常量，后续
+`vllm_is_batch_invariant()` 就读这个 cache。如果需要靠这个 env var 改变
+vllm-ascend 的行为（比如 Day-0 bypass 坏掉的 custom op），**必须**在任何
+vllm 模块 import 之前设好。
+
+**建议**（vllm-ascend-day0 及触及 vllm-ascend 的任何 Day-0 expert）：
+- 在 `vllm_ascend/__init__.py`（plugin entry point，vllm 导入前就触发）
+  里设 env var，不要放 `enable_custom_op()` 里（那时 vllm 已 imported
+  = 来不及）
+- 一般模式：探测问题条件（如 torch ABI 不匹配、缺 symbol 等），然后
+  `os.environ.setdefault("VLLM_BATCH_INVARIANT", "1")` + 打警告
+
+**为什么无条件**：实测 2026-04-23 晚班这一条差点让 Fix B+ 失效 —
+monkey-patch 到 enable_custom_op() 层面在 sampler 段还是 SIGSEGV 因为
+vllm 已经 cache 了 env var = 0。只有最早 set 才 work。
+
 ---
 
 ## 2. Expert-specific 规则（每个 expert 在自己的 ALWAYS_LOADED_RULES.md 里补）
