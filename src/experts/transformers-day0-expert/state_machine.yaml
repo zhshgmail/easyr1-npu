@@ -1,0 +1,120 @@
+# transformers-day0 workflow state machine.
+
+version: 1
+schema_version: "0.1"
+workflow_name: transformers-day0
+stage: 0
+last_updated: "2026-04-23"
+
+global_invariants:
+
+  - id: G1
+    description: "Orchestrator MUST NOT Edit consumer source or NPU adapter source. Worker only edits npu_flash_attention.py / local wheel-patch files IF a forward-port is decided; those edits go through check_edit_scope."
+    check: "PreToolUse on Edit: block paths unless $CLAUDE_AGENT_NAME == 'transformers-day0-worker'"
+    severity: BLOCKING
+
+  - id: G2
+    description: "CONTAINER dry-import of transformers + npu_flash_attention + verl with the target transformers version pip-overlaid MUST succeed before Phase D smoke runs. Day-0 is a runtime-compat story; static checks are insufficient."
+    check: "Stop hook: runs static_check.py --container-import-image <overlay-image> --import-package verl + explicit transformers probe. Reject if either fails."
+    severity: BLOCKING
+
+  - id: G3
+    description: "Outcome classification (A/B/C) MUST be backed by evidence. A requires V1.1+V1.3+V1.4 PASS logs; B requires same plus forward-port diff; C requires a file citing the specific NPU ecosystem piece and why it can't be fixed in this session."
+    check: "Stop hook: grep RESULTS.md for outcome; require matching evidence set per outcome type."
+    severity: BLOCKING
+
+phases:
+
+  P0_parse_args:
+    order: 1
+    required_actions:
+      - "Determine TARGET_TRANSFORMERS_VERSION / BASE_IMAGE / UPSTREAM_CONSUMER / UPSTREAM_REF / SESSION_TAG"
+      - "Create workspace/transformers-day0-{SESSION_TAG}/"
+    required_artifacts:
+      - path: "workspace/transformers-day0-{SESSION_TAG}/PROGRESS.md"
+        content_must_contain: ["MODE:", "TARGET_TRANSFORMERS_VERSION:", "BASE_IMAGE:", "UPSTREAM_REF:"]
+    next: [P1_overlay_probe]
+
+  P1_overlay_probe:
+    order: 2
+    description: "Inside BASE_IMAGE, pip install target transformers version. Probe npu_flash_attention signatures + ALL_ATTENTION_FUNCTIONS registry + modeling_utils hooks. Record drift findings."
+    required_actions:
+      - "one-shot docker run: pip install transformers==$TARGET_TRANSFORMERS_VERSION; capture pip warnings about dep conflicts"
+      - "Re-probe npu_flash_attention.npu_flash_attn_func and npu_flash_attn_varlen_func signatures, compare to base image version"
+      - "Probe ALL_ATTENTION_FUNCTIONS keys, record any new entries"
+      - "Probe consumer-touched private APIs (e.g. no_init_weights location, PreTrainedModel._init_weights contract)"
+      - "Grep consumer source (UPSTREAM_REF) for any of the drifted symbols to determine impact"
+    required_artifacts:
+      - path: "workspace/transformers-day0-{SESSION_TAG}/api-drift-scan.md"
+        content_must_contain:
+          - "npu_flash_attn_func sig:"
+          - "ALL_ATTENTION_FUNCTIONS keys (target):"
+          - "consumer-touched symbols:"
+    invariants:
+      - "Base image's existing transformers version identified BEFORE overlay"
+    next: [P2_decide]
+
+  P2_decide:
+    order: 3
+    description: "Given the drift scan + any pip dep conflicts, decide A/B/C."
+    required_actions:
+      - "If no sig drift on npu_flash_attention + consumer symbols unaffected + pip dep conflicts cosmetic → outcome A"
+      - "If sig drift affects npu_flash_attention but fix is mechanical (add kwarg, wrap call) → outcome B (forward-port)"
+      - "If sig drift is semantic (new required API NPU adapter doesn't cover) OR vllm/torch_npu hard-block → outcome C"
+    required_artifacts:
+      - path: "workspace/transformers-day0-{SESSION_TAG}/decision.md"
+        content_must_contain:
+          - "outcome:"  # A / B / C
+          - "rationale:"
+    next: [P3_act]
+
+  P3_act:
+    order: 4
+    description: "Branch on outcome. A: build overlay image. B: forward-port + build. C: write blocker report, skip smoke."
+    required_actions:
+      - "If outcome A: write Dockerfile.overlay that FROM's BASE_IMAGE + pip installs target transformers; build as easyr1-npu-trans<version>:<SESSION_TAG>"
+      - "If outcome B: cherry-pick NPU FA adapter changes to target; rebuild wheel; include in Dockerfile.overlay; build"
+      - "If outcome C: write blocker-report.md with specific NPU piece identification; skip P4"
+    required_artifacts:
+      - path: "workspace/transformers-day0-{SESSION_TAG}/overlay-build.log"
+        must_exist: "if outcome in {A, B}"
+      - path: "workspace/transformers-day0-{SESSION_TAG}/blocker-report.md"
+        must_exist: "if outcome == C"
+    invariants:
+      - "For outcome A/B: build produced valid image; `docker run --rm <image> python -c 'import verl' ` returns OK"
+    next: [P4_smoke]  # only if outcome in {A, B}
+
+  P4_smoke:
+    order: 5
+    description: "Validate the overlay image via V1.1/V1.3/V1.4 smoke ladder."
+    preconditions: [P3_act]
+    required_actions:
+      - "OL-05 chip precheck. OL-05b: V1.1 1chip, V1.3 1chip, V1.4 2chip"
+      - "V1.1, V1.3, V1.4 via smoke_validate.sh against the overlay image"
+      - "V1.4 baseline handling: if this is the first measurement at target transformers, record as NEW BASELINE in PROGRESS.md and later add to SMOKE_BASELINE.md. DO NOT assert against v1 or v2 band; the assertion is 'training completes 2 steps + jsonl has an entropy_loss number'."
+    required_artifacts:
+      - path: "workspace/transformers-day0-{SESSION_TAG}/validation-smoke.md"
+        content_must_contain:
+          - "V1.1 marker"
+          - "V1.3 marker"
+          - "V1.4 step1 entropy_loss"
+          - "fresh_baseline_or_band:"
+    invariants:
+      - "V1.1 marker present (torch stack health gate)"
+      - "V1.4 step-1 numeric recorded in PROGRESS.md with explicit 'fresh baseline' or existing-band note"
+    next: [P5_report]
+
+  P5_report:
+    order: 6
+    required_actions:
+      - "RESULTS.md with outcome + handoff payload"
+      - "cleanup_session.sh --session-tag ... --preserve-image (for A/B outcomes)"
+      - "If new baseline established, write a SMOKE_BASELINE_PROPOSAL.md describing the new row"
+      - "Classify CLOSED (A/B with all smokes green + new baseline recorded) | PARTIAL (A/B but smoke issues) | FAILED (C blocker; C is CLOSED-as-diagnostic if the blocker identification is precise)"
+    required_artifacts:
+      - path: "workspace/transformers-day0-{SESSION_TAG}/RESULTS.md"
+        content_must_contain:
+          - "outcome:"
+          - "Cleanup:"
+          - "Closure classification:"
+    next: []

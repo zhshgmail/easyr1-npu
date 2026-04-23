@@ -101,9 +101,26 @@ Is <pkg> in PACKAGE_RULES?
 
 ## Upgrade-expert routing
 
-If D is encountered, check which expert owns it. As of Stage 2 there are
-three upgrade experts — pick the narrowest one that covers the trigger.
-Prefer single-dep over atomic-stack-swap when possible.
+If D is encountered, check which expert owns it. **First decide
+shim-adapt vs day-0** (see "Shim-adapt vs Day-0 decision" below), then
+among shim-adapt or day-0, pick the narrowest dep-specific expert.
+
+### Shim-adapt vs Day-0 decision (FIRST BRANCH)
+
+- **Shim-adapt path**: the consumer wants a transformers / vllm /
+  torch_npu version that IS SHIPPED in a known NPU base image (e.g.
+  `verl-8.5.0-a3` = transformers 4.57 / `verl-8.5.2-a3` = transformers
+  5.3.0.dev0 / etc.). Route to the Stage-2 upgrade-experts.
+- **Day-0 path**: the consumer wants a transformers version that is
+  NOT SHIPPED in any known NPU image. Typically when the community has
+  released a newer version than the NPU ecosystem currently ships.
+  Route to a Stage-3 day0-expert.
+
+Probe this by grep'ing the version against `knowledge/images/*.md`
+pip-freeze sections. If present in any image → shim-adapt. If not →
+day-0.
+
+### Shim-adapt routing (Stage 2)
 
 1. **Whole-stack swap** (base-image family change — moves transformers +
    vllm + torch_npu + CANN together, like v1→v2 historical drill) →
@@ -128,6 +145,21 @@ Prefer single-dep over atomic-stack-swap when possible.
    `unsupported: cuda-only, no NPU port available`; orchestrator
    surfaces to user (typical resolution: make the dep optional via
    [gpu] extras).
+
+### Day-0 routing (Stage 3)
+
+For versions not in any NPU image:
+
+1. **transformers target not in any image** → `transformers-day0-expert`.
+   Probe the new version via pip overlay on v2 image; emit A/B/C
+   outcome (works-as-is / forward-port / blocked). Hardest scenario
+   per user 2026-04-23; try this first.
+2. **vllm / vllm-ascend target not shipped** → `vllm-day0-expert`
+   (Stage 3, not yet built). Mark `routed_to_future_expert` until it
+   lands.
+3. **torch / torch_npu target not shipped** → `torch-day0-expert`
+   (Stage 3, not yet built). Usually easiest case (NPU tracks torch
+   closely) but still day-0 if genuinely unshipped.
 
 ### Rule for "which single expert" on ambiguous multi-dep D
 
