@@ -1,0 +1,122 @@
+# vllm-ascend-day0 workflow state machine.
+
+version: 1
+schema_version: "0.1"
+workflow_name: vllm-ascend-day0
+stage: 0
+last_updated: "2026-04-23"
+
+global_invariants:
+
+  - id: G1
+    description: "Orchestrator MUST NOT Edit any upstream. Worker edits $WORKSPACE + upstream/vllm-ascend/ only on ascend-day0-<delta>-<SESSION> branch."
+    check: "PreToolUse on Edit: block unless $CLAUDE_AGENT_NAME == 'vllm-ascend-day0-worker'"
+    severity: BLOCKING
+
+  - id: G2
+    description: "V1.3 rollout smoke marker ('V1.3 ROLLOUT SMOKE PASSED') MUST appear in log after patch+rebuild without manual VLLM_BATCH_INVARIANT env var."
+    check: "Stop hook: grep marker in workspace/.../smoke.log"
+    severity: BLOCKING
+
+  - id: G3
+    description: "Outcome evidence: A has deploy artifacts pointing at newer vllm-ascend commit; B has ONBOARDING with env-var workaround; C-patch has branch + validated smoke + PR_MATERIAL.md; C-report has blocker-report.md with reproducer."
+    check: "Stop hook: verify outcome-matching artifact set"
+    severity: BLOCKING
+
+phases:
+
+  P0_parse_args:
+    order: 1
+    required_actions:
+      - "Determine TARGET_DELTA / BASE_IMAGE / SESSION_TAG"
+      - "Create workspace/vllm-ascend-day0-{analysis,deploy}-{SESSION_TAG}/"
+    required_artifacts:
+      - path: "workspace/vllm-ascend-day0-analysis-{SESSION_TAG}/PROGRESS.md"
+        content_must_contain: ["TARGET_DELTA:", "BASE_IMAGE:", "SESSION_TAG:"]
+    next: [P1_reproduce]
+
+  P1_reproduce:
+    order: 2
+    description: "Minimal reproducer + C++ ABI drift detection + call-site location."
+    required_actions:
+      - "Reduce the failing symptom to smallest python3 -c reproducer"
+      - "Use faulthandler to capture Python stack even on native segfault"
+      - "Classify: API-drift / C++ ABI drift / schema mismatch / other"
+      - "Locate all affected call sites in vllm-ascend"
+      - "Classify call sites: guard-gated (can bypass via env var) vs unguarded (need per-site patch)"
+    required_artifacts:
+      - path: "workspace/vllm-ascend-day0-analysis-{SESSION_TAG}/analysis.md"
+        content_must_contain: ["Reproducer:", "Root cause:", "Affected call sites:", "Fix level:"]
+      - path: "workspace/vllm-ascend-day0-analysis-{SESSION_TAG}/isolate_segfault*.py"
+        must_exist: "if root cause involves segfault"
+    next: [P2_probe_upstream]
+
+  P2_probe_upstream:
+    order: 3
+    description: "Has vllm-ascend main tip already fixed this? If yes, outcome A (upgrade pointer)."
+    required_actions:
+      - "cd upstream/vllm-ascend && git fetch origin --tags"
+      - "git log origin/main -S '<affected symbol>' -- vllm_ascend/"
+      - "If main tip has the fix AND we can use main as a pip install source → outcome A"
+    required_artifacts:
+      - path: "workspace/vllm-ascend-day0-analysis-{SESSION_TAG}/upstream-probe.md"
+        content_must_contain: ["probe result:", "verdict:"]
+    next: [P3_design_fix]
+
+  P3_design_fix:
+    order: 4
+    description: "Choose fix level per ALWAYS_LOADED_RULES §'Fix level selection' (env-var / plugin-entry guard / per-call-site / C++ rebuild)."
+    required_actions:
+      - "Try level 1 (env-var only) first: does VLLM_BATCH_INVARIANT=1 fix reproducer?"
+      - "If yes AND all call sites guard-gated → Fix level 2 (auto-set at __init__.py)"
+      - "If not → per-call-site patch at level 3"
+      - "Level 4 (C++ rebuild) → separate tech debt task, outside this session"
+    required_artifacts:
+      - path: "workspace/vllm-ascend-day0-analysis-{SESSION_TAG}/fix-design.md"
+        content_must_contain: ["chosen level:", "rationale:", "affected files:"]
+    next: [P4_patch_and_verify]
+
+  P4_patch_and_verify:
+    order: 5
+    description: "Apply patch on ascend-day0-<delta>-<SESSION> branch; rebuild overlay via COPY; V1.3 smoke to PASS."
+    preconditions: [P3_design_fix]
+    required_actions:
+      - "git checkout -B ascend-day0-<delta>-{SESSION_TAG} <image's vllm-ascend commit>"
+      - "Apply python edits; git commit with [BugFix] prefix"
+      - "Build overlay Dockerfile: FROM base-image + COPY patched .py files + py_compile checks"
+      - "docker build -t easyr1-npu-<downstream>-vllmascend-fix:<SESSION_TAG>"
+      - "V1.3 smoke with --image-tag <patched overlay>, no VLLM_BATCH_INVARIANT manually set"
+    required_artifacts:
+      - path: "workspace/vllm-ascend-day0-deploy-{SESSION_TAG}/Dockerfile.overlay-vllm-ascend-*"
+      - path: "workspace/vllm-ascend-day0-deploy-{SESSION_TAG}/smoke.log"
+        content_must_contain: ["V1.3 ROLLOUT SMOKE PASSED"]
+      - path: "workspace/vllm-ascend-day0-deploy-{SESSION_TAG}/PROGRESS.md"
+        content_must_contain: ["patched_branch:", "TARGET_DELTA:"]
+    next: [P5_deploy_artifacts]
+
+  P5_deploy_artifacts:
+    order: 6
+    description: "Phase 2.5 artifacts per shared pattern."
+    required_actions:
+      - "Write deploy_vllm_ascend_<delta>.sh (rsync → build → smoke)"
+      - "Cold-drive deploy script with --image-tag <tag>-deploy-validation-{SESSION_TAG}"
+      - "Delete validation image on PASS (OL-04b)"
+      - "Write ONBOARDING.md (audience = downstream RL framework user or next-layer expert)"
+      - "If C-patch: write PR_MATERIAL.md with branch name + commits + reproducer + before/after"
+    required_artifacts:
+      - path: "workspace/vllm-ascend-day0-deploy-{SESSION_TAG}/deploy_vllm_ascend_*.sh"
+      - path: "workspace/vllm-ascend-day0-deploy-{SESSION_TAG}/ONBOARDING.md"
+      - path: "workspace/vllm-ascend-day0-deploy-{SESSION_TAG}/PR_MATERIAL.md"
+        must_exist: "if outcome == C-patch"
+    next: [P6_handoff]
+
+  P6_handoff:
+    order: 7
+    required_actions:
+      - "Push ascend-day0-<delta>-<SESSION> branch to personal fork"
+      - "Write RESULTS.md with outcome + patched branch URL + PR material path"
+      - "cleanup_session.sh preserving patched overlay image"
+    required_artifacts:
+      - path: "workspace/vllm-ascend-day0-deploy-{SESSION_TAG}/RESULTS.md"
+        content_must_contain: ["outcome:", "patched_branch_url:", "patched_image_tag:"]
+    next: []
