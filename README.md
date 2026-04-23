@@ -269,6 +269,7 @@ easyr1-npu/                           ← 本仓（github.com/zhshgmail/easyr1-n
 - **Language**：项目文档中文，代码 / commit / SKILL.md frontmatter 英文（详见 DOCS-CONVENTION §4）
 - **Session 起手**：读 README → **NEXT-SESSION-STARTER** → HANDOVER → DOCS-CONVENTION（4 篇）就能接手。详见 DOCS-CONVENTION §7
 - **术语对不上时**：所有 "Fix A/B/B+/C"、"Level 1-4"、"outcome A/B/C-patch/C-report"、"V1.x smoke rung"、"session-tag" 的**单一权威定义**在 [`docs/GLOSSARY.md`](docs/GLOSSARY.md)。如果本 repo 里某处术语和 GLOSSARY 冲突，以 GLOSSARY 为准。
+- **当前 session 汇报入口**（任何查看状态从这里开始）：[`docs/_meta/WORKLOG.md`](docs/_meta/WORKLOG.md)——任务序列 + 当前状态 + V1.3/V1.4 debug backlog + 重构进度。**每完成一步或发现新问题都要更新**。
 - **模块化 NPU 移植总览**：所有上游模块（transformers / torch_npu / vllm-ascend / vllm 等）的 port 状态、skill、trace branch、V1.3/V1.4 结果统一在 [`docs/MODULE-PORT-STATUS.md`](docs/MODULE-PORT-STATUS.md)。**每做完一次 port session 加一行**。
 - **进行中 session 的工作计划 + 工作记录**：活跃 session 的 ground-truth log 在 `workspace/<session-tag>/PROGRESS.md`（**每完成一小步或发现新问题都要追加**），auto-compact 之后下一 session 要依赖它续跑。活跃 session 列表见 MODULE-PORT-STATUS §"活跃 session"。
 
