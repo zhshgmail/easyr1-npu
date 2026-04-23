@@ -36,7 +36,9 @@
 | **原始需求 + 任务拆解** | `docs/design.md` | HANDOVER → design |
 | **正式 sign-off 报告** | `docs/DELIVERABLE.md` | README / HANDOVER 引用 |
 | **当前状态 + 未结工作 + 交接清单** | `docs/HANDOVER.md` | README 的仓库布局 + 相关文档段 |
-| **每个 skill 的权威说明** | `skills/<name>/SKILL.md` | SKILLS-GUIDE §1 表引用 |
+| **每个 skill 的权威说明** | `skills/<name>/SKILL.md` (legacy pre-2026-04-23) **或** `src/experts/<name>/{SKILL.md,agent.md,state_machine.yaml,references/ALWAYS_LOADED_RULES.md}` (新 expert 架构) | SKILLS-GUIDE §1 表引用；新架构 → HANDOVER §7 expert 清单 |
+| **新 expert 架构设计 + Day-0 reframing** | `docs/design/SKILLS_ARCH_TARGET.md` (V3.0 + Day-0 段) | HANDOVER §7 + README 路径 3.5 |
+| **跨 expert 共享层（OL rules、hook 模板、state_machine skeleton）** | `src/experts/_shared/` + `_shared/README.md` | `_shared/README.md` 本身 + HANDOVER §7.1 |
 | **项目指令（给 Claude Code 用）** | `CLAUDE.md` | README 的仓库布局 |
 | **本 convention（给贡献者用）** | `docs/DOCS-CONVENTION.md`（本文件） | README → 维护小节 |
 | **用户侧 0-交互 skill 使用示例**（针对具体版本 / 具体场景） | `docs/examples/<skill>-<trigger>.md`（每个示例独立文件；zero-interaction reproduce 路径 + 反作弊 verify 步骤） | README → PORT-GUIDE / SKILLS-GUIDE → examples 目录 |
