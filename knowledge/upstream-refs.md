@@ -28,6 +28,41 @@ Note: the image tag says `8.5.2` but CANN is **8.5.1**. `8.5.2` is the verl imag
 | triton-ascend | 3.2.0 (plus upstream `triton 3.6.0` alongside) | `origin/release/3.2.x` for triton-ascend; upstream triton from its own 3.6 release | upstream triton is pulled in separately, not via triton-ascend. |
 | CANN | 8.5.1 | — | gitcode.com/cann. |
 
+## Day-0 overlay combinations (2026-04-23)
+
+These are produced by Day-0 skills layered on top of a base image. The
+refs listed are what the overlay's changed components correspond to,
+not what the base image ships.
+
+### `easyr1-npu-torch211:torch-day0-manual-20260423-0537`
+
+**Base**: `easyr1-npu-852:trans-upg-e2e-20260422-2200` (= v2 image pattern
+above)
+
+| Component | Overlay version | Ref | Evidence |
+|---|---|---|---|
+| torch | 2.11.0+cpu | upstream `v2.11.0` tag | download.pytorch.org/whl/cpu wheel, manylinux_2_28_x86_64 cp311 |
+| torch_npu | 2.11.0rc1 | Ascend/pytorch `v2.11.0` source tag (no GitHub release yet) | PyPI pre-release wheel 2026-03-24 |
+| torchvision | 0.26.0+cpu | torch ecosystem v0.26.0 | download.pytorch.org |
+| torchaudio | 2.11.0+cpu | torch ecosystem v2.11.0 | download.pytorch.org |
+| CANN | 8.5.1 (inherited from base) | — | README pairs 2.11.0rc1 with CANN 8.5.0; 8.5.1 is one patch ahead, validated functional |
+
+### `easyr1-npu-torch211-vllmascend-fixb:ascend-day0-torch211-20260423`
+
+**Base**: `easyr1-npu-torch211:torch-day0-manual-20260423-0537` (above)
+
+| Component | Overlay version | Ref | Evidence |
+|---|---|---|---|
+| vllm-ascend | patched 0.17.0rc2.dev109 | `ascend-day0-torch211-20260423` branch on `zhshgmail/vllm-ascend` personal fork, branched from `54879467` (the image's shipped commit) | 2 commits applied: `7c2078e7` + `caa55fed` — torch-ABI-safe guard + early VLLM_BATCH_INVARIANT set |
+
+### `easyr1-npu-trans56:trans-day0-wetrun-20260423-0109`
+
+**Base**: v2 image
+
+| Component | Overlay version | Ref | Evidence |
+|---|---|---|---|
+| transformers | 5.6.0 | `v5.6.0` tag | community release 2026-04-22 |
+
 ## How to use this doc
 
 Before running a code review, static analysis, or patch against any of these repos, `git checkout` the matching ref first:
