@@ -101,7 +101,21 @@ that. Concrete drift ledger:
 | 4 | `ImportError: create_vllm_config_for_draft_model` | #37880 | draft_proposer.py import optional + stub on call |
 | 5 | `NotImplementedError manual_seed_all` | #38468 | NPUPlatform.manual_seed_all classmethod |
 | 6 | `AttributeError: logprob_token_ids` | vllm 0.20 feat | NPUInputBatch.__init__ add field |
-| 7 (deferred) | `AttributeError: 'Tensor' has no 'gpu'` (self.positions.gpu[]) | #32951 | **structural** — `self.positions` / `self.seq_lens` changed from CpuGpuBuffer to plain GPU tensor; requires main2main skill, not ad-hoc point fix |
+| 7 | `AttributeError: 'Tensor' has no 'gpu'` (self.positions.gpu[]) | #32951 | CpuGpuBuffer wrapper reverted (broke parent's `[]` slicing) — partial, needs per-site rewrite |
+| 8 | `AttributeError: 'float' has no 'language_model'` | vllm 0.20 `CompilationTimes` NamedTuple | worker.py compile_or_warm_up_model returns CompilationTimes NamedTuple |
+| 9 | `TypeError: _get_cumsum_and_arange() missing 'arange_out'` | #32951 | _prepare_inputs: provide arange_out buffer + old-sig fallback |
+| 10 | `TypeError: _prepare_input_ids() missing 'cu_num_tokens'` | #32951 | Call site: add num_reqs positional arg |
+| 11 (stopped here) | `TypeError: CpuGpuBuffer object is not subscriptable` | Self-inflicted from iter 7 wrapper | Revert wrapper; 11 per-site `.gpu/.cpu/.np/.copy_to_gpu` rewrites in model_runner_v1.py = **structural main2main work** |
+
+**Conclusion after 11 iterations**: beyond layer 7 (CpuGpuBuffer→tensor
+refactor, vllm PR #32951), the drift becomes structural and each fix
+unlocks the next. vllm-ascend main's own fix for #32951 (PR #7787 at
+commit 811271d1) is ~100 lines of model_runner_v1.py rewrite —
+introduces `_positions_cpu_buf` / `_positions_np_buf` / `self.query_pos`
+fields and rewrites 11+ call sites. Replicating their work by hand
+point-by-point duplicates their main2main skill. **Day-0 skill
+boundary hit at layer 7**; beyond that → vllm-ascend team's main2main
+skill is the right tool.
 
 Concrete artifacts: `workspace/vllm-day0-vllm0200-20260423-1623/findings.md`
 + personal fork branch `ascend-day0-torch211-20260423` commits
