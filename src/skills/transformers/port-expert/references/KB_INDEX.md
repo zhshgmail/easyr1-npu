@@ -19,6 +19,32 @@
 | vllm hard-pin `transformers<X` hits runtime (not just pip warning) → **outcome C** unless vllm-day0-expert runs first |
 | npu_flash_attention module removed/renamed on target → **outcome C**, NPU team must republish |
 
+## Relationship to torch_npu drift scanning (2026-04-24)
+
+transformers' NPU integration surface is **much smaller than torch_npu's**:
+
+| Upstream | NPU-touching files | Private torch API imports | Drift workload |
+|---|---|---|---|
+| torch_npu | 60+ | ~437 `from torch._* import` pairs | Heavy — run `scripts/extract_imports.py` + `scripts/check_drift.py` + `scripts/check_sig_drift.py` per torch minor bump |
+| transformers | 1 (`src/transformers/integrations/npu_flash_attention.py`, 143 lines) | 1 (`from torch_npu import npu_fusion_attention`) | Light — manual grep is sufficient |
+
+So there is **no need** for a transformers analog of
+`src/skills/torch-npu/port-expert/scripts/check_drift.py`. When probing
+a new transformers release:
+
+1. Check that `npu_flash_attention.py` still has its current shape
+   (one torch_npu import + one or two functions called against it).
+2. Check that the upstream transformers attention-dispatcher still
+   calls into that module (grep for `ALL_ATTENTION_FUNCTIONS` entries
+   referencing `npu_flash_attention.*`).
+3. If either check fails → that's the drift signal to work on, not
+   a private-API drift. Outcome will be B (add handler) or C
+   (module removed upstream, escalate to NPU team).
+
+If torch_npu's `npu_fusion_attention` ITSELF changes signature, that is
+a torch_npu F3 drift, not a transformers drift — route to
+`src/skills/torch-npu/port-expert/`.
+
 ## Reference: today's baseline snapshot (2026-04-23)
 
 - v1 NPU image: transformers 4.57.6
