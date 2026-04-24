@@ -28,7 +28,9 @@
 | 3 | **用带新依赖（transformers 5 / CANN 8.5.1）的 EasyR1** | 看 drill 演练当前状态 + 自行验证 | [`docs/transformers/UPGRADE-DRILL-STATUS.md`](docs/transformers/UPGRADE-DRILL-STATUS.md) |
 | 4 | **复现"把 EasyR1 + 新依赖一起移植到 NPU"的自动流程** | 走 `image-upgrade-drill` skill 7 步流程 | [`docs/_meta/SKILLS-GUIDE.md`](docs/_meta/SKILLS-GUIDE.md) §8 + [`docs/transformers/UPGRADE-DRILL-STATUS.md`](docs/transformers/UPGRADE-DRILL-STATUS.md) |
 | 5 | **把 vllm-ascend 适配到一个新版本的 vllm**（扫描 drift + 按族写 shim + 验证） | 用 `/vllm-ascend-day0` skill + kb_drive_test 扫描器 + `/drift-port-validate` 验证 | [`docs/vllm-ascend/PORTING-GUIDE.md`](docs/vllm-ascend/PORTING-GUIDE.md) |
-| 6 | **把 torch_npu 适配到一个新版本的 torch**（扫描私有模块搬家 + 按 F2-path-move 族写 shim） | `extract_imports.py` + `check_drift.py` + `check_sig_drift.py` 三步扫描 → 按 F2-path-move 模板写 `torch_npu/compat/` shim → `/drift-port-validate` 验证 | [`docs/torch-npu/PORTING-GUIDE.md`](docs/torch-npu/PORTING-GUIDE.md) |
+| 6 | **把 torch_npu 适配到一个新版本的 torch**（扫描私有模块搬家 + 按 F2-path-move 族写 shim） | `sweep.sh` 一键跑 4 个 scanner (extract_imports + check_drift + check_sig_drift + check_f7_f8) → 按 F-family 模板写 `torch_npu/compat/` shim → `/drift-port-validate` 验证 | [`docs/torch-npu/PORTING-GUIDE.md`](docs/torch-npu/PORTING-GUIDE.md) |
+| 7 | **把 transformers 适配到一个新版本**（NPU 面很小，90% outcome A） | Stage 0 快速决策树：byte-compare NPU 集成文件 + ALL_ATTENTION_FUNCTIONS key 集合，通常无需 A3 | [`src/skills/transformers/port-expert/SKILL.md`](src/skills/transformers/port-expert/SKILL.md) |
+| 8 | **把 triton-ascend 适配到新版本 triton**（Fork 模式，不是 plugin） | `git rebase --onto <new-triton-tag> <current-base>` → 手动解决 conflict（KB 列了 5 个历史 surface）→ rebuild + NPU smoke | [`src/skills/triton-ascend/port-expert/SKILL.md`](src/skills/triton-ascend/port-expert/SKILL.md) |
 
 ---
 
