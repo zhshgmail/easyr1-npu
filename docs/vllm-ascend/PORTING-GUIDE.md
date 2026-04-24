@@ -12,16 +12,40 @@
 
 一套 **KB + 工具 + skill** 组合：
 
-1. **扫描器** `kb_drive_test.py` —— 给一个 vllm commit SHA，自动列出会打破 vllm-ascend 的符号变更 + 对应文件行号。
-2. **Pattern KB** —— 把 vllm API drift 分成 8 族（F1 删符号 / F2 改名 / F3 改签名 / ... / F8 加新方法），每族带对应的 fix template。
+1. **4 个 scanner + 1 个 sweep wrapper**：
+   - `kb_drive_test.py` —— 给一个 vllm commit SHA 扫 F1/F2-rename/F3/F5-suspect
+   - `sweep.sh` —— 跨 commit-range 一键跑所有 scanner + 交叉对比 KB
+   - `check_f4.py` —— F4 返回值类型漂移（AST）
+   - `check_f7_f8.py` —— F7/F8 基类新属性/新方法（AST）
+2. **Pattern KB** —— 把 vllm API drift 分成 8 族（F1 删符号 / F2 改名 / F3 改签名 / F4 返回值 / F5 buffer API / F6 kv_cache / F7 新必须字段 / F8 新必须方法），每族带对应的 fix template。
 3. **验证 skill** `/drift-port-validate` —— 在 A3 上快速确认你写的 compat shim 两条分支（OLD vllm pass-through / NEW vllm fallback）都正确。
-4. **skill 入口** `/vllm-ascend-day0` —— 把上面三件事串起来的主 skill。
+4. **skill 入口** `/vllm-ascend-day0` —— 把上面串起来的主 skill。
 
-全套可以在 **不懂 vllm 内部实现** 的情况下完成一个 drift port：扫描器告诉你哪些 symbol 坏了，KB 告诉你怎么修，验证 skill 确认你修对了。
+全套可以在 **不懂 vllm 内部实现** 的情况下完成一个 drift port：scanner 告诉你哪些 symbol 坏了，KB 告诉你怎么修，验证 skill 确认你修对了。
+
+**推荐流程**（2026-04-24 起）：一条 `sweep.sh` 命令跑完所有 scanner，看输出决定是否需要按 F-family 模板写 compat shim。
 
 ## 工作流（共 5 步）
 
 ### 步骤 1 —— 扫描：哪些变更会打破 vllm-ascend？
+
+**一键 sweep**（推荐）：
+
+```bash
+cd <easyr1-npu-repo>
+./src/skills/vllm-ascend/port-expert/scripts/sweep.sh \
+  --commit-range v0.20.0..origin/main \
+  --vllm-path /path/to/vllm \
+  --vllm-ascend-path /path/to/vllm-ascend
+```
+
+一条命令跑完：
+- `kb_drive_test.py` 对 range 内每个 commit 扫 F1/F2-rename/F3/F5-suspect
+- `check_f4.py` 对整个 range 扫 F4 返回值类型漂移
+- `check_f7_f8.py` 对整个 range 扫 F7/F8 基类新属性/方法
+- 去重 + 和 KB 案例注册比对，报告 novel 发现
+
+**或单独调用 kb_drive_test 针对一个特定 SHA**：
 
 ```bash
 python3 src/skills/vllm-ascend/port-expert/scripts/kb_drive_test.py \
