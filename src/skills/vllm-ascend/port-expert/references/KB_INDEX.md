@@ -84,6 +84,26 @@ Trace branch on fork: `ascend-day0-torch211-20260423` (23 commits,
 range `c91d752..3ecb82f4`). For the concrete diffs, check that branch;
 for how-to-generalize, read `patterns/domains/vllm-api-drift.md`.
 
+## Discovered by kb_drive_test harness — pending port (2026-04-24)
+
+Running `scripts/kb_drive_test.py` over 156 post-0.20.0 vllm commits
+surfaced 2 additional F1 drifts that will hit vllm-ascend when it
+moves to vllm main tip. Not yet ported.
+
+| Family | vllm commit | Removed symbol | vllm-ascend sites |
+|---|---|---|---|
+| **F1** | `5e584ce9e` | `SharedFusedMoE` class | 9 (utils.py, ops/fused_moe, _310p/fused_moe) |
+| **F1** | `809d83c2d` | `DefaultMoERunner` class | 2 (ops/fused_moe/fused_moe.py) |
+
+Reproduce via:
+```
+python3 scripts/kb_drive_test.py \
+    --vllm-ref <SHA> \
+    --vllm-path <vllm-checkout> \
+    --vllm-ascend-path <vllm-ascend-checkout> \
+    --kb-dir <this-dir>
+```
+
 ## Fix pattern — auto-enable batch-invariant at plugin entry
 
 Invaluable pattern for any Day-0 where a vllm-ascend call site breaks
