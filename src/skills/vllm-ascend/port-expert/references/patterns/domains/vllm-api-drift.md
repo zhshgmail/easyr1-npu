@@ -50,6 +50,47 @@ default to a hard-coded value — that hides upstream breakage from CI.
 one optional code path (e.g. speculative decoding), skip the shim and
 make the import optional with a `None` fallback that disables the path.
 
+## F2-path-move — Symbol preserved, module path moved
+
+**Shape**: `ImportError: cannot import name 'X' from '<old.module>'`.
+The symbol still exists in the upstream tree, just at a different
+import path. Very common on torch upstreams where private modules
+(`torch._inductor`, `torch._dynamo`) get reorganized each minor
+release. Same symbol identity, different home.
+
+**Detect**: grep upstream source tree at the target version for the
+symbol name. If it exists somewhere but NOT at the path your caller
+uses, this is F2-path-move (not F1 removal, not F2-rename).
+
+**Fix template** (forward-compat; keeps working on older upstream):
+
+```python
+# In <your-project>/compat/<symbol_group>.py
+try:
+    from <old.path> import <Symbol>
+    _SOURCE = "<old.path>"
+except ImportError:
+    from <new.path> import <Symbol>  # moved here
+    _SOURCE = "<new.path>"
+
+__all__ = ["<Symbol>"]
+```
+
+Then callers import from `<your-project>.compat.<module>` instead of
+the original upstream path.
+
+**Concrete example** (torch_npu 2.11 → 2.12):
+`FloorDiv` and `ModularIndexing` moved from `torch._inductor.utils`
+to `torch.utils._sympy.functions`. See
+`torch_npu/compat/sympy_functions.py` on branch `torch-2.12_auto_porting`
+of the personal fork.
+
+**Why separate from F2 (rename)?** F2-rename changes the symbol name
+(caller must change both path AND name); F2-path-move changes only
+the path. The shim shape is slightly different:
+- F2-rename: `from new.path import NewName as OldName`
+- F2-path-move: `from new.path import OldName` (name preserved)
+
 ## F2 — Renamed type / class
 
 **Shape**: `AttributeError: module 'vllm.X' has no attribute 'OldName'`

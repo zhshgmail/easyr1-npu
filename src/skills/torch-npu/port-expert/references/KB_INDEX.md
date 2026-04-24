@@ -66,3 +66,72 @@ Session torch-day0-manual-20260423-0537 results (torch 2.11 + torch_npu 2.11.0rc
 - Manual port log: `workspace/torch-day0-manual-20260423-0537/PROGRESS.md`
 - Deploy artifacts: `workspace/torch-day0-deploy-20260423-0548/` (Dockerfile, smoke, deploy script, ONBOARDING, blocker-report)
 - Overlay image on A3: `easyr1-npu-torch211:torch-day0-manual-20260423-0537`
+
+---
+
+## 2026-04-24 — torch 2.11 → 2.12 inductor path drift (F2-path-move family)
+
+Separate problem class from "torch minor upgrade overlay" above: within
+the *internal* torch API that torch_npu reaches into
+(`torch._inductor.*`, `torch._dynamo.*`), symbols move between paths
+each release. Detecting + patching these is the primary drift workload
+for torch_npu going forward.
+
+### Pattern family — F2-path-move
+
+Symbol identity preserved, module path changed.
+
+See the canonical definition in
+[../../../vllm-ascend/port-expert/references/patterns/domains/vllm-api-drift.md §F2-path-move](../../../vllm-ascend/port-expert/references/patterns/domains/vllm-api-drift.md).
+
+Fix shape: `torch_npu/compat/<symbol_group>.py` with try/except,
+try old path first (keep old torch working), fall back to new.
+
+### Concrete case registry
+
+| Family | torch range | Symbol | Old path | New path | torch_npu sites | Fix landed |
+|---|---|---|---|---|---|---|
+| F2-path-move | 2.11 → 2.12-rc3 | `FloorDiv` | `torch._inductor.utils` | `torch.utils._sympy.functions` | 2 files | local commit `2d81f06c8` on branch `torch-2.12_auto_porting` |
+| F2-path-move | 2.11 → 2.12-rc3 | `ModularIndexing` | `torch._inductor.utils` | `torch.utils._sympy.functions` | 3 files | (same commit) |
+
+Affected files:
+- `torch_npu/_inductor/lowering_fx.py:38`
+- `torch_npu/_inductor/codegen/split_tiling.py:7`
+- `torch_npu/_inductor/codegen/scheduling.py:27`
+
+Fix compat module: `torch_npu/compat/sympy_functions.py`.
+
+### High-risk surfaces to scan first on every torch upgrade
+
+Ranked by torch_npu import-site count (2026-04-24 manual count):
+
+| Private module | torch_npu import sites | Why high risk |
+|---|---|---|
+| `torch._inductor.utils` | ~29 | Utility grab-bag, symbols constantly moved out |
+| `torch._inductor.virtualized` | ~20 | Experimental abstraction, reshuffled often |
+| `torch._inductor.codegen.triton` | ~15 | Triton codegen API not stable |
+| `torch._dynamo.utils` | ~12 | Private util module, symbols move |
+| `torch._inductor.ir` | ~11 | IR node classes renamed |
+| `torch._inductor.codegen.common` | ~10 | Codegen base |
+| `torch._inductor.codecache` | ~10 | Caching layer rewritten |
+| `torch._inductor.scheduler` | ~9 | Scheduler internals churn |
+| `torch._inductor.codegen.simd` | ~9 | SIMD codegen — NPU-relevant |
+| `torch._dynamo.device_interface` | ~9 | Device backend plugin API |
+| `torch._C` (root) | ~9 | pybind layer — watch for C++ ABI |
+
+### Scan procedure for a new torch upgrade
+
+1. For each private module in the table above, grep torch_npu for every
+   `from <private> import <SYMBOLS>` statement.
+2. Extract the symbol names into a set.
+3. Check target torch release: does each symbol still exist at the SAME
+   path? Use `git grep -l "^class Symbol\|^def Symbol\|^Symbol = " <tag> -- torch/`.
+4. If the symbol file is the same → no drift.
+5. If the symbol moved to a different path → **F2-path-move** → add a
+   compat entry.
+6. If the symbol is gone from the tree → **F1** → file upstream issue.
+7. If the symbol's signature changed → **F3**.
+
+A scanner script for this (analog of `kb_drive_test.py` for torch) is
+TBD — see the torch-npu port-expert `SKILL.md` for the manual workflow
+in the meantime.
