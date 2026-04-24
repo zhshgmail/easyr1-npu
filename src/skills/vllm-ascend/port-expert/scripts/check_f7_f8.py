@@ -40,12 +40,15 @@ def show_file_at_ref(vllm_path, ref, path):
 
 
 def get_ascend_subclassed_parents(vllm_ascend_path):
+    """Return parent class names that vllm-ascend subclasses AND imports
+    from vllm (not redefined locally as shadow classes)."""
     parents = set()
     out = subprocess.run(
         ["grep", "-rhE", r"^class [A-Za-z_]+\(", "--include=*.py",
          str(Path(vllm_ascend_path) / "vllm_ascend")],
         capture_output=True, text=True, check=False,
     )
+    subclassed_names = set()
     for line in out.stdout.splitlines():
         m = re.match(r"class [A-Za-z_]+\(([^)]+)\)", line)
         if not m:
@@ -58,7 +61,38 @@ def get_ascend_subclassed_parents(vllm_ascend_path):
                     continue
                 if p.startswith(("Ascend", "Npu", "NPU")):
                     continue
-                parents.add(p)
+                subclassed_names.add(p)
+
+    # Require evidence the name is imported from vllm (handles single- and
+    # multi-line imports).
+    root = Path(vllm_ascend_path) / "vllm_ascend"
+    import_sources = set()
+    for py in root.rglob("*.py"):
+        try:
+            src = py.read_text(errors="replace")
+        except OSError:
+            continue
+        for m in re.finditer(
+            r"^from (vllm(?:\.[A-Za-z0-9_.]+)?)\s+import\s+([^\n#(]+)",
+            src, re.MULTILINE,
+        ):
+            for n in m.group(2).split(","):
+                n = n.split(" as ")[0].strip()
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", n):
+                    import_sources.add(n)
+        for m in re.finditer(
+            r"^from (vllm(?:\.[A-Za-z0-9_.]+)?)\s+import\s*\(([^)]*)\)",
+            src, re.MULTILINE | re.DOTALL,
+        ):
+            body = re.sub(r"#.*", "", m.group(2))
+            for n in body.split(","):
+                n = n.split(" as ")[0].strip()
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", n):
+                    import_sources.add(n)
+
+    for name in subclassed_names:
+        if name in import_sources:
+            parents.add(name)
     return parents
 
 

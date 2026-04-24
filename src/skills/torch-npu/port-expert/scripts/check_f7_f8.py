@@ -39,12 +39,21 @@ def show_file_at_ref(torch_path, ref, path):
 
 
 def get_torch_npu_subclassed_parents(torch_npu_path):
+    """Return parent class names that torch_npu subclasses AND imports
+    from torch (not redefined locally).
+
+    Scanning name-only yields false positives when torch_npu has a
+    local shadow class with the same name as an upstream torch class
+    (example: torch_npu/npu/_graph_tree.py:706 has its own `class
+    OutputAliasInfo` that is unrelated to `torch._functorch.*.OutputAliasInfo`).
+    """
     parents = set()
     out = subprocess.run(
         ["grep", "-rhE", r"^class [A-Za-z_]+\(", "--include=*.py",
          str(Path(torch_npu_path) / "torch_npu")],
         capture_output=True, text=True, check=False,
     )
+    subclassed_names = set()
     for line in out.stdout.splitlines():
         m = re.match(r"class [A-Za-z_]+\(([^)]+)\)", line)
         if not m:
@@ -57,7 +66,42 @@ def get_torch_npu_subclassed_parents(torch_npu_path):
                     continue
                 if p.startswith(("Ascend", "Npu", "NPU")):
                     continue
-                parents.add(p)
+                subclassed_names.add(p)
+
+    # Now require evidence the name is imported from torch (not locally defined).
+    # Scan Python files, handle both single-line and parenthesized multi-line imports.
+    root = Path(torch_npu_path) / "torch_npu"
+    import_sources = defaultdict(set)
+    for py in root.rglob("*.py"):
+        try:
+            src = py.read_text(errors="replace")
+        except OSError:
+            continue
+        # Single-line: from torch.X import A, B, C
+        for m in re.finditer(
+            r"^from (torch(?:\.[A-Za-z0-9_.]+)?)\s+import\s+([^\n#(]+)",
+            src, re.MULTILINE,
+        ):
+            mod = m.group(1)
+            names = [n.split(" as ")[0].strip() for n in m.group(2).split(",")]
+            for n in names:
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", n):
+                    import_sources[n].add(mod)
+        # Multi-line: from torch.X import (A, B, C)
+        for m in re.finditer(
+            r"^from (torch(?:\.[A-Za-z0-9_.]+)?)\s+import\s*\(([^)]*)\)",
+            src, re.MULTILINE | re.DOTALL,
+        ):
+            mod = m.group(1)
+            body = re.sub(r"#.*", "", m.group(2))
+            names = [n.split(" as ")[0].strip() for n in body.split(",")]
+            for n in names:
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", n):
+                    import_sources[n].add(mod)
+
+    for name in subclassed_names:
+        if name in import_sources:
+            parents.add(name)
     return parents
 
 
