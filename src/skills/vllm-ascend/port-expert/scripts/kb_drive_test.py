@@ -112,7 +112,9 @@ def detect_class_removals(vllm_path: Path, ref: str) -> list[Drift]:
     drifts: list[Drift] = []
     files_changed = run_git(vllm_path, "diff", "--name-only", f"{ref}^..{ref}")
     for f in files_changed.strip().splitlines():
-        if not f.endswith(".py") or "/tests/" in f:
+        if not f.endswith(".py"):
+            continue
+        if f.startswith("tests/") or "/tests/" in f or "/test_" in f or f.startswith("test_"):
             continue
         diff = run_git(vllm_path, "diff", f"{ref}^..{ref}", "--", f)
         removed_classes = re.findall(r"^-class (\w+)", diff, re.MULTILINE)
@@ -143,13 +145,35 @@ def detect_class_removals(vllm_path: Path, ref: str) -> list[Drift]:
     return drifts
 
 
-def grep_ascend_for_symbol(vllm_ascend_path: Path, symbol: str) -> list[tuple[str, int, str]]:
-    """Return call sites in vllm-ascend that reference the symbol."""
+def ascend_defines_symbol(vllm_ascend_path: Path, symbol: str) -> bool:
+    """True if vllm-ascend itself defines a class or top-level def with
+    this name. When true, any call site referencing `symbol` may be to
+    vllm-ascend's own definition, not to vllm — likely a false positive."""
+    out = subprocess.run(
+        ["grep", "-rln", "-E", rf"^(class|def) {symbol}\b",
+         "--include=*.py", str(vllm_ascend_path)],
+        capture_output=True, text=True, check=False,
+    )
+    for line in out.stdout.splitlines():
+        rel = line.removeprefix(str(vllm_ascend_path) + "/")
+        if "/tests/" not in rel and "/test_" not in rel:
+            return True
+    return False
+
+
+def grep_ascend_for_symbol(vllm_ascend_path: Path, symbol: str,
+                           require_vllm_import: bool = True
+                           ) -> list[tuple[str, int, str]]:
+    """Return call sites in vllm-ascend that reference the symbol.
+
+    If require_vllm_import, only count sites in files that also have
+    `from vllm...` import of the symbol — avoids false positives when
+    vllm-ascend has its own class of the same name."""
     out = subprocess.run(
         ["grep", "-rn", "-w", symbol, "--include=*.py", str(vllm_ascend_path)],
         capture_output=True, text=True, check=False,
     )
-    sites: list[tuple[str, int, str]] = []
+    raw_sites: list[tuple[str, int, str]] = []
     for line in out.stdout.splitlines():
         parts = line.split(":", 2)
         if len(parts) < 3:
@@ -159,10 +183,102 @@ def grep_ascend_for_symbol(vllm_ascend_path: Path, symbol: str) -> list[tuple[st
         if "/tests/" in rel or "/test_" in rel:
             continue
         try:
-            sites.append((rel, int(lineno), text.strip()))
+            raw_sites.append((rel, int(lineno), text.strip()))
         except ValueError:
             continue
-    return sites
+
+    if not require_vllm_import:
+        return raw_sites
+
+    files_with_vllm_import: set[str] = set()
+    for site in raw_sites:
+        rel, _, _ = site
+        if rel in files_with_vllm_import:
+            continue
+        full = vllm_ascend_path / rel
+        try:
+            content = full.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        # Only count if `from vllm...` import actually contains the symbol.
+        # Support single-line and parenthesized multi-line imports.
+        # Note: `vllm` must be standalone or followed by `.` — avoid matching `vllm_ascend...`
+        patterns = [
+            rf"^from vllm(\.[\w\.]+)?\s+import\s+[^\n#(]*\b{symbol}\b",
+            rf"^from vllm(\.[\w\.]+)?\s+import\s*\([^)]*\b{symbol}\b[^)]*\)",
+        ]
+        for pat in patterns:
+            if re.search(pat, content, re.MULTILINE | re.DOTALL):
+                files_with_vllm_import.add(rel)
+                break
+
+    return [s for s in raw_sites if s[0] in files_with_vllm_import]
+
+
+def detect_renames(vllm_path: Path, ref: str) -> list[Drift]:
+    """Detect class or def renamed within same file in a single commit.
+    Heuristic: `-class Old` + `+class New` in same file, where `New` is
+    not in the old version. Not rigorous (same refactor may delete +
+    re-add unrelated names) — we score by file-pair locality."""
+    drifts: list[Drift] = []
+    files_changed = run_git(vllm_path, "diff", "--name-only", f"{ref}^..{ref}")
+    for f in files_changed.strip().splitlines():
+        if not f.endswith(".py"):
+            continue
+        if f.startswith("tests/") or "/tests/" in f or "/test_" in f or f.startswith("test_"):
+            continue
+        diff = run_git(vllm_path, "diff", f"{ref}^..{ref}", "--", f)
+        removed = set(re.findall(r"^-class (\w+)", diff, re.MULTILINE))
+        added = set(re.findall(r"^\+class (\w+)", diff, re.MULTILINE))
+        truly_removed = removed - added
+        truly_added = added - removed
+
+        if len(truly_removed) == 1 and len(truly_added) == 1:
+            old = next(iter(truly_removed))
+            new = next(iter(truly_added))
+            if old.startswith("_") or new.startswith("_"):
+                continue
+            drifts.append(Drift(
+                kind="renamed",
+                vllm_path=f,
+                symbol=old,
+                detail=f"class {old} → {new} in {f}",
+            ))
+    return drifts
+
+
+def detect_sig_changes(vllm_path: Path, ref: str) -> list[Drift]:
+    """Detect function signature changes: `-def name(old_args)` +
+    `+def name(new_args)` where args differ."""
+    drifts: list[Drift] = []
+    files_changed = run_git(vllm_path, "diff", "--name-only", f"{ref}^..{ref}")
+    for f in files_changed.strip().splitlines():
+        if not f.endswith(".py"):
+            continue
+        if f.startswith("tests/") or "/tests/" in f or "/test_" in f or f.startswith("test_"):
+            continue
+        diff = run_git(vllm_path, "diff", f"{ref}^..{ref}", "--", f)
+        removed_sigs = dict(re.findall(r"^-def (\w+)\s*\(([^)]*)\)", diff, re.MULTILINE))
+        added_sigs = dict(re.findall(r"^\+def (\w+)\s*\(([^)]*)\)", diff, re.MULTILINE))
+        # Only top-level (module-level) defs. Crude check: the `-def`
+        # match starts at column 0 in the diff after the `-` prefix.
+        top_level = set()
+        for m in re.finditer(r"^-(def \w+\s*\()", diff, re.MULTILINE):
+            top_level.add(re.match(r"def (\w+)", m.group(1)).group(1))
+        for name in removed_sigs:
+            if name.startswith("_") or name not in added_sigs:
+                continue
+            if name not in top_level:
+                continue
+            if removed_sigs[name].strip() == added_sigs[name].strip():
+                continue
+            drifts.append(Drift(
+                kind="sig_change",
+                vllm_path=f,
+                symbol=name,
+                detail=f"def {name}({removed_sigs[name]}) → def {name}({added_sigs[name]})",
+            ))
+    return drifts
 
 
 def match_drift_to_family(drift: Drift) -> str:
@@ -204,13 +320,30 @@ def main() -> int:
     drifts: list[Drift] = []
     drifts += detect_removed_symbols(args.vllm_path, args.vllm_ref)
     drifts += detect_class_removals(args.vllm_path, args.vllm_ref)
-    print(f"      found {len(drifts)} raw drifts")
+    drifts += detect_renames(args.vllm_path, args.vllm_ref)
+    drifts += detect_sig_changes(args.vllm_path, args.vllm_ref)
+    print(f"      found {len(drifts)} raw drifts "
+          f"(removed={sum(1 for d in drifts if d.kind == 'removed_symbol')}, "
+          f"renamed={sum(1 for d in drifts if d.kind == 'renamed')}, "
+          f"sig_change={sum(1 for d in drifts if d.kind == 'sig_change')})")
 
     print(f"[2/4] locating call sites in vllm-ascend ...")
+    filtered_out: list[Drift] = []
     for d in drifts:
-        d.ascend_callsites = grep_ascend_for_symbol(args.vllm_ascend_path, d.symbol)
+        if ascend_defines_symbol(args.vllm_ascend_path, d.symbol):
+            # vllm-ascend has its own class/def with this name — likely
+            # a false positive. Still grep but require a `from vllm...`
+            # import in the same file.
+            d.ascend_callsites = grep_ascend_for_symbol(
+                args.vllm_ascend_path, d.symbol, require_vllm_import=True)
+            if not d.ascend_callsites:
+                filtered_out.append(d)
+        else:
+            d.ascend_callsites = grep_ascend_for_symbol(
+                args.vllm_ascend_path, d.symbol, require_vllm_import=False)
     impactful = [d for d in drifts if d.ascend_callsites]
-    print(f"      {len(impactful)} drifts impact vllm-ascend")
+    print(f"      {len(impactful)} drifts impact vllm-ascend "
+          f"({len(filtered_out)} filtered as internal-name collision)")
 
     print(f"[3/4] matching impactful drifts to KB families ...")
     unmatched = []
