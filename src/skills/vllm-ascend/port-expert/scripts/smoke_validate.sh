@@ -16,6 +16,13 @@
 #   --npu-user <USER>       default: z00637938
 #   --log-dir <DIR>         default: /tmp/${NPU_USER}/easyr1-logs/
 #   --timeout-min <N>       default: 15
+#   V13_BASELINE=<PATH>     env var: when set and RUNG=V1.3, run a
+#                           second, semantic token-by-token diff against
+#                           this baseline after the marker grep. FAIL
+#                           means marker passed but tokens diverge (e.g.
+#                           silent KV cache corruption). See v13_token_diff.py.
+#   V13_TOLERANCE=<FLOAT>   env var (default 0.0): mismatch rate that
+#                           still counts as PASS-WITH-NOISE.
 #   --metrics-jsonl <PATH>  optional A3-side path to experiment_log.jsonl.
 #                           When set, V1.4+ assertion reads entropy_loss from
 #                           jsonl (EasyR1 master's logging sink) instead of
@@ -184,6 +191,32 @@ $SSH_CMD "[ -s $LOG_FILE ]" || { echo "ERROR: log file empty or missing at $LOG_
 case "$ASSERT_TYPE" in
   marker)
     if $SSH_CMD "grep -q '$EXPECTED_MARKER' $LOG_FILE"; then
+      echo "marker '$EXPECTED_MARKER' found"
+      # V1.3 gets a second, semantic gate (task #88): token-by-token
+      # baseline diff. The marker alone can pass while the rollout
+      # produces nonsense tokens (e.g. silent KV cache corruption).
+      if [ "$RUNG" = "V1.3" ] && [ -n "${V13_BASELINE:-}" ]; then
+        echo "--- V1.3 semantic check ---"
+        # Stream log to a local temp, run diff
+        LOCAL_LOG="/tmp/v13_rollout_$(date +%s).log"
+        $SSH_CMD "cat $LOG_FILE" > "$LOCAL_LOG"
+        if python3 "$SCRIPT_DIR/v13_token_diff.py" \
+             --mode diff \
+             --log "$LOCAL_LOG" \
+             --baseline "$V13_BASELINE" \
+             --tolerance "${V13_TOLERANCE:-0.0}"; then
+          echo "✅ ${RUNG} PASS (marker + token-diff)"
+          echo "  log: $LOG_FILE"
+          rm -f "$LOCAL_LOG"
+          exit 0
+        else
+          echo "❌ ${RUNG} FAIL: marker passed but tokens diverge from baseline"
+          echo "  rollout log: $LOG_FILE"
+          echo "  baseline: $V13_BASELINE"
+          rm -f "$LOCAL_LOG"
+          exit 1
+        fi
+      fi
       echo "✅ ${RUNG} PASS (marker '$EXPECTED_MARKER' found)"
       echo "  log: $LOG_FILE"
       exit 0
