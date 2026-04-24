@@ -19,6 +19,30 @@ context: inline
 
 # /torch-day0 — community PyTorch probe on existing NPU base
 
+## Two modes — decide before Phase 0
+
+**Mode A — Overlay Day-0 probe** (this document's original scope):
+there is no torch_npu stable for the target torch version yet. Build
+an overlay image, install an rc wheel, run 6-step runtime smoke,
+classify A/B/C. Phases below (P0..P6) describe this mode.
+
+**Mode B — Inductor/Dynamo private-API drift scan** (added 2026-04-24
+after cold-drive caught the gap): torch_npu source already has a
+branch for the target torch version, but we need to patch the
+`from torch._inductor...` / `from torch._dynamo...` imports that
+broke between torch N.x and N.y. Skip P2-P4 entirely; use the manual
+scan in `docs/torch-npu/PORTING-GUIDE.md` step 1 — extract every
+`from torch._<private> import <SYM>` pair from torch_npu, for each
+pair check `git grep -l "^class SYM\b|^def SYM\b|^SYM *=" <tag> -- torch/`
+on the target torch tag. Produce a per-family classification and apply
+shims at `torch_npu/compat/<module>.py`. Validate with
+`/drift-port-validate`. Then commit to the fork branch
+`<target-torch-version>_auto_porting`.
+
+**If uncertain which mode**: look at the user request. "Build overlay
+for torch X" → Mode A. "Port torch_npu to torch Y's API drift" /
+"find what broke between 2.N and 2.N+1" → Mode B.
+
 ## Your role (orchestrator)
 
 Spawn `torch-day0-worker`, wait, read Handoff, propagate {A/B/C, overlay

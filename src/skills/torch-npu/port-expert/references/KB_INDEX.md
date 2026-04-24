@@ -111,6 +111,29 @@ try old path first (keep old torch working), fall back to new.
 on `gitcode.com/zhengshencn_hwca/pytorch` branch `torch-2.12_auto_porting`
 (commits `2d81f06c8` + `1ef8d845a`). All 15 touched files py_compile clean.
 
+### IMPORTANT: rows 1-13 are DEFENSIVE, not observed breakage (2026-04-24 late)
+
+Cold-driven `torch-npu/port-expert` orchestrator run discovered that at
+v2.12.0-rc3, the 13 old paths **still re-export** every one of the 13
+symbols. The original claim ("moved from X to Y") described the
+*canonical location* change, not an import breakage. `import torch._inductor.utils.FloorDiv`
+works in 2.12-rc3 today. The compat shims therefore don't fix any
+current bug; they are forward-compat protection for a future release
+that eventually removes the re-exports. Keeping them is defensible
+(every torch release removes some re-exports), but do **not** claim
+these were needed to make torch 2.12 work — they weren't.
+
+### Row 14: real observed v2.11→v2.12-rc3 breakage
+
+| # | Family | torch range | Symbol | Old path | State at v2.12-rc3 | Fix status |
+|---|---|---|---|---|---|---|
+| 14 | **F1** (real) | 2.11 → 2.12-rc3 | `Union` (typing re-export) | `torch._inductor.codecache` | `Union` NOT imported into module namespace anymore (PEP 604 cleanup) | **DONE** — commit `5092fd54c` inline try/except in `torch_npu/_inductor/ascend_npu_ir/ascend_npu_ir/codecache.py` |
+
+Evidence: `torch/_inductor/codecache.py:37` at v2.11.0 imports
+`Any, ..., Union` from typing. Same line at v2.12.0-rc3 drops `Union`.
+`torch_npu/_inductor/ascend_npu_ir/ascend_npu_ir/codecache.py:29-34`
+was doing `from torch._inductor.codecache import ..., Union, ...`.
+
 Affected torch_npu files for rows 1-2:
 - `torch_npu/_inductor/lowering_fx.py:38`
 - `torch_npu/_inductor/codegen/split_tiling.py:7`
