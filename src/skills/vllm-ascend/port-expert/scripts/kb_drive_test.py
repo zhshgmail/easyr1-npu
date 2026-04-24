@@ -182,6 +182,10 @@ def grep_ascend_for_symbol(vllm_ascend_path: Path, symbol: str,
         rel = path.removeprefix(str(vllm_ascend_path) + "/")
         if "/tests/" in rel or "/test_" in rel:
             continue
+        # `/compat/` is the conventional home of forward-compat shims;
+        # symbol references there are intentional, not broken call sites.
+        if "/compat/" in rel or rel.startswith("compat/"):
+            continue
         try:
             raw_sites.append((rel, int(lineno), text.strip()))
         except ValueError:
