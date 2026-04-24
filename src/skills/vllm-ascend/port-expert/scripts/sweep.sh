@@ -93,14 +93,38 @@ done
 NOVEL_COUNT=$(wc -l < "$NOVEL_FILE")
 
 echo
-echo "=== sweep $COMMIT_RANGE ==="
+echo "=== sweep $COMMIT_RANGE — F1/F2-rename/F3/F5-suspect per-commit ==="
 echo "commits scanned:     $N"
 echo "impactful rows:      $TOTAL_HITS"
 echo "unique symbols:      $UNIQUE_SYMS"
 echo "novel (not in KB):   $NOVEL_COUNT"
 echo
+
+# Also run tag-range scanners (F4, F7/F8) — extract baseline..target from range
+BASE_REF=$(echo "$COMMIT_RANGE" | sed 's/\.\..*//')
+TARGET_REF=$(echo "$COMMIT_RANGE" | sed 's/^.*\.\.//')
+
+echo "=== F4 (return-type migration) — check_f4.py ${BASE_REF} -> ${TARGET_REF} ==="
+python3 "$SCRIPT_DIR/check_f4.py" \
+  --vllm-path "$VLLM_PATH" \
+  --vllm-ascend-path "$VLLM_ASCEND_PATH" \
+  --baseline-tag "$BASE_REF" \
+  --target-tag "$TARGET_REF" \
+  --out "$OUT_DIR/f4.json" 2>&1 | tail -5 || true
+
+echo
+echo "=== F7/F8 (class-API additions) — check_f7_f8.py ${BASE_REF} -> ${TARGET_REF} ==="
+python3 "$SCRIPT_DIR/check_f7_f8.py" \
+  --vllm-path "$VLLM_PATH" \
+  --vllm-ascend-path "$VLLM_ASCEND_PATH" \
+  --baseline-tag "$BASE_REF" \
+  --target-tag "$TARGET_REF" \
+  --out "$OUT_DIR/f78.json" 2>&1 | tail -15 || true
+
+echo
+
 if [[ "$NOVEL_COUNT" -gt 0 ]]; then
-  echo "## Novel symbols (need work)"
+  echo "## Novel symbols (need work, from F1/F2-rename/F3/F5)"
   while read -r sym; do
     first=$(grep -P "^\S+\t\S+\t${sym}\t" "$HIT_FILE" | head -1)
     echo "- $sym   first seen in: $first"
@@ -108,8 +132,14 @@ if [[ "$NOVEL_COUNT" -gt 0 ]]; then
   echo
   echo "Full hit list:    $HIT_FILE"
   echo "Per-commit scans: $OUT_DIR/scans/"
+  echo "F4 output:        $OUT_DIR/f4.json"
+  echo "F7/F8 output:     $OUT_DIR/f78.json"
   exit 1
 else
-  echo "All impactful drifts already registered in KB. No novel work."
+  echo "All impactful F1/F2-rename/F3/F5 drifts already registered in KB."
+  echo "Check F4/F7/F8 outputs above for class-API additions (may need verification)."
+  echo
+  echo "F4 output:    $OUT_DIR/f4.json"
+  echo "F7/F8 output: $OUT_DIR/f78.json"
   exit 0
 fi
