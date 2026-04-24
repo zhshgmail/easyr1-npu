@@ -73,13 +73,17 @@ FAMILY_RULES = [
                     "Renamed type/class — Upstream renamed a class/type vllm-ascend imports or subclasses"),
     FamilyMatchRule("F3", "sig_change",
                     "Signature change — Upstream added/removed/reordered args on a function vllm-ascend calls"),
+    FamilyMatchRule("F5-suspect", "buffer_api_migration",
+                    "F5 SUSPECT: class with buffer-shaped methods removed; verify by reading KB §F5"),
 ]
 
 # Families documented in the KB but NOT yet scanner-detected. Surfaced
 # in the final report so the user knows they still need manual inspection.
+# F5 gets a weak detector above (name + body hints) but real F5 often
+# manifests as per-method F3 (e.g. .copy_to_gpu added num_reqs arg) — that
+# shape is caught by the F3 detector, just classified under F3.
 UNDETECTED_FAMILIES = [
     ("F4", "return-type migration (scalar → NamedTuple/dict)"),
-    ("F5", "buffer API migration (CpuGpuBuffer ↔ plain tensor)"),
     ("F6", "kv_cache tensor-vs-list contract"),
     ("F7", "new required attribute on NPU subclass"),
     ("F8", "new required method on NPU subclass"),
@@ -230,6 +234,62 @@ def grep_ascend_for_symbol(vllm_ascend_path: Path, symbol: str,
     return [s for s in raw_sites if s[0] in files_with_vllm_import]
 
 
+def detect_buffer_api_migration(vllm_path: Path, ref: str) -> list[Drift]:
+    """F5 detector. Upgrades an F1 removed_symbol to F5 suspect when:
+      - class name looks buffer-ish (ends with Buffer, contains Buffer)
+      - OR the diff's deletion body contains `def copy_to_gpu` or a
+        `.np` attribute assignment typical of CpuGpuBuffer-shaped classes.
+
+    Works off the same `diff` scan that detect_class_removals uses.
+    """
+    drifts: list[Drift] = []
+    files_changed = run_git(vllm_path, "diff", "--name-only", f"{ref}^..{ref}")
+    for f in files_changed.strip().splitlines():
+        if not f.endswith(".py"):
+            continue
+        if f.startswith("tests/") or "/tests/" in f or "/test_" in f or f.startswith("test_"):
+            continue
+        diff = run_git(vllm_path, "diff", f"{ref}^..{ref}", "--", f)
+        removed_classes = re.findall(r"^-class (\w+)", diff, re.MULTILINE)
+        added_classes = re.findall(r"^\+class (\w+)", diff, re.MULTILINE)
+        truly_removed = set(removed_classes) - set(added_classes)
+        for cls in truly_removed:
+            if cls.startswith("_"):
+                continue
+            name_hint = "Buffer" in cls
+            # Body hint: find the `-class <cls>` block in diff, look for
+            # buffer-shaped member names within the adjacent `-` lines.
+            # Conservative: if the diff near the class removal shows
+            # a `-    def copy_to_gpu(` or a `-    np = ` style line, flag.
+            body_pattern = re.compile(
+                rf"-class {cls}\b.*?(?=^-class |\Z)",
+                re.MULTILINE | re.DOTALL,
+            )
+            body_m = body_pattern.search(diff)
+            body_hint = False
+            if body_m:
+                body = body_m.group(0)
+                if re.search(r"^-\s+def copy_to_gpu\s*\(", body, re.MULTILINE):
+                    body_hint = True
+                elif re.search(r"^-\s+np\s*[:=]", body, re.MULTILINE):
+                    body_hint = True
+
+            if not (name_hint or body_hint):
+                continue
+
+            hints = []
+            if name_hint: hints.append("name contains 'Buffer'")
+            if body_hint: hints.append("body had copy_to_gpu / .np")
+
+            drifts.append(Drift(
+                kind="buffer_api_migration",
+                vllm_path=f,
+                symbol=cls,
+                detail=f"F5 suspect: {cls} removed ({', '.join(hints)})",
+            ))
+    return drifts
+
+
 def detect_renames(vllm_path: Path, ref: str) -> list[Drift]:
     """Detect class or def renamed within same file in a single commit.
     Heuristic: `-class Old` + `+class New` in same file, where `New` is
@@ -368,10 +428,12 @@ def main() -> int:
     drifts: list[Drift] = []
     drifts += detect_removed_symbols(args.vllm_path, args.vllm_ref)
     drifts += detect_class_removals(args.vllm_path, args.vllm_ref)
+    drifts += detect_buffer_api_migration(args.vllm_path, args.vllm_ref)
     drifts += detect_renames(args.vllm_path, args.vllm_ref)
     drifts += detect_sig_changes(args.vllm_path, args.vllm_ref)
     print(f"      found {len(drifts)} raw drifts "
           f"(removed={sum(1 for d in drifts if d.kind == 'removed_symbol')}, "
+          f"buffer_api={sum(1 for d in drifts if d.kind == 'buffer_api_migration')}, "
           f"renamed={sum(1 for d in drifts if d.kind == 'renamed')}, "
           f"sig_change={sum(1 for d in drifts if d.kind == 'sig_change')})")
 
