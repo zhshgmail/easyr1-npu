@@ -26,6 +26,30 @@ if a stage returns `stuck`), and emits a single final RESULTS.md.
   (e.g. `/easyr1-port reproduce v1` if you already know v1 works)
 - When manual review is desired between stages (the orchestrator is
   autonomous; it exits only at "done", "stuck", or "@review-fail")
+- **You are an upstream maintainer** (not an EasyR1 porter) adapting one
+  single upstream (vllm-ascend / torch_npu / transformers / triton-ascend)
+  to a new community version. Use the individual port-expert skill for
+  that upstream directly — do not wrap it in this orchestrator. See
+  SKILLS-GUIDE.md §6.5.
+
+## Relationship to the 4 upstream port-expert skills
+
+This orchestrator targets **EasyR1 porting (consumer-level integration)**:
+a developer adapting EasyR1 to run on NPU, not an upstream library
+maintainer.
+
+The 4 port-expert skills
+(`vllm-ascend/port-expert`, `torch-npu/port-expert`,
+`transformers/port-expert`, `triton-ascend/port-expert`)
+target the **upstream-maintainer role**: a developer adapting ONE
+upstream library to a new community release.
+
+The two are orthogonal. This orchestrator does NOT invoke the 4
+port-expert skills in its flow — they solve a different problem. When
+they do interact: if EasyR1 porting (this orchestrator) uncovers a bug
+that's actually in an upstream, an issue gets filed against that upstream;
+the upstream's maintainer then runs the corresponding port-expert skill
+to fix it.
 
 ## Inputs
 
