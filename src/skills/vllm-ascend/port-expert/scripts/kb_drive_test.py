@@ -77,15 +77,13 @@ FAMILY_RULES = [
                     "F5 SUSPECT: class with buffer-shaped methods removed; verify by reading KB §F5"),
 ]
 
-# Families documented in the KB but NOT yet scanner-detected by this
-# per-commit scanner. F7/F8 are now covered by the sister tool
-# `check_f7_f8.py` (AST-based tag-range scan). F4/F6 remain manual.
+# Families documented in the KB but NOT yet scanner-detected anywhere.
 UNDETECTED_FAMILIES = [
-    ("F4", "return-type migration (scalar → NamedTuple/dict)"),
-    ("F6", "kv_cache tensor-vs-list contract"),
+    ("F6", "kv_cache tensor-vs-list contract (runtime assertion, not structural)"),
 ]
-# Also manual in THIS scanner but auto-detected elsewhere:
+# Manual in THIS scanner but auto-detected by sister tools:
 EXTERNALLY_DETECTED = [
+    ("F4", "return-type migration — run scripts/check_f4.py"),
     ("F7", "new required attribute on NPU subclass — run scripts/check_f7_f8.py"),
     ("F8", "new required method on NPU subclass — run scripts/check_f7_f8.py"),
 ]
