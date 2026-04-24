@@ -290,11 +290,67 @@ cat /tmp/review-prompt.txt | \
 
 ---
 
+## 6.5 Port-expert skills（适配上游新版本，2026-04-24 新增）
+
+除了上面 8 个 EasyR1 移植 skill，还有 3 个 **port-expert skill**，用来应对**上游库发新版本**时 vllm-ascend / torch_npu 出现 API drift 的情况。这套 skill 独立运行，不依赖前面的 8 个。
+
+### 目标读者
+
+你是某个**上游库的维护者**或者**近用户**，上游发了新版本但 NPU 适配还没跟上。典型场景：
+- torch 发布 2.12，torch_npu 还锁在 2.11 → 用 `torch-npu/port-expert`
+- vllm 主仓合并了 API 重构，vllm-ascend 没跟上 → 用 `vllm-ascend/port-expert`
+- 想验证你刚写的 compat shim 两条分支都对 → 用 `drift-port-validate`
+
+### 三个 skill
+
+| Skill 名 | 做什么 | 关键工具 | 用户指南 |
+|---|---|---|---|
+| `vllm-ascend/port-expert` | 扫 vllm 新版本 diff，找出 vllm-ascend 受影响的符号，按 F1-F8 族匹配并建议修法 | `scripts/kb_drive_test.py`, `scripts/sweep.sh` | [`docs/vllm-ascend/PORTING-GUIDE.md`](../vllm-ascend/PORTING-GUIDE.md) |
+| `torch-npu/port-expert` | 扫 torch 新版本里所有 `torch._<private>` 符号，找出 torch_npu 受影响的导入路径搬家 | `scripts/extract_imports.py`, `scripts/check_drift.py`, `scripts/check_sig_drift.py` | [`docs/torch-npu/PORTING-GUIDE.md`](../torch-npu/PORTING-GUIDE.md) |
+| `_shared/drift-port-validate` | 验证写好的 compat shim 两条分支（OLD upstream 保留 + NEW upstream fallback）都对 | `references/templates/*_verify_{old,new}.py` | 无专属用户指南，在每个 port-expert 的 `/drift-port-validate` 步骤里被调用 |
+
+### 典型调用链
+
+```
+用户 → /vllm-ascend-day0 或 /torch-npu-day0
+         ↓ (orchestrator skill 调起)
+         ├─ Phase 0/0.5: 运行扫描器（sweep.sh / check_drift.py）列出所有漂移
+         ├─ Phase 1-3: 按 F1-F8 族写 compat shim
+         ├─ Phase 4: 调 /drift-port-validate 验证 shim
+         └─ Phase 5-6: push 到 fork branch + 生成 PR 材料
+```
+
+### 与主 8 skill 的关系
+
+- 主 8 skill 解决"EasyR1 在 A3 上跑起来 + 新版本升级整个 RL 栈"
+- port-expert 3 skill 解决"某一个上游库的新版本漂移到 NPU 适配"
+
+两套**不重叠**：port-expert 假设 NPU base image 已经有某一旧版本，你要把上游最新版本桥接进去。主 skill 假设你要做的是端到端 RL 栈的一次完整迁移。
+
+### F 族漂移分类（摘要）
+
+F1-F8 是**跨上游通用**的漂移形状，最早在 vllm-ascend 沉淀，后被 torch_npu 复用并加了 F2-path-move 变种：
+
+- **F1** 符号被删：`try/except import` fallback 到本地 class / 新 upstream 路径
+- **F2-rename** 类改名：别名导入
+- **F2-path-move**（torch_npu 扩展）同名符号搬家：`try/except` 两条 import
+- **F3** 函数签名变：运行时 `inspect.signature` sniff
+- **F4** 返回值类型变：duck-type / shim
+- **F5** buffer API 迁移：compat helper 函数
+- **F6** kv_cache 契约变
+- **F7** 基类新增必须字段
+- **F8** 基类新增必须方法
+
+完整描述见 [`src/skills/vllm-ascend/port-expert/references/patterns/domains/vllm-api-drift.md`](../../src/skills/vllm-ascend/port-expert/references/patterns/domains/vllm-api-drift.md)。
+
+**重要**：当前自动扫描器只覆盖 F1 / F2-rename / F3，F4-F8 需要手动检查 KB 对应章节。
+
 ## 7. 相关文档
 
-- 每个 skill 的权威说明：`skills/<name>/SKILL.md`
+- 每个 skill 的权威说明：`src/skills/<name>/SKILL.md`
 - 坑目录：`knowledge/npu-patterns.md`
 - 上游 ref 对齐：`knowledge/upstream-refs.md`
 - 跑起来手册（非复现）：`PORT-GUIDE.md`
 - 当前状态 + 未结工作：`HANDOVER.md`
 - v2 drill 完整报告（`image-upgrade-drill` skill 的首个实例）：`transformers-upgrade-drill.md`
+- Port-expert 专用：[`docs/vllm-ascend/PORTING-GUIDE.md`](../vllm-ascend/PORTING-GUIDE.md), [`docs/torch-npu/PORTING-GUIDE.md`](../torch-npu/PORTING-GUIDE.md)
