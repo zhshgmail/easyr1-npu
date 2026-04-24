@@ -1,103 +1,171 @@
 ---
 name: triton-ascend-port
 description: >
-  triton-ascend is a FORK of triton, not a plugin that imports from it.
-  Upgrading triton-ascend to a newer community triton release is a
-  rebase/merge problem, not a drift-patch problem. This skill documents
-  the pattern and points at the right tools (git rebase / merge), not
-  at the F1-F8 scanners used for vllm-ascend / torch_npu.
+  triton-ascend is a FORK of community triton (not a plugin). Upgrading it
+  to a newer community release is a git-merge + conflict-resolution task,
+  not an F1-F8 symbol-drift scan. This skill encodes the workflow and the
+  concrete conflict recipes learned from the v3.5.0 -> v3.6.0 manual port.
 argument-hint: >
-  target-triton-version: community triton release to rebase onto
-  (e.g. 3.4.0)
+  target-triton-version: community triton tag to merge in (e.g. v3.6.0)
 context: inline
 ---
 
-# /triton-ascend-day0 — triton fork upgrade
+# /triton-ascend-port — fork upgrade to new community triton
 
-## Why this is different from vllm-ascend / torch_npu
+## TL;DR for the reader who only reads this block
+
+1. Read `references/KB_INDEX.md` first. It has the verified repo layout,
+   the list of 12 conflict files from the v3.5.0 -> v3.6.0 rebase, and
+   the exact resolution recipe per file.
+2. Use **`git merge <target-tag> --no-commit --no-ff`**, NOT
+   `git rebase --onto`. triton-ascend's main is not a descendant of any
+   community tag (vendored-fork pattern). Rebase will explode.
+3. Text-level clean merge is **only half the work**. C++ build on A3 +
+   NPU smoke is the other half, and exposes LLVM API drift that text
+   merge can't see.
+
+## Why this skill is different from vllm-ascend / torch_npu
 
 | Dimension | vllm-ascend / torch_npu | triton-ascend |
 |---|---|---|
-| Source structure | Plugin that imports from upstream | Fork of upstream with NPU-specific patches baked in |
-| Drift shape | F1-F8 (symbol additions / removals / signature changes) | Merge conflicts on rebase |
-| Fix pattern | Compat shim under `<project>/compat/` | Resolve merge conflicts, re-apply NPU-specific diffs on new base |
-| Scanner | `kb_drive_test.py`, `check_f4.py`, `check_f7_f8.py` | `git rebase` / `git merge` |
-| Validation | `/drift-port-validate` (shim branch check) | rebuild + run triton-ascend's test suite |
+| Source structure | Plugin that imports from upstream | **Fork**: vendored upstream source + NPU patches baked in |
+| Drift shape | F1-F8 symbol drift | Git merge conflicts on text + hidden LLVM API drift at build time |
+| Fix pattern | Compat shim under `<project>/compat/` | In-place resolve-and-commit; no separate compat layer |
+| Scanner | `kb_drive_test.py`, `check_f4.py`, `check_f7_f8.py` | `git merge`, `py_compile`, full C++ build |
+| Validation | `/drift-port-validate` (shim branch check) | `git commit` clean -> `py_compile` pass -> C++ build -> NPU smoke |
 
-## Workflow (this is git-flow, not scan-flow)
+## Workflow
 
-```
-P0  identify target triton community tag
-P1  on fork (zhengshencn_hwca/triton-ascend), create branch
-    `<target-version>_auto_porting` from the current main
-P2  git fetch upstream community triton; git rebase --onto <community-tag>
-    <current-base> <target-branch>
-P3  resolve conflicts; re-apply NPU-specific patches that didn't merge
-    cleanly. Common conflict surfaces:
-    - `python/triton/backends/` — NPU backend added as sibling of
-      `cuda/` / `amd/`. Conflicts when upstream adds a new backend
-      or refactors the backend plugin protocol.
-    - `python/triton/language/` — NPU lang extensions
-    - `python/triton/runtime/` — NPU-specific compile cache, jit config
-    - `third_party/ascend/` (if present) — NPU kernels
-P4  rebuild triton-ascend wheel; run triton-ascend's test suite
-    (python/test/unit/ascend/ or similar)
-P5  smoke NPU end-to-end: run a tiny NPU triton kernel via torch_npu
-    inductor path (see torch-npu port-expert deploy artifacts for the
-    smoke harness)
-P6  push to fork branch; file PR against Ascend/triton-ascend master
+### P0 — pick target community tag and confirm it is NOT already applied
+
+```bash
+cd upstream/triton-ascend
+git remote add community https://github.com/triton-lang/triton.git   # if not present
+git fetch community --tags
+git merge-base --is-ancestor v<target> origin/main && echo "already merged"
 ```
 
-## When NOT to use this skill
+If "already merged" prints, no work. Otherwise continue.
 
-- If upstream triton has NOT released a new version — no work needed.
-- If upstream triton only added GPU-specific code in a new commit
-  (e.g. new CUDA backend path, new AMD-specific feature) — NPU backend
-  isn't affected; just rebase and resolve trivial conflicts.
-- If the target triton is a PATCH version (x.y.z → x.y.z+1 typically
-  doesn't touch backend plugin protocols) — shallow rebase, fast review.
+### P1 — create fork branch, verify fork-pattern sanity check
 
-Use **only** when minor or major version jump introduces backend-protocol
-changes that the NPU backend needs to adapt to.
+Branch naming follows `fork_branch_naming.md` memory: use
+`<target-version>_manual_porting` on the user's fork
+(`personal` remote = `gitcode.com/zhengshencn_hwca/triton-ascend`).
+
+```bash
+git checkout -b v<target>_manual_porting origin/main
+# sanity: confirm origin/main is NOT a community descendant
+git merge-base --is-ancestor v<target-target-tag> origin/main
+echo $?  # must be 1 (NOT ancestor). If 0, stop — this is not a fork upgrade.
+```
+
+### P2 — merge, do not rebase
+
+```bash
+git merge v<target> --no-commit --no-ff
+```
+
+Expect conflicts. For v3.5.0 -> v3.6.0 the count was 12. See
+`references/KB_INDEX.md` § "Conflict surfaces" for the file list and
+per-file recipe. Resolution classes (verified 2026-04-25):
+
+- **Trivial** (`.gitignore`, `__init__.py`, `setup.py`, `README.md`,
+  `Makefile`, `docs/*`): resolve by selection rule in the KB table.
+- **Compiler-level** (`cmake/llvm-hash.txt`, `TritonAttrDefs.td`,
+  `python/src/ir.cc`, `python/src/ir.h`): merge-with-judgment; each has
+  a specific recipe in KB.
+- **Interpreter** (`python/triton/runtime/interpreter.py`): take
+  community outer structure, branch on
+  `hasattr(interpreter_builder, 'execute_with_sub_vec_simulation')`
+  for NPU path. Full snippet in KB.
+
+### P3 — verify text-level merge
+
+```bash
+git commit                                                # clean
+python -m py_compile $(git diff --name-only HEAD~1 HEAD | grep '\.py$')
+python -m py_compile third_party/ascend/backend/*.py
+```
+
+All three must pass. This is **cheap signal, not proof** — see P4.
+
+### P4 — C++ build on A3 (the real verification)
+
+Inside an A3 container with CANN installed:
+
+```bash
+TRITON_CODEGEN_BACKENDS=ascend pip install -e . 2>&1 | tee build.log
+```
+
+Common follow-ups that only surface here:
+
+- **LLVM API drift**: community's new C++ calls a MLIR API that the
+  NPU-pinned LLVM base (`cmake/llvm-hash.txt`) doesn't have. Either
+  port the community change down to the old API, or bump LLVM base +
+  regenerate `third_party/ascend/llvm_patch/*.patch`. The latter is a
+  **separate multi-week task** and is out of this skill's scope.
+- **AscendNPU-IR submodule mismatch**: new triton-ascend may require a
+  newer AscendNPU-IR commit. Check `.gitmodules` + release notes.
+- **CANN runtime compat**: A3 image's CANN version vs. what
+  triton-ascend's lib expects.
+
+### P5 — NPU smoke
+
+```bash
+# tiny @triton.jit vector_add on NPU
+python python/test/unit/ascend/<smoke>.py        # if present
+# else: minimal vector_add(x, y, out) via torch_npu inductor path
+```
+
+### P6 — push and file PR
+
+```bash
+git push personal v<target>_manual_porting
+gc pr create ...    # against Ascend/triton-ascend
+```
+
+## Boundary: what is NOT this skill's job
+
+- Fixing C++/MLIR compile errors after LLVM API drift — AIL team
+  territory.
+- Bumping LLVM base + regenerating the patch file — separate task
+  with its own review process.
+- CANN driver / kernel library compatibility — overlaps torch_npu
+  expert.
+- Performance regressions post-upgrade — separate benchmark task.
 
 ## Interaction with other port-experts
 
-- **Does a triton-ascend rebase force a torch_npu rebuild?** Usually
-  yes if the triton-ascend wheel's C++ ABI (pybind layer) changed.
-  Open a follow-up task against `torch-npu/port-expert` with scope
-  "rebuild torch_npu against new triton-ascend wheel" — that's a C
-  extension rebuild, not an F1-F8 drift, so the torch_npu expert's
-  Mode A (overlay) is the right skill, not Mode B (drift scan).
-- **Does torch_npu upgrade force triton-ascend?** Only when the new
-  torch bumps a triton-version constraint that the pinned
-  triton-ascend wheel doesn't satisfy. Typically: torch ≥ 2.N bumps
-  triton ≥ 3.M, you check if triton-ascend's `version.txt` is ≥ 3.M
-  already; if not, trigger this skill in parallel with the torch_npu
-  upgrade.
-- **vllm-ascend → triton-ascend**: no direct dep path. vllm-ascend's
-  custom ops use triton-ascend only when triton-based fused ops are
-  compiled on NPU; if triton-ascend changes the triton.compile() API,
-  F3 scanner on vllm-ascend catches it (sig change on
-  `triton.compile`). No rebase of vllm-ascend needed.
-- **transformers → triton-ascend**: no path. transformers' NPU
-  integration uses torch_npu's fused-attention op, not triton.
+- **torch_npu upgrade may force a triton-ascend bump**: if new torch
+  bumps `triton>=3.M`, check triton-ascend's `version.txt` and fire
+  this skill in parallel.
+- **vllm-ascend -> triton-ascend**: no direct coupling. vllm-ascend's
+  triton usage goes through torch_npu's inductor path; API drift
+  surfaces as F3 in vllm-ascend's scanner if at all.
+- **transformers -> triton-ascend**: no path.
 
 ## Knowledge query paths
 
-- `memory/a3_server.md` — A3 host access for rebuild + smoke
-- `memory/fork_branch_naming.md` — `<target-version>_auto_porting` convention
-- `docs/torch-npu/PORTING-GUIDE.md` — for how triton-ascend integrates
-  with torch_npu (triton-ascend ships the Ascend triton backend that
-  torch_npu's inductor path targets)
+- `references/KB_INDEX.md` — **read first**. Repo layout, conflict
+  surfaces, per-file resolution recipes, case registry.
+- `memory/a3_server.md` — A3 host access for P4/P5.
+- `memory/fork_branch_naming.md` — branch naming.
+- `memory/version_aware_reviews.md` — when reviewing NPU upstream
+  changes, use the matching release branch, not master.
 
 ## What this skill is NOT
 
-- Not an F1-F8 symbol-drift scanner target. Use `git rebase` mental model.
-- Not a compat-shim target. There's nothing to shim — triton-ascend
-  IS triton + NPU backend, so a conflict is a merge conflict, not
-  a missing symbol.
-- Not a runtime install-issue fixer. A separate memory
-  (`a3_server.md`) notes an install-time wheel-completeness issue
-  with a specific triton-ascend rc wheel that is unrelated to version
-  upgrades. Don't confuse "rebase to new community triton" (this skill)
-  with "reinstall triton-ascend wheel on A3" (operational, not porting).
+- Not an F1-F8 symbol-drift scanner target. Use git-merge mental
+  model.
+- Not a compat-shim target. There is no compat layer — conflicts are
+  resolved in place on the vendored source.
+- Not a runtime install-issue fixer. A separate memory notes a
+  specific triton-ascend rc wheel install issue unrelated to version
+  upgrade.
+
+## Case registry
+
+See `references/KB_INDEX.md` § "Case registry". As of 2026-04-25:
+v3.5.0 -> v3.6.0 text-merge DONE on `v3.6.0_manual_porting` on fork;
+C++ build + A3 smoke PENDING.
