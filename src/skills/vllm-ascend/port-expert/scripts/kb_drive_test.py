@@ -79,14 +79,11 @@ FAMILY_RULES = [
 
 # Families documented in the KB but NOT yet scanner-detected. Surfaced
 # in the final report so the user knows they still need manual inspection.
-# F5 gets a weak detector above (name + body hints) but real F5 often
-# manifests as per-method F3 (e.g. .copy_to_gpu added num_reqs arg) — that
-# shape is caught by the F3 detector, just classified under F3.
 UNDETECTED_FAMILIES = [
     ("F4", "return-type migration (scalar → NamedTuple/dict)"),
     ("F6", "kv_cache tensor-vs-list contract"),
-    ("F7", "new required attribute on NPU subclass"),
-    ("F8", "new required method on NPU subclass"),
+    ("F7", "new required attribute on NPU subclass (naive detector too noisy — needs AST class-scope tracking)"),
+    ("F8", "new required method on NPU subclass (naive detector too noisy — needs AST class-scope tracking)"),
 ]
 
 
@@ -232,6 +229,98 @@ def grep_ascend_for_symbol(vllm_ascend_path: Path, symbol: str,
                 break
 
     return [s for s in raw_sites if s[0] in files_with_vllm_import]
+
+
+def get_ascend_subclassed_parents(vllm_ascend_path: Path) -> set[str]:
+    """Extract the names of classes that vllm-ascend subclasses.
+
+    Used by F7/F8 detection: if a new attr/method is added to one of
+    these base classes in a vllm release, vllm-ascend's subclass likely
+    needs to override it too.
+    """
+    parents: set[str] = set()
+    out = subprocess.run(
+        ["grep", "-rhE", r"^class [A-Za-z_]+\(", "--include=*.py",
+         str(vllm_ascend_path / "vllm_ascend")],
+        capture_output=True, text=True, check=False,
+    )
+    for line in out.stdout.splitlines():
+        m = re.match(r"class [A-Za-z_]+\(([^)]+)\)", line)
+        if not m:
+            continue
+        for p in m.group(1).split(","):
+            p = p.strip()
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", p):
+                # Skip python builtins / known non-vllm bases
+                if p in ("object", "ABC", "Enum", "Exception", "str", "int", "list", "dict", "tuple"):
+                    continue
+                # Skip NPU-side names (own project)
+                if p.startswith(("Ascend", "Npu", "NPU")):
+                    continue
+                parents.add(p)
+    return parents
+
+
+def detect_new_attrs_or_methods(vllm_path: Path, ref: str,
+                                 interesting_parents: set[str]) -> list[Drift]:
+    """F7/F8 detector. Flag when a vllm diff adds an attribute or method
+    to a class that vllm-ascend subclasses.
+
+    Heuristic (conservative):
+    - parse the diff for lines of shape `+class <ParentName>:` (the
+      diff puts a hunk header before attribute additions, but we look
+      at the +class or the nearest enclosing class header).
+    - within the file, look at `+<attr> =` or `+    def <name>(` lines
+      that are NOT inside a minus-prefixed block.
+    We don't attempt full Python AST — cross-diff class-scope tracking
+    is complex. Instead, we emit one suspect per (file, new-public-name)
+    pair when the file contains any subclassed parent.
+    """
+    drifts: list[Drift] = []
+    files_changed = run_git(vllm_path, "diff", "--name-only", f"{ref}^..{ref}")
+    for f in files_changed.strip().splitlines():
+        if not f.endswith(".py"):
+            continue
+        if f.startswith("tests/") or "/tests/" in f or "/test_" in f or f.startswith("test_"):
+            continue
+        diff = run_git(vllm_path, "diff", f"{ref}^..{ref}", "--", f)
+        # Fast reject: does the file define any of the interesting parents?
+        classes_in_file = set(re.findall(r"^[\s+]?class (\w+)", diff, re.MULTILINE))
+        touched_parents = classes_in_file & interesting_parents
+        if not touched_parents:
+            continue
+
+        # Find `+<attr>: Type = value` or `+<attr> = value` at class level,
+        # and `+    def <name>(` method additions (indented 4 spaces).
+        for m in re.finditer(
+            r"^\+    (?!def |#|if |for |while |return |pass|\.\.\.)([A-Za-z_][A-Za-z0-9_]*)\s*[:=]",
+            diff, re.MULTILINE,
+        ):
+            attr = m.group(1)
+            if attr.startswith("_") or attr in ("self", "cls", "super"):
+                continue
+            drifts.append(Drift(
+                kind="new_attr_required",
+                vllm_path=f,
+                symbol=attr,
+                detail=f"F7 suspect: new attr '{attr}' added in parent class touched by vllm-ascend ({', '.join(sorted(touched_parents))})",
+            ))
+        for m in re.finditer(
+            r"^\+    def (\w+)\s*\(",
+            diff, re.MULTILINE,
+        ):
+            method = m.group(1)
+            if method.startswith("_") and not method.startswith("__"):
+                continue
+            if method.startswith("__") and method.endswith("__"):
+                continue  # dunder methods — usually not required overrides
+            drifts.append(Drift(
+                kind="new_method_required",
+                vllm_path=f,
+                symbol=method,
+                detail=f"F8 suspect: new method '{method}()' added in parent class touched by vllm-ascend ({', '.join(sorted(touched_parents))})",
+            ))
+    return drifts
 
 
 def detect_buffer_api_migration(vllm_path: Path, ref: str) -> list[Drift]:
