@@ -91,7 +91,7 @@ try old path first (keep old torch working), fall back to new.
 
 | # | Family | torch range | Symbol | Old path | New path | Fix status |
 |---|---|---|---|---|---|---|
-| 1 | F2-path-move | 2.11 → 2.12-rc3 | `FloorDiv` | `torch._inductor.utils` | `torch.utils._sympy.functions` | **DONE** — local commit `2d81f06c8`, 2 files + compat shim |
+| 1 | F2-path-move | 2.11 → 2.12-rc3 | `FloorDiv` | `torch._inductor.utils` | `torch.utils._sympy.functions` | **DONE** — commit `2d81f06c8` on `gitcode.com/zhengshencn_hwca/pytorch` branch `torch-2.12_auto_porting` |
 | 2 | F2-path-move | 2.11 → 2.12-rc3 | `ModularIndexing` | `torch._inductor.utils` | `torch.utils._sympy.functions` | **DONE** (same commit, 3 files) |
 | 3 | F2-path-move | 2.11 → 2.12-rc3 | `FloorDiv` (also imported from `_inductor.ir`) | `torch._inductor.ir` | `torch.utils._sympy.functions` | TODO |
 | 4 | F2-path-move | 2.11 → 2.12-rc3 | `ModularIndexing` (also from `_inductor.ir`) | `torch._inductor.ir` | `torch.utils._sympy.functions` | TODO |
