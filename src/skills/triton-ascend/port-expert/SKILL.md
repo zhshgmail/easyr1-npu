@@ -29,7 +29,7 @@ context: inline
 ```
 P0  identify target triton community tag
 P1  on fork (zhengshencn_hwca/triton-ascend), create branch
-    `<target>_auto_porting` from the current main
+    `<target-version>_auto_porting` from the current main
 P2  git fetch upstream community triton; git rebase --onto <community-tag>
     <current-base> <target-branch>
 P3  resolve conflicts; re-apply NPU-specific patches that didn't merge
@@ -85,7 +85,7 @@ changes that the NPU backend needs to adapt to.
 ## Knowledge query paths
 
 - `memory/a3_server.md` — A3 host access for rebuild + smoke
-- `memory/fork_branch_naming.md` — `<target>_auto_porting` convention
+- `memory/fork_branch_naming.md` — `<target-version>_auto_porting` convention
 - `docs/torch-npu/PORTING-GUIDE.md` — for how triton-ascend integrates
   with torch_npu (triton-ascend ships the Ascend triton backend that
   torch_npu's inductor path targets)

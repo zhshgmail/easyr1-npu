@@ -63,7 +63,7 @@ each Ascend-fork mirrors (project-wide convention).
 2. Identify baseline commit (see "Finding the current baseline tag"
    above). Example: baseline = `v3.5.0` (community tag), target = `v3.6.0`.
 3. Bump submodule if needed: `git submodule update --init --remote AscendNPU-IR`.
-4. `git checkout -b <target>_auto_porting origin/main`.
+4. `git checkout -b <target-version>_auto_porting origin/main`.
 5. `git rebase --onto <target-community-tag> <baseline-community-tag>`.
 6. Conflict policy (per surface):
    - `python/triton/**` pure-core: **take-upstream** (community wins).
