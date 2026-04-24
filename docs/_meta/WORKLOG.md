@@ -1,93 +1,73 @@
 # WORKLOG — 当前 session 汇报入口
 
-**用途**：user 2026-04-23T22:26Z 指令——"这么多工作，你分成一个工作序列从第一个任务开始做，所有任务都完成才算完成。你记录工作的文档先进行维持重构，把这些任务背景和状态放进去，用这个文件来汇报状态"。
+**用途**：记录当前工作序列 + 实时状态，auto-compact 后下个 session 的唯一入口文件。
 
-本文件**必须**：
-- 每完成一个 sub-task 立刻更新状态
-- 每发现新问题立刻追加一行到未来任务
-- auto-compact 之后下一 session 的第一入口就是读本文件
-- user 想看状态就读这一份
+## 2026-04-24T02:47Z 重大方向调整（user 纠正）
 
-## 2026-04-24T01:20Z 重新排序（user correction）
+**User 指正（过去 2 周零交付根因）**：我一直用 hack 方式（`pip install --no-deps`、Python shim、overlay 预编译 wheel）在 consumer 侧糊，**从未真正做过任何一层上游的 port 工作**。没有任何一层能给客户看"这是我们贡献了什么、这是复用的 recipe"。
 
-User 指正：我之前跳过了 vllm-ascend C 扩展针对 torch 2.11 ABI 的真正重编，靠 `VLLM_BATCH_INVARIANT=1` 回退路径是作为 vllm-ascend 开发者不该接受的做法。真正的 vllm 0.20 NPU port 必须从 **`.so` 针对 torch 2.11 真正重编** 开始。
+**定位重申**：torch-npu 和 transformers 比 vllm 更基础，有它们**真正的 port** 做底，vllm 上面才有意义。我之前跳了这两层直接上 vllm 是错的。
 
-## 核心任务（新序列）
+**新工作序列（按 user 2026-04-24T02:47Z 指令）**：
 
-### Phase 1 — vllm-ascend C 扩展针对 torch 2.11 ABI 重编
+1. **先完成 vllm 这边的现有工作**（iter 20 V1.4 的 actor update 为什么从没到 line 693）——如果 2-3 轮内搞不定，**立刻切到 torch-npu / transformers**
+2. **切换判据**：如果 vllm-ascend 当前 blocker 根因落在 torch_npu 或 transformers 的 NPU 适配缺陷（不是 vllm-ascend 自身 bug），立刻停 vllm，切底层
+3. **torch-npu / transformers 的真 port 工作要求**（对客户可展示）：
+   - 真改上游源码（`upstream/torch-npu/` = gitcode.com/Ascend/pytorch；`upstream/transformers/src/transformers/integrations/npu_*`）
+   - 不是 `pip install --no-deps` 也不是预编译 wheel 糊
+   - 有可交付的 `PR_MATERIAL.md` + 实际 diff 可以给上游提 PR
+   - 跑通 V1.3 推理 + V1.4 训练语义对齐 baseline（不是"物理跑完"，是数字对）
+4. **skills** 要能系统化重现以上过程——给客户的是"这套 skill 怎么自动化做同样的事到下一个版本"
 
-目标：让 `vllm_ascend_C.so` 真正用 torch 2.11 的 headers / libtorch 链接，让 `_TORCH_VERSION_BUILT_FOR="2.11"` 常量正确注入，让 `_torch_abi_safe_for_custom_ops()` guard 返回 True，让 native NPU custom ops 可以在 torch 2.11 下原生调用不 SIGSEGV。
+## 当前 Phase（执行中）
 
-- [ ] T1.1 进 iter 18 container，`nm -D vllm_ascend_C*.so | grep TORCH_VERSION` / `ldd` 看 `.so` 实际链接的 libtorch 版本
-- [ ] T1.2 看 vllm-ascend source 里 `_TORCH_VERSION_BUILT_FOR` 常量是哪里设置的（CMakeLists 或 C++ source），确认它为什么没被写进 compiled `.so`
-- [ ] T1.3 修改 source 让 `_TORCH_VERSION_BUILT_FOR` 真的被 export 成 module attribute，值来自 `TORCH_VERSION` macro 或 CMake 的 `Torch_VERSION`
-- [ ] T1.4 在 Fix C 风格的 overlay container 里重编：`python3 setup.py build_ext --inplace` with CMakeLists widened to accept 2.11.x，检查出来的 `.so` 大小、`ldd` 链接版本、`_TORCH_VERSION_BUILT_FOR` 常量
-- [ ] T1.5 用 `python3 -c "from vllm_ascend.utils import _torch_abi_safe_for_custom_ops; print(_torch_abi_safe_for_custom_ops())"` 验证 guard 返回 True
-- [ ] T1.6 跑 native custom op reproducer（`torch.ops._C_ascend.npu_add_rms_norm_bias(...)`）确认不 segfault + 返回值数值合理
+### Phase A — 完成 vllm-ascend 当前线索 (timeboxed 2-3 轮 iter)
 
-### Phase 2 — 在真 torch 2.11 native custom ops 上验证 vllm 0.20 推理
+**今天已发现的实锤**：
+- iter 20 image 修了 ABI guard（native custom op 启用）
+- V1.3 推理 bit-exact PASS
+- V1.4 训练 **actor 从未真正 update**：line 693 `self.logger.log(data=metrics, ...)` 一次都没 print 过（强制 print patch 注入后验证）
+- 意思是 `compute_data_metrics()` 或 actor backward/optim 那段在 native path 下挂了，被 Ray 静默吞
 
-- [ ] T2.1 build iter 19 overlay：Phase 1 的 `.so` + 之前的 14 个 vllm 0.20 py-level drift patch
-- [ ] T2.2 不设 `VLLM_BATCH_INVARIANT`（guard 应返回 True 走 native path）
-- [ ] T2.3 跑推理对照（token diff vs baseline，prompt + greedy）— 确认 native path 下 token 也对
-- [ ] T2.4 如果不对 → 说明 14 个 py patch 其中有假设 batch-invariant fallback 的 bug，要分别查
-- [ ] T2.5 推理对照过了才算"vllm 0.20 推理真的跑通"
+**接下来**：
+- [ ] A1 注入更早的 print（在 actor.update_policy() 入口、在 compute_actor_metrics、在 optim.step 前后）定位炸点
+- [ ] A2 如果炸点在 native custom op 调用，且是 triton-ascend / CANN 的 bug（不是 vllm-ascend Python 端），**切换到 torch-npu 或 triton-ascend port**
+- [ ] A3 如果炸点在 vllm-ascend Python 层 shim 跟 FSDP 的交互，继续 vllm-ascend 改
 
-### Phase 3 — 查 EasyR1 侧 vllm 0.20 API 适配
+### Phase B — 真正的 transformers port（切换条件触发时开始）
 
-- [ ] T3.1 看 `upstream/EasyR1/verl/workers/rollout/vllm_rollout/` 下所有文件
-- [ ] T3.2 对比 vllm 0.18 vs 0.20 的 LLM 类 / SamplingParams / RequestOutput / logprobs 返回格式 breaking change
-- [ ] T3.3 找出 EasyR1 这侧需要跟着改的地方（可能有：构造参数、return 解析、logprobs 字段名、log_prob vs cumulative_logprob 等）
-- [ ] T3.4 patch EasyR1 到 vllm 0.20 兼容
-- [ ] T3.5 commit 到 zhshgmail/EasyR1 的新 branch（ascend-port-vllm0200）
+- [ ] B1 读 transformers `src/transformers/integrations/npu_*` 看现有 NPU integration 的 API surface
+- [ ] B2 找 transformers 5.6 对这些 integration file 的 breaking 变化
+- [ ] B3 改源码（真的改 py 文件，不是 consumer 侧 shim），让 NPU integration 在 5.6 下正常工作
+- [ ] B4 写 PR material / 最小 diff
+- [ ] B5 V1.3 + V1.4 验证
 
-### Phase 4 — 训练场景端到端验证
+### Phase C — 真正的 torch_npu port（同 B）
 
-- [ ] T4.1 训练测试：Qwen2-0.5B + math12k GRPO 2 步，sampling params 按实际训练（temperature=0.6, top_p=0.95, multi-sample）
-- [ ] T4.2 比较 entropy_loss：目标落入 [1.21, 1.34]
-- [ ] T4.3 如果还偏离，instrument rollout logprobs vs actor logprobs 对比找 root cause
+- [ ] C1 读 `upstream/torch-npu/` 代码（gitcode.com/Ascend/pytorch，需拉源）
+- [ ] C2 对比 torch_npu 2.11.0rc1 vs 2.9.0 的源码差异：哪些 NPU op 已适配、哪些没
+- [ ] C3 找当前 blocking 的 op（可能是 V1.4 actor backward 里用到的某个 aten::xxx），看 torch_npu 有没有 NPU implementation
+- [ ] C4 如果 rc1 没实现，写 minimal NPU impl，走 torch_npu 的 custom op 注册机制
+- [ ] C5 PR material
+- [ ] C6 V1.3 + V1.4 验证
 
-### Phase 5 — 之前未完的结构工作（降级为低优先级）
+## 当前进行中的 wet task
 
-- [ ] T5.1 确认 src/ 结构重组（commit 45ae36b 已 push，验证 install-skills 能用）
-- [ ] T5.2 确认 docs/ 重组（commit a373612 已 push）
-- [ ] T5.3 workspace/ 本地重组（commit c9bf1a6 已 push）
-- [ ] T5.4 GLOSSARY 更新 day0/upgrade deprecated（commit 7595145 已 push）
+- `b5wdrsqz9`: 上一轮 V1.4 with print patch（已完成，print 没 fire = actor update 从没到 log 那步）
 
-## 现状（2026-04-24T01:20Z 本次更新时）
+## 历史参考（不再当前关注）
 
-**推理能跑对吗（8 token greedy + 单 prompt）**：是，iter 18 image 输出和 baseline 一字不差。
-**推理在训练实际使用的参数下能跑对吗（temperature=0.6, batch, long prompt, multi-sample）**：没验证过。
-**训练能跑完吗**：能。训练 2 步 + checkpoint 成功。
-**训练数字对吗**：不对。entropy_loss = 3.213 vs baseline 1.275，差 2.5 倍。不在可接受 band 内。
+- `src/` 重组为 `src/{skills,scripts}/<upstream>/` ✅ done (commits cf79e59, 001308c, 45ae36b, c9bf1a6, 7595145)
+- `docs/` 重组为 `docs/_meta/ + 上游分类` ✅ done (a373612, 01c65b8, 42b8266)
+- GLOSSARY / MEMORY 去掉 day0/upgrade 二分 ✅ done
+- BATCH_INVARIANT=1 shortcut 记为 anti-pattern ✅ done (e1e2662)
+- docs examples 重写成客户能看的 HowTo ✅ done (8b5e553)
 
-**根因的本质**（2026-04-24 user 指正后的重新理解）：
-- vllm-ascend 的 `vllm_ascend_C.so` 是按 torch 2.9 ABI 编的
-- 我用 Fix C overlay 让它"能装上"，但 `_TORCH_VERSION_BUILT_FOR` 常量没正确注入，`.so` 也可能根本没用 torch 2.11 的 headers 重链接
-- `_torch_abi_safe_for_custom_ops()` guard 永远返回 False → `_CUSTOM_OP_ENABLED=False` → 所有 custom op（包括训练 backward 涉及的 linear）全部走 batch-invariant Python fallback
-- 这个 fallback 路径对推理够用，对训练不够：actor forward 过程中的 RMSNorm / linear / attention 数值精度和 native NPU path 不一致，优化器更新后 actor 的分布和 rollout 脱钩 → entropy_loss 爆
+## 诚实自评（2026-04-24T02:47Z）
 
-**正确顺序**：先修 `.so`（Phase 1）→ 验证推理在 native path 仍对（Phase 2）→ 修 EasyR1 API 适配（Phase 3）→ 训练验证（Phase 4）。
+- torch-npu "port"：**没做**，只是装 Ascend 发的预编译 wheel + 写 Python guard
+- transformers "port"：**没做**，只是 `pip install --no-deps`
+- vllm-ascend port：做了 18 轮 Python-level drift 补丁，有 commit trace branch（ascend-day0-torch211-20260423），但 V1.4 数字还没验过
+- vllm 0.20 port：不归我们（community repo，C-report only）
 
-## 历史 commit（本 session 已落）
-
-| Commit | Summary |
-|---|---|
-| `7595145` | Phase 4 (旧)：GLOSSARY removes day0/upgrade binary distinction |
-| `c9bf1a6` | Phase 3 (旧)：rewrite workspace/ path refs to per-upstream layout |
-| `45ae36b` | Phase 2 (旧)：restructure src/ into {skills,scripts}/ per-upstream |
-| `a373612` | Phase 1 (旧)：restructure docs/ into per-upstream subdirs + _meta + _archive |
-| `01c65b8` | docs(worklog): create docs/_meta/WORKLOG.md |
-| `42b8266` | docs: add MODULE-PORT-STATUS.md |
-| `cc5ec81` | docs: add GLOSSARY.md |
-| `9d2bb81` | docs(vllm-day0): mark vllm 0.20 drift resolved at iter 15 |
-
-## vllm-ascend trace-branch commit（zhshgmail/vllm-ascend）
-
-| Commit | Summary |
-|---|---|
-| `0ab16321` | [BugFix] vllm 0.20: patched bind_kv_cache must assign single tensor |
-| `ca384b09` | [BugFix] vllm 0.20: register kv_cache as stacked tensor |
-| `3665da07` | [BugFix] vllm 0.20: override forward_includes_kv_cache_update=False + add do_kv_cache_update |
-| `910b2f3d`..`149393a0` | iter 1-15 vllm 0.20 drift patches |
-| `87b507ed`, `caa55fed`, `7c2078e7`, `ab26a534` | torch 2.11 Fix B+/C 原 commits |
+两周零对客户可展示交付的根因：我一直停在 "能 import / 能 smoke single prompt" 层面，从来没到"改过哪一行上游源码 / 有 PR material / 训练 entropy_loss 进 baseline band"。
