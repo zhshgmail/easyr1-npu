@@ -25,24 +25,99 @@ skill is specifically for **patching vllm-ascend itself** on a
 Huawei-owned upstream; it's invoked AFTER torch-day0 / transformers-day0
 has produced a usable base image.
 
+## Two modes — decide at P0
+
+**Mode Single-SHA** (original): user brings a specific failure + target
+SHA. Reproduce failure, classify family, patch. Steps P0..P6 below
+describe this mode.
+
+**Mode Sweep** (added 2026-04-24 after cold-drive caught the gap):
+user wants "adapt vllm-ascend to vllm main" with no specific failure
+in hand. Iterate over the commit range from the latest-adapted vllm
+version (say `v0.20.0`) to the target (say `origin/main`), running
+`kb_drive_test.py` on each commit. Collect the union of drifts
+impacting vllm-ascend. Each discovered drift then flows into P3
+(design fix) onward. See "Sweep driver" below.
+
 ## Workflow
 
 ```
-P0  parse args (target delta, base image from previous Day-0 session)
+P0  parse args (target delta, base image from previous Day-0 session);
+    pick Mode Single-SHA or Mode Sweep
+P0.5 (Mode Sweep only) iterate kb_drive_test.py over commit range,
+     aggregate impactful drifts, de-duplicate, feed into P1
 P1  analysis: reproduce failure minimally, classify root cause
     (API-level drift vs C++ ABI drift vs schema mismatch vs other);
-    identify which call sites in vllm-ascend are affected
+    identify which call sites in vllm-ascend are affected. For F1/F2
+    drifts, kb_drive_test already did most of this — its `summary.json`
+    is the P1 output.
 P2  probe upstream vllm-ascend main: has the fix already landed?
     If yes, switch target or reproduce on an explicit commit
 P3  design fix at minimum-invasive level: python-side workaround if
-    possible, env-var guard, source patch if needed. Prefer strategies
-    that "route through existing safe paths" (like VLLM_BATCH_INVARIANT)
-    over introducing new APIs
-P4  apply patch on `ascend-day0-<delta>-<SESSION>` branch of
-    upstream/vllm-ascend/; smoke test it to PASS
+    possible, env-var guard, source patch if needed. For F1/F2/F2-path-move
+    drifts, write a compat shim at `vllm_ascend/compat/<symbol>.py`
+    per the KB template; for C++ ABI or other categories, read
+    `patterns/domains/vllm-api-drift.md §F{N}` for the relevant family's
+    fix shape.
+P4  apply patch on `<target-version>_auto_porting` branch of
+    upstream/vllm-ascend/ (e.g. `vllm-main_auto_porting`); smoke test
+    via `/drift-port-validate` (F1/F2) + V1.3 rollout (runtime gate)
 P5  Phase 2.5 deploy artifacts per shared pattern
 P6  handoff: patched branch + overlay image + ONBOARDING + PR material
 ```
+
+## Sweep driver
+
+The cold-drive LLM should use this protocol when no specific failure
+is given:
+
+1. Identify the commit range: `git log --format="%h" <last-adapted-ref>..<target-ref>`
+   in the community vllm repo. Example: `v0.20.0..origin/main` yields
+   ~150 commits; scan is under 5 minutes.
+2. For each SHA:
+   ```bash
+   python3 scripts/kb_drive_test.py \
+     --vllm-ref $SHA \
+     --vllm-path /path/to/vllm \
+     --vllm-ascend-path /path/to/vllm-ascend \
+     --kb-dir references \
+     --out /tmp/sweep/$SHA
+   ```
+   Discard scans whose `summary.json` has `impact_ascend == 0`.
+3. Collect the impactful scans; dedupe by `(kind, symbol)` so a single
+   symbol rediscovered across commits isn't counted twice.
+4. Cross-check each finding against `references/KB_INDEX.md §"Concrete
+   case registry"` — if the symbol already has a row, the fix is
+   already landed (or at least codified); skip.
+5. Novel findings go into P3. Each novel finding is one commit on the
+   fork branch.
+
+A ready-made sweep wrapper is a TODO; today you run the loop in bash.
+
+## Known detector limitations (2026-04-24)
+
+`scripts/kb_drive_test.py` currently detects:
+- **F1** (removed class / removed top-level function / deleted file)
+- **F2-rename** limited (single-class delete+add same file)
+- **F3** limited (signature diff)
+
+It does NOT yet detect:
+- **F4** return-type migration
+- **F5** buffer-API migration (CpuGpuBuffer ↔ plain tensor)
+- **F6** kv_cache tensor-vs-list contract
+- **F7** new required attribute on NPU subclass
+- **F8** new required method on NPU subclass
+
+Implication: a clean scan result (`matched: N, unmatched: 0`) does NOT
+guarantee the port is complete. F4–F8 families must still be checked
+manually by reading the release notes / diff of vllm base classes that
+vllm-ascend subclasses. Extending the scanner to F4–F8 is TODO.
+
+Also, the scanner's F1 output reports the OLD path (removal) but not
+the NEW path (where the symbol went if it moved). The LLM writing the
+fix still needs to grep for the new home. Future improvement: make
+`kb_drive_test.py` optionally search for the new home and emit it in
+the proposal.
 
 ## Stage 0 constraints
 
