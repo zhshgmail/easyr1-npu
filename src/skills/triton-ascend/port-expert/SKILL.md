@@ -60,6 +60,28 @@ P6  push to fork branch; file PR against Ascend/triton-ascend master
 Use **only** when minor or major version jump introduces backend-protocol
 changes that the NPU backend needs to adapt to.
 
+## Interaction with other port-experts
+
+- **Does a triton-ascend rebase force a torch_npu rebuild?** Usually
+  yes if the triton-ascend wheel's C++ ABI (pybind layer) changed.
+  Open a follow-up task against `torch-npu/port-expert` with scope
+  "rebuild torch_npu against new triton-ascend wheel" — that's a C
+  extension rebuild, not an F1-F8 drift, so the torch_npu expert's
+  Mode A (overlay) is the right skill, not Mode B (drift scan).
+- **Does torch_npu upgrade force triton-ascend?** Only when the new
+  torch bumps a triton-version constraint that the pinned
+  triton-ascend wheel doesn't satisfy. Typically: torch ≥ 2.N bumps
+  triton ≥ 3.M, you check if triton-ascend's `version.txt` is ≥ 3.M
+  already; if not, trigger this skill in parallel with the torch_npu
+  upgrade.
+- **vllm-ascend → triton-ascend**: no direct dep path. vllm-ascend's
+  custom ops use triton-ascend only when triton-based fused ops are
+  compiled on NPU; if triton-ascend changes the triton.compile() API,
+  F3 scanner on vllm-ascend catches it (sig change on
+  `triton.compile`). No rebase of vllm-ascend needed.
+- **transformers → triton-ascend**: no path. transformers' NPU
+  integration uses torch_npu's fused-attention op, not triton.
+
 ## Knowledge query paths
 
 - `memory/a3_server.md` — A3 host access for rebuild + smoke
@@ -74,10 +96,8 @@ changes that the NPU backend needs to adapt to.
 - Not a compat-shim target. There's nothing to shim — triton-ascend
   IS triton + NPU backend, so a conflict is a merge conflict, not
   a missing symbol.
-- Not currently a hot-path. 2026-04-24 state: user's memory
-  `a3_server.md` notes "triton-ascend 3.2.0 is partially installed —
-  triton/__init__.py and sibling files are missing. Symptom:
-  `import torch_npu` fails with `ImportError: cannot import name
-  'Config' from 'triton'`. Fix: `pip install --force-reinstall
-  --no-deps triton-ascend==3.2.0`". That's install-time packaging,
-  not version upgrade.
+- Not a runtime install-issue fixer. A separate memory
+  (`a3_server.md`) notes an install-time wheel-completeness issue
+  with a specific triton-ascend rc wheel that is unrelated to version
+  upgrades. Don't confuse "rebase to new community triton" (this skill)
+  with "reinstall triton-ascend wheel on A3" (operational, not porting).
