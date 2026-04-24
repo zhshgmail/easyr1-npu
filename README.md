@@ -27,6 +27,7 @@
 | 2 | **复现 / 自动化 EasyR1 移植** | 从 0 跑移植流程（用 8 个 skill + `fetch-upstream.sh`） | [`docs/_meta/SKILLS-GUIDE.md`](docs/_meta/SKILLS-GUIDE.md) |
 | 3 | **用带新依赖（transformers 5 / CANN 8.5.1）的 EasyR1** | 看 drill 演练当前状态 + 自行验证 | [`docs/transformers/UPGRADE-DRILL-STATUS.md`](docs/transformers/UPGRADE-DRILL-STATUS.md) |
 | 4 | **复现"把 EasyR1 + 新依赖一起移植到 NPU"的自动流程** | 走 `image-upgrade-drill` skill 7 步流程 | [`docs/_meta/SKILLS-GUIDE.md`](docs/_meta/SKILLS-GUIDE.md) §8 + [`docs/transformers/UPGRADE-DRILL-STATUS.md`](docs/transformers/UPGRADE-DRILL-STATUS.md) |
+| 5 | **把 vllm-ascend 适配到一个新版本的 vllm**（扫描 drift + 按族写 shim + 验证） | 用 `/vllm-ascend-day0` skill + kb_drive_test 扫描器 + `/drift-port-validate` 验证 | [`docs/vllm-ascend/PORTING-GUIDE.md`](docs/vllm-ascend/PORTING-GUIDE.md) |
 
 ---
 
