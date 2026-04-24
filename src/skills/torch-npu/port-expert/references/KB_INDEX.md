@@ -141,6 +141,22 @@ Affected torch_npu files for rows 1-2:
 
 **Verification status (2026-04-24)**: rows 1-2 shim passed `/drift-port-validate` equivalent — 6/6 checks (3 OLD torch + 3 NEW torch paths) on local CPU stub-environment.
 
+## F7/F8 discovered by check_f7_f8.py sweep (2026-04-24 late)
+
+Running `scripts/check_f7_f8.py --baseline v2.11.0 --target v2.12.0-rc3`
+found 6 new attrs/methods on torch parent classes. Verification:
+
+| Class | New member | NPU subclass imports upstream? | Action needed? |
+|---|---|---|---|
+| `AsyncCompile` | `cutlass`, `metal`, `xpu` methods | YES (`CustomAsyncCompile` in codecache.py) | UNLIKELY — NPU has own compile path, won't use these methods. Verify on first 2.12 run. |
+| `AutocastModeVariable` | `python_type` method | YES (`NPUAutocastModeVariable` in utils/_dynamo.py) | UNLIKELY — base returns a type, NPU inherits safely. |
+| `GridExpr` | `from_meta_lazy`, `generate_lazy` | YES (`GridNpu`, `GridExprNpu` in npu_triton_heuristics.py) | POSSIBLE — check NPU triton dispatch reads `lazy` variants. |
+| `OutputAliasInfo` | `requires_grad_for_backward: bool` (no default) | **NO** — torch_npu defines its own local `OutputAliasInfo` (npu/_graph_tree.py:706). Scanner name-collision; **no fix needed**. | no-op (false positive) |
+| `PythonWrapperCodegen` | 6 codegen methods | YES (`NPUWrapperCodeGen` in _inductor/codegen/wrapper.py) | POSSIBLE — new `codegen_cuda_stream_*` and `codegen_deferred_*` methods; NPU wrapper may need no-op overrides. Verify. |
+| `StreamContextVariable` | `python_type` | YES (`NpuStreamContextVariable` in utils/_dynamo.py) | UNLIKELY — similar to AutocastModeVariable. |
+
+**Conclusion**: 1 definite false positive (OutputAliasInfo local shadow), 2 likely-safe inheritance (AutocastModeVariable, StreamContextVariable), 3 require verification on torch 2.12 real run (AsyncCompile, GridExpr, PythonWrapperCodegen). None blocks today's torch 2.12 compat shim work. Register as pending-verify.
+
 ### High-risk surfaces to scan first on every torch upgrade
 
 Ranked by torch_npu import-site count (2026-04-24 manual count):
