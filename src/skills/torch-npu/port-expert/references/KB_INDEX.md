@@ -93,20 +93,23 @@ try old path first (keep old torch working), fall back to new.
 |---|---|---|---|---|---|---|
 | 1 | F2-path-move | 2.11 → 2.12-rc3 | `FloorDiv` | `torch._inductor.utils` | `torch.utils._sympy.functions` | **DONE** — commit `2d81f06c8` on `gitcode.com/zhengshencn_hwca/pytorch` branch `torch-2.12_auto_porting` |
 | 2 | F2-path-move | 2.11 → 2.12-rc3 | `ModularIndexing` | `torch._inductor.utils` | `torch.utils._sympy.functions` | **DONE** (same commit, 3 files) |
-| 3 | F2-path-move | 2.11 → 2.12-rc3 | `FloorDiv` (also imported from `_inductor.ir`) | `torch._inductor.ir` | `torch.utils._sympy.functions` | TODO |
-| 4 | F2-path-move | 2.11 → 2.12-rc3 | `ModularIndexing` (also from `_inductor.ir`) | `torch._inductor.ir` | `torch.utils._sympy.functions` | TODO |
-| 5 | F2-path-move | 2.11 → 2.12-rc3 | `LoopBody` | `torch._inductor.ir` | `torch._inductor.loop_body` | TODO |
-| 6 | F2-path-move | 2.11 → 2.12-rc3 | `Reduction` | `torch._inductor.ir` | `torch._decomp.decompositions` | TODO |
-| 7 | F2-path-move | 2.11 → 2.12-rc3 | `ReductionHint` | `torch._inductor.ir` | `torch._inductor.runtime.hints` | TODO |
-| 8 | F2-path-move | 2.11 → 2.12-rc3 | `IndentedBuffer` | `torch._inductor.codegen.common` | `torch._inductor.utils` | TODO |
-| 9 | F2-path-move | 2.11 → 2.12-rc3 | `DisableReduction` | `torch._inductor.codegen.simd` | `torch._inductor.codegen.simd_kernel_features` | TODO |
-| 10 | F2-path-move | 2.11 → 2.12-rc3 | `EnableReduction` | `torch._inductor.codegen.simd` | `torch._inductor.codegen.simd_kernel_features` | TODO |
-| 11 | F2-path-move | 2.11 → 2.12-rc3 | `SIMDKernelFeatures` | `torch._inductor.codegen.simd` | `torch._inductor.codegen.simd_kernel_features` | TODO |
-| 12 | F2-path-move | 2.11 → 2.12-rc3 | `UnsupportedFakeTensorException` | `torch._dynamo.utils` | `torch._subclasses.fake_tensor` | TODO |
-| 13 | F2-path-move | 2.11 → 2.12-rc3 | `free_symbol_is_type` | `torch._inductor.codegen.common` | `torch.utils._sympy.symbol` | TODO |
+| 3 | F2-path-move | 2.11 → 2.12-rc3 | `FloorDiv` (also imported from `_inductor.ir`) | `torch._inductor.ir` | `torch.utils._sympy.functions` | **DONE** — commit `1ef8d845a` |
+| 4 | F2-path-move | 2.11 → 2.12-rc3 | `ModularIndexing` (also from `_inductor.ir`) | `torch._inductor.ir` | `torch.utils._sympy.functions` | **DONE** — commit `1ef8d845a` |
+| 5 | F2-path-move | 2.11 → 2.12-rc3 | `LoopBody` | `torch._inductor.ir` | `torch._inductor.loop_body` | **DONE** — commit `1ef8d845a` |
+| 6 | F2-path-move | 2.11 → 2.12-rc3 | `Reduction` | `torch._inductor.ir` | `torch._decomp.decompositions` | **DONE** — commit `1ef8d845a` |
+| 7 | F2-path-move | 2.11 → 2.12-rc3 | `ReductionHint` | `torch._inductor.ir` | `torch._inductor.runtime.hints` | **DONE** — commit `1ef8d845a` |
+| 8 | F2-path-move | 2.11 → 2.12-rc3 | `IndentedBuffer` | `torch._inductor.codegen.common` | `torch._inductor.utils` | **DONE** — commit `1ef8d845a` |
+| 9 | F2-path-move | 2.11 → 2.12-rc3 | `DisableReduction` | `torch._inductor.codegen.simd` | `torch._inductor.codegen.simd_kernel_features` | **DONE** — commit `1ef8d845a` |
+| 10 | F2-path-move | 2.11 → 2.12-rc3 | `EnableReduction` | `torch._inductor.codegen.simd` | `torch._inductor.codegen.simd_kernel_features` | **DONE** — commit `1ef8d845a` |
+| 11 | F2-path-move | 2.11 → 2.12-rc3 | `SIMDKernelFeatures` | `torch._inductor.codegen.simd` | `torch._inductor.codegen.simd_kernel_features` | **DONE** — commit `1ef8d845a` |
+| 12 | F2-path-move | 2.11 → 2.12-rc3 | `UnsupportedFakeTensorException` | `torch._dynamo.utils` | `torch._subclasses.fake_tensor` | **DONE** — commit `1ef8d845a` |
+| 13 | F2-path-move | 2.11 → 2.12-rc3 | `free_symbol_is_type` | `torch._inductor.codegen.common` | `torch.utils._sympy.symbol` | **DONE** — commit `1ef8d845a` |
 
-**Fix landed for rows 1-2 only**: `torch_npu/compat/sympy_functions.py` (commit `2d81f06c8`).
-Rows 3-13 discovered 2026-04-24 but not yet fixed. Each row becomes one compat module + 1-5 source-file edits.
+**All rows 1-13 fix landed** (2026-04-24): compat modules
+`torch_npu/compat/sympy_functions.py`, `inductor_ir.py`,
+`inductor_codegen_common.py`, `inductor_codegen_simd.py`, `dynamo_utils.py`
+on `gitcode.com/zhengshencn_hwca/pytorch` branch `torch-2.12_auto_porting`
+(commits `2d81f06c8` + `1ef8d845a`). All 15 touched files py_compile clean.
 
 Affected torch_npu files for rows 1-2:
 - `torch_npu/_inductor/lowering_fx.py:38`

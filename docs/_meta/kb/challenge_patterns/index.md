@@ -39,3 +39,11 @@ the user surfaces a new challenge mode.
 ## 08 — "我问的是什么？" (goal-drift check)
 
 - [`08-goal-drift.md`](08-goal-drift.md)
+
+## 09 — "你是不是连 X 都没有闭环？" (loop-closure audit)
+
+- [`09-loop-closure.md`](09-loop-closure.md)
+
+## 10 — "你能不能总结下如何才能让你自己以后不要问这么愚蠢的问题？" (premature-stop-asking audit)
+
+- [`10-premature-stop-asking.md`](10-premature-stop-asking.md)
