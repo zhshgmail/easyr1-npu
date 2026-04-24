@@ -1,0 +1,147 @@
+# npu-port orchestrator workflow state machine.
+#
+# Unlike expert-level state machines (which define internal Phase A/B/C/D
+# per agent), this one defines the CROSS-expert pipeline. Each phase
+# invokes an expert's SKILL and consumes its Handoff JSON.
+
+version: 1
+schema_version: "0.1"
+workflow_name: npu-port
+stage: 1   # Stage 1: multi-expert; built on top of Stage 0's single-expert proof
+last_updated: "2026-04-22"
+
+global_invariants:
+
+  - id: G1
+    description: "Orchestrator MUST NOT directly Edit consumer code, Dockerfiles, or expert code. All edits go through the respective expert. Each expert's own PreToolUse hook enforces its slice."
+    check: "At orchestrator level: never call Edit/Write/MultiEdit outside workspace/npu-port-{SESSION_TAG}/. Experts' own hooks enforce their domains."
+    severity: BLOCKING
+
+  - id: G2
+    description: "Orchestrator MUST re-verify each sub-expert's Handoff claims against the expert's workspace artifacts. Don't trust a 'PASS' in JSON without re-reading the log/jsonl/report it references."
+    check: "After each expert returns, orchestrator reads the claimed log file (if jsonl entropy_loss claim present) or dep-gap-report.md (if classification claim), and confirms the numeric/classification matches the JSON."
+    rationale: "NPU-OPS-010 applies at orchestrator level: propagating an expert's inflated claim without re-verify is exactly how the original sin happened. Orchestrator is the last line of defense before the customer."
+    severity: BLOCKING
+
+  - id: G3
+    description: "Final CLOSED classification requires every artifact's produced_by ∈ {*-worker, orchestrator, user-provided}. A single human-intervention row disqualifies CLOSED."
+    check: "RESULTS.md §provenance table: grep 'human-intervention' — any hit = not CLOSED, must be PARTIAL or FAILED."
+    severity: BLOCKING
+
+phases:
+
+  P0_parse_args:
+    order: 1
+    description: "Parse CLI, derive SESSION_TAG, set up top-level workspace"
+    preconditions: []
+    required_actions:
+      - "Parse --consumer-repo / --consumer-ref / --candidate-image / --session-tag / --dry-run"
+      - "If SESSION_TAG missing: auto-generate as npu-port-$(date -u +%Y%m%d-%H%M)"
+      - "Create workspace/npu-port-{SESSION_TAG}/"
+      - "Initialize top-level PROGRESS.md with inputs + 'orchestrator signed start: <timestamp>'"
+    required_artifacts:
+      - path: "workspace/npu-port-{SESSION_TAG}/PROGRESS.md"
+        must_exist: true
+        content_must_contain:
+          - "CONSUMER_REF:"
+          - "CANDIDATE_IMAGE:"
+    invariants: []
+    prohibited_actions: []
+    next: [P1_dep_analysis]
+
+  P1_dep_analysis:
+    order: 2
+    description: "Invoke /dep-analysis via Agent; read task-plan.json"
+    preconditions: [P0_parse_args]
+    required_actions:
+      - "Spawn Agent(subagent_type=Explore, brief=<repo>/src/skills/dep-analysis-expert/agent.md, env={SESSION_TAG, CONSUMER_REPO, CONSUMER_REF, CANDIDATE_IMAGE, DEP_ANALYSIS_EXPERT_ROOT})"
+      - "Wait for agent completion"
+      - "Read workspace/dep-analysis-{sub-tag}/task-plan.json + RESULTS.md"
+      - "Re-verify: dep-gap-report.md exists, has classified rows"
+    required_artifacts:
+      - path: "workspace/dep-analysis-{sub-tag}/task-plan.json"
+        must_exist: true
+    invariants:
+      - "task-plan.json parses as valid JSON with 'scenario' + 'task_plan' keys"
+      - "If scenario=='P1' OR 'P2', advance; else 'unsupported' → @review-fail"
+    prohibited_actions:
+      - "Advancing on a stuck dep-analysis (any 'scenario: stuck' or missing task-plan)"
+    next: [P2_upgrade_if_p2, P3_port]  # conditional
+
+  P2_upgrade_if_p2:
+    order: 3
+    description: "If scenario=='P2', run each upgrade-expert in task_plan order. Each handoff's image_tag becomes the next's input (or port-expert's --reuse-image target)."
+    preconditions: [P1_dep_analysis]
+    required_actions:
+      - "For each step in task_plan where step.expert matches a known upgrade-expert:"
+      - "  - Spawn Agent(brief=<repo>/src/skills/<expert>/agent.md, env={SOURCE_IMAGE, TARGET_IMAGE, UPSTREAM_CONSUMER, UPSTREAM_REF, SESSION_TAG=<expert-prefix>-{sub-tag}})"
+      - "  - Wait for completion"
+      - "  - Read expert's PROGRESS.md Handoff payload (image_tag, step1_entropy_loss, etc.)"
+      - "  - G2 re-verify: claimed image_tag exists on A3; numerics cited in the target-image band (no v1/v2 conflation)"
+      - "  - Use returned image_tag as candidate for next step"
+    required_artifacts:
+      - path: "workspace/<expert>-{sub-tag}/PROGRESS.md"
+        must_exist_per_expert: true
+    invariants:
+      - "Each upgrade step's Handoff has image_tag + step1_entropy_loss"
+      - "image_tag exists on A3 (docker image inspect succeeds)"
+      - "step1_entropy_loss in the target image's own band (G3)"
+      - "v1_backcompat_verified==true (upgrade-expert's own backcompat re-smoke)"
+    prohibited_actions:
+      - "Proceeding to P3_port if any upgrade step returns 'stuck' or @review-fail"
+    next: [P3_port]
+
+  P3_port:
+    order: 4
+    description: "Invoke consumer port-expert (easyr1-expert today) with --reuse-image of the final working image"
+    preconditions: [P1_dep_analysis, P2_upgrade_if_p2]
+    required_actions:
+      - "Determine FINAL_IMAGE = upgrade-last-step's image_tag (if P2) else CANDIDATE_IMAGE (if P1)"
+      - "Spawn Agent(brief=<repo>/src/skills/easyr1/port-expert/agent.md, env={EASYR1_REF=CONSUMER_REF, REUSE_IMAGE_TAG=FINAL_IMAGE, TARGET_IMAGE_FAMILY=<v1|v2>, SESSION_TAG=easyr1-{sub-tag}, EASYR1_EXPERT_ROOT})"
+      - "Wait for completion"
+      - "Read easyr1-expert PROGRESS.md Handoff"
+      - "G2 re-verify:"
+      - "  - V1.1 + V1.3 marker-PASS each"
+      - "  - V1.4 jsonl has step-1 entropy_loss in FINAL_IMAGE's baseline band (grep the file directly)"
+      - "  - Cleanup field == clean OR partial-with-reason"
+    required_artifacts:
+      - path: "workspace/easyr1-{sub-tag}/PROGRESS.md"
+        must_exist: true
+        content_must_contain:
+          - "V1.1"
+          - "V1.3"
+          - "V1.4"
+          - "Cleanup:"
+          - "Handoff:"
+    invariants:
+      - "V1.4 entropy_loss numeric cited + verified against jsonl"
+      - "FINAL_IMAGE used via --reuse-image path (produced_by: user-provided from orchestrator's perspective)"
+    prohibited_actions:
+      - "Accepting a port-expert claim without re-reading the jsonl"
+    next: [P4_report]
+
+  P4_report:
+    order: 5
+    description: "Consolidate across experts; emit top-level RESULTS.md + surface to user"
+    preconditions: [P3_port]
+    required_actions:
+      - "Build provenance table: row per artifact across all experts"
+      - "Classification:"
+      - "  CLOSED = all Handoffs 'done' + every provenance row ∈ {*-worker, orchestrator, user-provided}"
+      - "  PARTIAL = some rung deferred / cleanup partial but test_green"
+      - "  FAILED = any Handoff 'stuck' or @review-fail or G3 re-verify failed"
+      - "Send final tuple to user Discord: {CONSUMER_REF, FINAL_IMAGE, V14_ENTROPY_LOSS, classification, RESULTS.md path}"
+    required_artifacts:
+      - path: "workspace/npu-port-{SESSION_TAG}/RESULTS.md"
+        must_exist: true
+        content_must_contain:
+          - "Provenance table"
+          - "Closure classification:"
+          - "Consumer branch:"
+          - "Final image:"
+          - "V1.4 entropy_loss:"
+    invariants:
+      - "No row in provenance has 'human-intervention' if classification == CLOSED (G3)"
+    prohibited_actions:
+      - "Classifying CLOSED with any human-intervention row"
+    next: []  # terminal

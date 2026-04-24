@@ -15,7 +15,7 @@
 - + 原有 `vllm-day0-expert`, `transformers-day0-expert`
 - + 共享 pattern: `_shared/references/patterns/domains/day0-deploy-artifacts.md`
 
-Skills 的地图入口：[`../src/experts/README.md`](../src/experts/README.md)（决策树 + 分 stage 列表）。
+Skills 的地图入口：[`../src/skills/README.md`](../src/skills/README.md)（决策树 + 分 stage 列表）。
 
 ## 3. 2026-04-23 真跑通的链路
 
@@ -50,8 +50,8 @@ Session 内 manual 推进不算 0-interaction skill validation。
 
 1. **[`HANDOVER.md`](HANDOVER.md)** — 本项目所有 transit state、未结工作、A3 状态、git 分支、chip 约定。**§6.6 今晚工作，§7.2 skill 系统，§11 下一步**是最新的。
 2. **[`../CLAUDE.md`](../CLAUDE.md)** — 项目 instructions / working preferences / 下一个 agent 要注意的 user 偏好
-3. **[`../src/experts/README.md`](../src/experts/README.md)** — 决策树 + 每个 expert 的用途
-4. **[`../src/experts/_shared/references/ALWAYS_LOADED_UNIVERSAL.md`](../src/experts/_shared/references/ALWAYS_LOADED_UNIVERSAL.md)** — 所有 expert worker 无条件读的 OL 规则（OL-01 ~ OL-12）
+3. **[`../src/skills/README.md`](../src/skills/README.md)** — 决策树 + 每个 expert 的用途
+4. **[`../src/skills/_shared/references/ALWAYS_LOADED_UNIVERSAL.md`](../src/skills/_shared/references/ALWAYS_LOADED_UNIVERSAL.md)** — 所有 expert worker 无条件读的 OL 规则（OL-01 ~ OL-12）
 5. **[`design/SKILLS_ARCH_TARGET.md`](design/SKILLS_ARCH_TARGET.md)** — skills 系统架构目标 + Day-0 reframing 段
 
 ## 6. 几条 session 级 memory（`~/.claude/projects/.../memory/`）

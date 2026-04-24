@@ -4,4 +4,4 @@
 
 活跃 session 的实时 log（PROGRESS.md, `.py.patched` 等）仍放在 `workspace/vllm-ascend/<session-tag>/`（非 git-track）。完成的 session 里值得沉淀为长期参考的总结，搬到这里。
 
-对应 skill 目录：[`src/experts/vllm-ascend/`](../../src/experts/vllm-ascend/)
+对应 skill 目录：[`src/skills/vllm-ascend/`](../../src/skills/vllm-ascend/)

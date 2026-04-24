@@ -4,4 +4,4 @@
 
 EasyR1 自身不是一个上游库（它是 consumer），但它是**整个项目的最终目标**——其他所有上游 port 都是为了让 EasyR1 在 NPU 上跑起来。
 
-对应 skill 目录：[`src/experts/easyr1-expert/`](../../src/experts/easyr1-expert/)
+对应 skill 目录：[`src/skills/easyr1/port-expert/`](../../src/skills/easyr1/port-expert/)

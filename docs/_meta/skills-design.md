@@ -6,7 +6,7 @@
 >
 > 本文件**不再维护**，保留作为历史记录 —— 当时的 skills 设计 rationale + 状态。
 > `repo/skills/` 目录里的老 skill 文件也保留（见 HANDOVER §7.3 的 legacy 说明），但
-> 实际起作用的是 `src/experts/<expert-name>/` 和 `src/orchestrators/npu-port/`。
+> 实际起作用的是 `src/skills/<expert-name>/` 和 `src/skills/orchestrators/npu-port/`。
 
 > 状态：V0.3，2026-04-19。参考 `~/workspace/a5/a5_ops/docs/_meta/design-subdocs/SKILLS_DESIGN.md`（V3.1）的模式。本次移植 (EasyR1 → A3) 的经验作为该系统的第一个实例。更新历史：V0.1 是规划蓝图；V0.2 (2026-04-18) 是规划-vs-落地状态对齐；V0.3 (2026-04-19) 在 transformers-upgrade drill 后新增 `image-upgrade-drill` skill + 反映 catalog 从 19→23 条的增长。
 

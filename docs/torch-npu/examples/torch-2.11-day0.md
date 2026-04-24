@@ -117,7 +117,7 @@ ssh -p 443 root@115.190.166.102 "bash /tmp/torch-day0-<SESSION>/smoke_torch211.s
 # 最后一行: ALL SMOKE STEPS PASSED
 
 # (b) vllm-ascend V1.3 rollout（Fix B+ 或 Fix C 都 PASS）
-bash repo/src/experts/vllm/day0-expert/scripts/smoke_validate.sh \
+bash repo/src/skills/vllm/port-expert/scripts/smoke_validate.sh \
     --rung V1.3 \
     --image-tag easyr1-npu-torch211-fixc:ascend-day0-torch211-<SESSION> \
     --image-family v2 --chips 0
@@ -128,7 +128,7 @@ bash repo/src/experts/vllm/day0-expert/scripts/smoke_validate.sh \
 ssh -p 443 root@115.190.166.102 "cd /home/z00637938/workspace/easyr1-npu/upstream/EasyR1 && git checkout ascend-port"
 # temp-edit smoke script to set VLLM_BATCH_INVARIANT=0（session 末尾需 revert）
 ssh -p 443 root@115.190.166.102 "sed -i 's|^set -eux|set -eux\nexport VLLM_BATCH_INVARIANT=0|' /home/z00637938/workspace/easyr1-npu/upstream/EasyR1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh"
-bash repo/src/experts/vllm/day0-expert/scripts/smoke_validate.sh \
+bash repo/src/skills/vllm/port-expert/scripts/smoke_validate.sh \
     --rung V1.4 \
     --image-tag easyr1-npu-torch211-fixc:ascend-day0-torch211-<SESSION> \
     --image-family v2 --chips 0,1 --timeout-min 15

@@ -17,7 +17,7 @@ Day-0 skill（`vllm-day0-expert` / `torch-day0-expert` / `vllm-ascend/day0-exper
 | **C-patch** | 需要改 **Huawei-owned** 上游的源码（`vllm-ascend` / `torch_npu` / `triton-ascend` / `transformers` NPU integrations）；我们有权限直接出 patch | overlay image + `PR_MATERIAL.md` + 参考 `.py.patched`，交给该上游的 maintainer 落到他们自己 tree | vllm-ascend `utils.py` 加 torch-ABI guard；CMakeLists.txt 放宽 torch version pin |
 | **C-report** | 需要改 **community** 上游的源码（`vllm` / `pytorch` / community `transformers` 非 NPU 部分）；我们**没权限**直接出 patch | 给 community 上游提 issue + 最小 reproducer；session 在 report 阶段就结束 | vllm 的 dispatcher change 引入的 bug |
 
-**核心分水岭**：C-patch vs C-report 的唯一区别是**我们这些 skill 的受众 owner 是不是能直接改那个 repo**。`vllm-ascend` 的 Ascend 团队 owner 能改 `vllm-ascend`，所以是 C-patch；`vllm` 的社区 owner 不归 Ascend，所以是 C-report。见 `src/experts/README.md` §"Enabled Huawei-owned targets for C-patch"。
+**核心分水岭**：C-patch vs C-report 的唯一区别是**我们这些 skill 的受众 owner 是不是能直接改那个 repo**。`vllm-ascend` 的 Ascend 团队 owner 能改 `vllm-ascend`，所以是 C-patch；`vllm` 的社区 owner 不归 Ascend，所以是 C-report。见 `src/skills/README.md` §"Enabled Huawei-owned targets for C-patch"。
 
 ---
 

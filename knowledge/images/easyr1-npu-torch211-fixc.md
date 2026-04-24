@@ -123,7 +123,7 @@ chip economy.
 ## Cross-references
 
 - `docs/torch-npu/examples/torch-2.11-day0.md` — user-facing 0-interaction skill-chain example
-- `src/experts/torch-npu/day0-expert/` — the Day-0 skill that produced the torch layer
-- `src/experts/vllm-ascend/day0-expert/` — the Day-0 skill that produced Fix B+ / Fix C
+- `src/skills/torch-npu/port-expert/` — the Day-0 skill that produced the torch layer
+- `src/skills/vllm-ascend/port-expert/` — the Day-0 skill that produced Fix B+ / Fix C
 - `workspace/vllm-ascend-day0-deploy-20260423-0655/` — session artifacts (Dockerfile, patched .py files, ONBOARDING, PR_MATERIAL)
 - `knowledge/upstream-refs.md` § "Day-0 overlay combinations (2026-04-23)"

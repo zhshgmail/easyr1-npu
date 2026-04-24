@@ -1,0 +1,183 @@
+# <expert-name> workflow state machine — skeleton template.
+#
+# Copy to src/skills/<expert-name>/state_machine.yaml and fill in:
+#   - workflow_name
+#   - stage (0 = MVP, 1+ = multi-agent)
+#   - global_invariants G1/G2/G3 with expert-specific checks
+#   - phases P0..Pn with expert-specific actions/artifacts/invariants
+#
+# Generic requirements any NPU-port expert must preserve:
+#   - At least one phase that runs static_check (before Phase C build)
+#   - Phase C produces a unique-tag docker image (OL-04) OR consumes a
+#     user-provided image via --reuse-image
+#   - Phase D has chip precheck (OL-05) before any NPU-binding action
+#   - Terminal phase requires Cleanup field (OL-04b) + provenance (OL-09)
+#     in workspace/<expert-name>-port-{ts}/PROGRESS.md before sign-off
+
+version: 1
+schema_version: "0.1"
+workflow_name: "<expert-name>-port"          # e.g. "easyr1-port"
+stage: 0
+last_updated: "<YYYY-MM-DD>"
+
+global_invariants:
+
+  - id: G1
+    description: "Orchestrator MUST NOT directly Edit files under <expert-controlled path>. All port-code edits go through <expert-name>-worker agent."
+    check: "PreToolUse on Edit: path matching <controlled-path-glob> is rejected unless $CLAUDE_AGENT_NAME == '<expert-name>-worker'"
+    rationale: "Orchestrator editing expert-owned code bypasses worker Stop hook (static_check + PROGRESS signing + evidence). See easyr1-expert G1 for precedent (NPU-OPS-010 2026-04-21)."
+    severity: BLOCKING
+
+  - id: G2
+    description: "Port code MUST pass static checks (py_compile + dry-import of <caller-package>) before any phase advances past code-gen."
+    check: "Stop hook on <expert-name>-worker: invoke scripts/static_check.py on all .py files edited this session + dry-import <caller-package>. Reject if SyntaxError or import failure."
+    rationale: "Agent hallucination failure mode: invalid Python that looks fine to the eye. py_compile is mechanical. See easyr1-expert round 2 (from-import inside a bracket-continuation) for the canonical case."
+    severity: BLOCKING
+
+  - id: G3
+    description: "Any 'PASS' / 'green' / 'closed' / 'end-to-end' language in agent artifacts MUST be backed by a concrete log file path + a numeric assertion value in the expected band."
+    check: "Stop hook: grep PROGRESS.md / RESULTS.md for claim keywords. If present, require log file path that exists + numeric value from jsonl or stdout in the baseline band."
+    rationale: "NPU-OPS-010: prior session inflated manual success into 'end-to-end closed' without numeric evidence tied to actual log files. This invariant makes self-deception / customer-deception mechanically impossible."
+    severity: BLOCKING
+
+phases:
+
+  P0_parse_args:
+    order: 1
+    description: "Parse CLI, determine MODE + TARGET, load <expert-name>_env"
+    preconditions: []
+    required_actions:
+      - "Determine MODE (reproduce | new-commit <hash> | --diag)"
+      - "Determine TARGET (image family / upstream version)"
+      - "Create workspace/<expert-name>-port-{timestamp}/"
+    required_artifacts:
+      - path: "workspace/<expert-name>-port-{ts}/PROGRESS.md"
+        must_exist: true
+        content_must_contain:
+          - "MODE:"
+          - "TARGET:"
+    invariants: []
+    prohibited_actions: []
+    next: [P1_dep_audit]
+
+  P1_dep_audit:
+    order: 2
+    description: "Inventory deps; detect whether this expert's target requires upstream adaptation (D≥1) or is already supported (D=0)."
+    preconditions: [P0_parse_args]
+    required_actions:
+      - "Run <expert>/scripts/dep-gap-detect.sh or equivalent audit"
+      - "Record exit code in PROGRESS.md"
+    required_artifacts:
+      - path: "workspace/<expert-name>-port-{ts}/dep-gap-report.md"
+        must_exist: true
+    invariants:
+      - "MUST halt with clear handoff if out-of-scope (e.g. easyr1-expert halts if D≥1 and routes to upgrade expert)"
+    prohibited_actions:
+      - "Silently advancing with unresolved dep gap"
+    next: [P2_image_inventory]
+
+  P2_image_inventory:
+    order: 3
+    description: "Inspect the target image; confirm stack integrity."
+    preconditions: [P1_dep_audit]
+    required_actions:
+      - "Inspect target image (docker inspect / pip freeze inside)"
+      - "Check known fragile deps (e.g. triton-ascend integrity, NPU-BUG-001)"
+    required_artifacts:
+      - path: "knowledge/images/{image-slug}.md"
+        must_exist: true
+    invariants: []
+    prohibited_actions: []
+    next: [P3_upstream_fetch]
+
+  P3_upstream_fetch:
+    order: 4
+    description: "Fetch upstream at the target ref."
+    preconditions: [P2_image_inventory]
+    required_actions:
+      - "Checkout upstream at TARGET_REF"
+    required_artifacts: []
+    invariants:
+      - "upstream checked out at TARGET_REF (commit hash or branch)"
+    prohibited_actions:
+      - "Reading any branch listed in OL-03 denylist (answer-key leakage)"
+    next: [P4_code_path_sweep]
+
+  P4_code_path_sweep:
+    order: 5
+    description: "Scan upstream source for port-relevant callsites."
+    preconditions: [P3_upstream_fetch]
+    required_actions:
+      - "Invoke scripts/code-path-sweep.sh or equivalent"
+      - "Bucket hits per expert's pattern-ID catalog"
+    required_artifacts:
+      - path: "workspace/<expert-name>-port-{ts}/code-path-sweep.md"
+        must_exist: true
+    invariants: []
+    prohibited_actions: []
+    next: [P5_port_worker]
+
+  P5_port_worker:
+    order: 6
+    description: "Spawn <expert-name>-worker (Phase A → B → C → D internal fix loop)."
+    preconditions: [P4_code_path_sweep]
+    required_actions:
+      - "Spawn Agent(subagent_type=Explore, brief=agent.md + context)"
+      - "Worker exits via Stop hook enforcing G2"
+    required_artifacts:
+      - path: "workspace/<expert-name>-port-{ts}/analysis.md"
+        must_exist: true
+      - path: "workspace/<expert-name>-port-{ts}/static-check-report.json"
+        content_must_contain: ["py_compile"]
+      - path: "workspace/<expert-name>-port-{ts}/PROGRESS.md"
+        content_must_contain: ["Handoff:"]
+    invariants:
+      - "All edited .py files pass py_compile (G2)"
+      - "dry-import <caller-package> succeeds (G2)"
+      - "Docker image tag unique per session (OL-04) — or --reuse-image path"
+    prohibited_actions:
+      - "Claiming PASS without log evidence (G3)"
+      - "Orchestrator Edit to expert-controlled paths (G1)"
+    next: [P6_smoke_ladder]
+
+  P6_smoke_ladder:
+    order: 7
+    description: "Run expert-specific smoke/verification ladder."
+    preconditions: [P5_port_worker]
+    required_actions:
+      - "For each rung: chip precheck (OL-05), smoke_validate.sh"
+      - "Record per-rung result in smoke-ladder-results.md"
+    required_artifacts:
+      - path: "workspace/<expert-name>-port-{ts}/smoke-ladder-results.md"
+        must_exist: true
+    invariants:
+      - "Every claimed-PASS rung has matching log file path (G3)"
+      - "Numeric assertions land in expert's SMOKE_BASELINE band"
+      - "Stage 0 required rungs must all PASS; bonus rungs can be DEFERRED"
+    prohibited_actions:
+      - "Claiming ladder green with required rungs missing"
+      - "Reusing cached results from prior sessions"
+    next: [P7_report]
+
+  P7_report:
+    order: 8
+    description: "Final report + cleanup + handoff."
+    preconditions: [P6_smoke_ladder]
+    required_actions:
+      - "Write RESULTS.md with provenance table"
+      - "Run scripts/cleanup_session.sh per OL-04b"
+      - "Classify: CLOSED | PARTIAL | FAILED"
+    required_artifacts:
+      - path: "workspace/<expert-name>-port-{ts}/RESULTS.md"
+        must_exist: true
+        content_must_contain:
+          - "Provenance table"
+          - "Closure classification:"
+          - "Cleanup:"
+    invariants:
+      - "CLOSED classification requires every artifact's produced_by ∈ {<expert-name>-worker, orchestrator, user-provided}, NOT human-intervention (OL-09)"
+      - "Cleanup field present and not 'skipped' without reason (OL-04b)"
+    prohibited_actions:
+      - "Self-assigning CLOSED with human-intervention entries in provenance"
+      - "Skipping cleanup"
+    next: []  # terminal

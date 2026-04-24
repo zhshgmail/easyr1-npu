@@ -15,7 +15,7 @@
 2. **结构重组（user 三连问）**：
    - 取消 "day0" vs "upgrade" 的假边界，每个上游合并为单一 expert
    - 删除 / 合并遗留 `skills/` 老目录到 `src/`
-   - `docs/` 按 per-upstream 子目录重组（对齐 `src/experts/`）
+   - `docs/` 按 per-upstream 子目录重组（对齐 `src/skills/`）
 3. **workspace/ 也按 per-upstream 组织**（目前是扁平 session-tag 目录）
 
 ## 任务序列（全做完才算完成）
@@ -40,7 +40,7 @@
 **User 确定的目标结构**：
 ```
 src/
-├── skills/                       ← 原 src/experts/ 改名，因为 "expert" 是实现细节
+├── skills/                       ← 原 src/skills/ 改名，因为 "expert" 是实现细节
 │   ├── _shared/
 │   ├── vllm-ascend/
 │   │   └── port-expert/          ← 合并了 day0 + upgrade
@@ -68,7 +68,7 @@ src/
 - `skills/ray-npu-shim/` — ray 相关通用 → `src/skills/_shared/`（consumer 用）
 
 具体任务：
-- [ ] T2.1 `src/experts/` → `src/skills/`（rename）
+- [ ] T2.1 `src/skills/` → `src/skills/`（rename）
 - [ ] T2.2 `scripts/` (top) → `src/scripts/`
 - [ ] T2.3 在每个 `src/skills/<upstream>/` 下合并 day0-expert + upgrade-expert → `port-expert/`
 - [ ] T2.4 把顶层 `skills/` 的 8 个老 skill 按上面清单迁入 `src/skills/_shared/` 或 `src/scripts/`
@@ -105,7 +105,7 @@ src/
 
 - ✅ V1.3 bit-exact PASS on `easyr1-npu-vllm0200:vllm-day0-vllm0200-20260423-1623-iter18`
 - ❌ V1.4 FAIL entropy_loss=3.213 on same image（攻关中，Phase 6）
-- 🟡 `src/experts/` 已按 upstream 分类（Phase 0 完成），docs/ 待重组（Phase 1）
+- 🟡 `src/skills/` 已按 upstream 分类（Phase 0 完成），docs/ 待重组（Phase 1）
 - 🟡 day0/upgrade 二分待合并（Phase 2）
 - 🟡 `skills/` 老目录待处理（Phase 3）
 
@@ -113,7 +113,7 @@ src/
 
 | Commit | Summary |
 |---|---|
-| `001308c` | restructure: complete per-upstream folder layout for src/experts/ |
+| `001308c` | restructure: complete per-upstream folder layout for src/skills/ |
 | `cf79e59` | restructure: move vllm-ascend-day0-expert under vllm-ascend/ |
 | `42b8266` | docs: add MODULE-PORT-STATUS.md |
 | `3479368` | docs(readme): link active session PROGRESS.md |
