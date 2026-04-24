@@ -94,30 +94,41 @@ is given:
 
 A ready-made sweep wrapper is a TODO; today you run the loop in bash.
 
-## Known detector limitations (2026-04-24)
+## Scanner coverage (2026-04-24 late)
 
-`scripts/kb_drive_test.py` currently detects:
-- **F1** (removed class / removed top-level function / deleted file)
-- **F2-rename** limited (single-class delete+add same file)
-- **F3** limited (signature diff)
+Five scanner tools, each targeting a different drift family:
 
-It does NOT yet detect:
-- **F4** return-type migration
-- **F5** buffer-API migration (CpuGpuBuffer ↔ plain tensor)
-- **F6** kv_cache tensor-vs-list contract
-- **F7** new required attribute on NPU subclass
-- **F8** new required method on NPU subclass
+| Tool | Mode | Covers |
+|---|---|---|
+| `scripts/kb_drive_test.py` | per-commit | F1, F2-rename (limited), F3, F5-suspect |
+| `scripts/sweep.sh` | tag-range wrapper over `kb_drive_test` | same as above, deduped |
+| `scripts/check_f4.py` | tag-range | F4 return-type migration |
+| `scripts/check_f7_f8.py` | tag-range, AST-based | F7 new attr, F8 new method |
+| — | — | F6 (kv_cache runtime contract) still manual |
 
-Implication: a clean scan result (`matched: N, unmatched: 0`) does NOT
-guarantee the port is complete. F4–F8 families must still be checked
-manually by reading the release notes / diff of vllm base classes that
-vllm-ascend subclasses. Extending the scanner to F4–F8 is TODO.
+A complete Mode Sweep run looks like:
 
-Also, the scanner's F1 output reports the OLD path (removal) but not
-the NEW path (where the symbol went if it moved). The LLM writing the
-fix still needs to grep for the new home. Future improvement: make
-`kb_drive_test.py` optionally search for the new home and emit it in
-the proposal.
+```bash
+# F1 / F2-rename / F3 / F5-suspect across 156 commits
+scripts/sweep.sh --commit-range v0.20.0..origin/main \
+  --vllm-path /path/to/vllm \
+  --vllm-ascend-path /path/to/vllm-ascend
+
+# F4 (return-type) end-to-end tag diff
+scripts/check_f4.py --vllm-path ... --vllm-ascend-path ... \
+  --baseline-tag v0.20.0 --target-tag origin/main
+
+# F7 / F8 (class-API additions) end-to-end tag diff
+scripts/check_f7_f8.py --vllm-path ... --vllm-ascend-path ... \
+  --baseline-tag v0.20.0 --target-tag origin/main
+```
+
+`kb_drive_test.py` emits a F1 `new_home_candidates` field: when a
+symbol is removed but still exists at another path in target, the
+scanner git-greps for `class <Sym>` / `def <Sym>` and lists up to 5
+candidate new homes — so the fix author can pick the correct new
+import. Empty = F1 real-removal (write local class body in compat);
+non-empty = F2-path-move (try/except import).
 
 ## Stage 0 constraints
 

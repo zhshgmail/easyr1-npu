@@ -343,7 +343,17 @@ F1-F8 是**跨上游通用**的漂移形状，最早在 vllm-ascend 沉淀，后
 
 完整描述见 [`src/skills/vllm-ascend/port-expert/references/patterns/domains/vllm-api-drift.md`](../../src/skills/vllm-ascend/port-expert/references/patterns/domains/vllm-api-drift.md)。
 
-**重要**：当前自动扫描器只覆盖 F1 / F2-rename / F3，F4-F8 需要手动检查 KB 对应章节。
+**2026-04-24 late 扫描器覆盖矩阵**：
+
+| Family | 工具 | 模式 |
+|---|---|---|
+| F1 / F2-rename / F3 / F5-suspect | `kb_drive_test.py` + `sweep.sh` | 逐 commit / commit-range |
+| F4（返回值类型漂移） | `check_f4.py` | tag-range AST diff |
+| F7（基类新属性） | `check_f7_f8.py` | tag-range AST diff |
+| F8（基类新方法） | `check_f7_f8.py` | tag-range AST diff |
+| F6（kv_cache 契约） | **仍需手动** | 运行时断言，非结构化 |
+
+典型 Mode Sweep 一次会跑 3 个工具：`sweep.sh` + `check_f4.py` + `check_f7_f8.py`。
 
 ## 7. 相关文档
 
