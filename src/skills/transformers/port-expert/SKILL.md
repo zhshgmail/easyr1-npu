@@ -21,6 +21,37 @@ context: inline
 
 # /transformers-day0 — new-community-transformers probe + adapt
 
+## Stage 0 — fast-path decision tree (read this FIRST)
+
+Before the full P0-P4 workflow, check if the fast-path applies. For
+transformers, 90% of probes resolve to outcome **A (works-as-is)**
+because the NPU integration surface is tiny (1 file, 143 lines). The
+following static checks reach outcome A without A3/docker:
+
+1. **File byte-match**: does
+   `<target-ref>:src/transformers/integrations/npu_flash_attention.py`
+   match the KB-recorded known-good baseline (see KB_INDEX §"baseline
+   snapshot") byte-for-byte? `git show` is enough.
+2. **Import chain**: are the imports `is_torch_npu_available` +
+   `from torch_npu import npu_fusion_attention` unchanged?
+3. **Upstream consumption**: does `modeling_flash_attention_utils.py`
+   still import the NPU handlers on the `is_torch_npu_available()`
+   branch?
+4. **ALL_ATTENTION_FUNCTIONS**: are the keys still a superset of
+   what the KB recorded, or has a new default been added that
+   consumer models now route to?
+
+If 1-3 all YES and 4 shows only additive entries (no new NPU-routing
+default), **outcome A with note** — skip the full workflow, emit the
+classification, write the note about newly-added unhandled keys in
+ONBOARDING, done.
+
+If ANY of 1-3 NO, or a default changed to a new NPU-unhandled key in
+4, fall through to the full P0-P4 workflow below.
+
+**This fast-path added 2026-04-24 after cold-drive showed 90% of the
+full workflow was unnecessary for the transformers outcome-A case.**
+
 ## Your role (orchestrator)
 
 Spawn `transformers-day0-worker`, wait, read handoff, propagate outcome

@@ -45,11 +45,16 @@ If torch_npu's `npu_fusion_attention` ITSELF changes signature, that is
 a torch_npu F3 drift, not a transformers drift — route to
 `src/skills/torch-npu/port-expert/`.
 
-## Reference: today's baseline snapshot (2026-04-23)
+## Reference: last wet-run baseline snapshot (2026-04-23)
+
+**IMPORTANT**: "community latest" below is the last wet-run target, NOT
+automatically the current frontier. When running this skill in a new
+session, run `git -C upstream/transformers log origin/main -1` to get
+the actual HEAD first; if it's ahead of 5.6.0, update the numbers here.
 
 - v1 NPU image: transformers 4.57.6
 - v2 NPU image: transformers 5.3.0.dev0
-- community latest: **transformers 5.6.0** (released 2026-04-22)
+- last wet-run target: **transformers 5.6.0** (2026-04-22, validated outcome A)
 
 Gap: 3 minor (NPU 5.3.dev → community 5.6). First probe result (docker
 run pip install 5.6 into v2):
