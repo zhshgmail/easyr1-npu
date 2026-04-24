@@ -89,17 +89,31 @@ try old path first (keep old torch working), fall back to new.
 
 ### Concrete case registry
 
-| Family | torch range | Symbol | Old path | New path | torch_npu sites | Fix landed |
+| # | Family | torch range | Symbol | Old path | New path | Fix status |
 |---|---|---|---|---|---|---|
-| F2-path-move | 2.11 → 2.12-rc3 | `FloorDiv` | `torch._inductor.utils` | `torch.utils._sympy.functions` | 2 files | local commit `2d81f06c8` on branch `torch-2.12_auto_porting` |
-| F2-path-move | 2.11 → 2.12-rc3 | `ModularIndexing` | `torch._inductor.utils` | `torch.utils._sympy.functions` | 3 files | (same commit) |
+| 1 | F2-path-move | 2.11 → 2.12-rc3 | `FloorDiv` | `torch._inductor.utils` | `torch.utils._sympy.functions` | **DONE** — local commit `2d81f06c8`, 2 files + compat shim |
+| 2 | F2-path-move | 2.11 → 2.12-rc3 | `ModularIndexing` | `torch._inductor.utils` | `torch.utils._sympy.functions` | **DONE** (same commit, 3 files) |
+| 3 | F2-path-move | 2.11 → 2.12-rc3 | `FloorDiv` (also imported from `_inductor.ir`) | `torch._inductor.ir` | `torch.utils._sympy.functions` | TODO |
+| 4 | F2-path-move | 2.11 → 2.12-rc3 | `ModularIndexing` (also from `_inductor.ir`) | `torch._inductor.ir` | `torch.utils._sympy.functions` | TODO |
+| 5 | F2-path-move | 2.11 → 2.12-rc3 | `LoopBody` | `torch._inductor.ir` | `torch._inductor.loop_body` | TODO |
+| 6 | F2-path-move | 2.11 → 2.12-rc3 | `Reduction` | `torch._inductor.ir` | `torch._decomp.decompositions` | TODO |
+| 7 | F2-path-move | 2.11 → 2.12-rc3 | `ReductionHint` | `torch._inductor.ir` | `torch._inductor.runtime.hints` | TODO |
+| 8 | F2-path-move | 2.11 → 2.12-rc3 | `IndentedBuffer` | `torch._inductor.codegen.common` | `torch._inductor.utils` | TODO |
+| 9 | F2-path-move | 2.11 → 2.12-rc3 | `DisableReduction` | `torch._inductor.codegen.simd` | `torch._inductor.codegen.simd_kernel_features` | TODO |
+| 10 | F2-path-move | 2.11 → 2.12-rc3 | `EnableReduction` | `torch._inductor.codegen.simd` | `torch._inductor.codegen.simd_kernel_features` | TODO |
+| 11 | F2-path-move | 2.11 → 2.12-rc3 | `SIMDKernelFeatures` | `torch._inductor.codegen.simd` | `torch._inductor.codegen.simd_kernel_features` | TODO |
+| 12 | F2-path-move | 2.11 → 2.12-rc3 | `UnsupportedFakeTensorException` | `torch._dynamo.utils` | `torch._subclasses.fake_tensor` | TODO |
+| 13 | F2-path-move | 2.11 → 2.12-rc3 | `free_symbol_is_type` | `torch._inductor.codegen.common` | `torch.utils._sympy.symbol` | TODO |
 
-Affected files:
+**Fix landed for rows 1-2 only**: `torch_npu/compat/sympy_functions.py` (commit `2d81f06c8`).
+Rows 3-13 discovered 2026-04-24 but not yet fixed. Each row becomes one compat module + 1-5 source-file edits.
+
+Affected torch_npu files for rows 1-2:
 - `torch_npu/_inductor/lowering_fx.py:38`
 - `torch_npu/_inductor/codegen/split_tiling.py:7`
 - `torch_npu/_inductor/codegen/scheduling.py:27`
 
-Fix compat module: `torch_npu/compat/sympy_functions.py`.
+**Verification status (2026-04-24)**: rows 1-2 shim passed `/drift-port-validate` equivalent — 6/6 checks (3 OLD torch + 3 NEW torch paths) on local CPU stub-environment.
 
 ### High-risk surfaces to scan first on every torch upgrade
 
