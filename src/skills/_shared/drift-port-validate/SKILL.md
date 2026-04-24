@@ -43,8 +43,11 @@ Both branches must be exercised. One-sided tests give false confidence.
 Do NOT invoke when:
 - The fix family is F3/F4/F5+ (these are not import-level shims and
   this skill's check shape doesn't apply).
-- The shim file isn't under `vllm_ascend/compat/` (non-standard layout
-  means this skill's structural assumptions may not hold).
+- The shim file isn't under `<project>/compat/` (non-standard layout
+  means this skill's structural assumptions may not hold). Covered
+  project conventions: `vllm_ascend/compat/`, `torch_npu/compat/`,
+  and any future upstream that adopts the `<project>/compat/<family>.py`
+  convention from the Chinese porting guides.
 
 ## Pre-requisites
 
@@ -70,12 +73,26 @@ of checks that were run, and every individual check printing `PASS`.
 Any `FAIL` means the shim is broken and the port is NOT done.
 
 Expected check set per family:
-- **F1/F2 single-symbol shim** (e.g. `SharedFusedMoE`): 2 OLD + 3 NEW
-  = 5 checks
-- **F1/F2 two-symbol shim**: 2+3 per symbol, so 5 per symbol
-- **F2 with aliased new name** (e.g. `DefaultMoERunner → MoERunner`):
+- **F1 single-symbol shim** (e.g. `SharedFusedMoE`): 2 OLD + 3 NEW
+  = 5 checks (OLD: `_UPSTREAM_HAS_<X>` True + symbol is upstream;
+  NEW: `_UPSTREAM_HAS_<X>` False + symbol is local + local preserves
+  base class via `issubclass`).
+- **F2-rename shim with aliased new name** (e.g. `DefaultMoERunner → MoERunner`):
   2 OLD + 2 NEW = 4 checks (the NEW side doesn't need an
-  `issubclass` check because it's a direct alias)
+  `issubclass` check because it's a direct alias).
+- **F2-path-move shim, re-export pattern** (`try/except` that imports
+  the same symbol name from old path then new path — used by
+  `torch_npu/compat/*` for torch 2.11→2.12 drift): per symbol, 1
+  identity check on OLD + 1 identity check on NEW + 1 `_SOURCE` or
+  `_UPSTREAM_HAS_<X>` flag check if the shim exposes one. Typical:
+  3 OLD + 3 NEW for a 5-symbol shim that batches per-symbol identity
+  checks plus one `_SOURCE` string check. Naive formula: 2N+1 where N
+  = number of symbols (identity check per symbol, plus one flag).
+  Actual test scripts for `torch_npu/compat/inductor_ir.py` used 5
+  per side because 5 symbols + no flag; all should PASS.
+- Skill is **not** applicable to F3+/F5+/F9 families — those need
+  signature / runtime / ABI level checks which this skill cannot
+  shape.
 
 ## How to run (LLM-driven, reproducible)
 
@@ -97,22 +114,32 @@ Open the compat module you just added. Note:
 
 If the shim exports multiple symbols, handle each independently.
 
-### Step 2 — prepare the A3 container
+### Step 2 — pick local execution vs A3 container
 
-Choose a base image that has the pre-patch vllm-ascend installed.
-Look for the most recent `easyr1-npu-*fixc*` or similar in
-`docker images` on A3. The image must have `torch` + `torch_npu` +
-`vllm` (any version where the target symbol still existed). It does
-NOT need to have the NEW upstream version.
+**Default: run locally.** For F1 / F2 / F2-path-move shims, the
+checks are pure Python stub-import tests. They do not touch torch_npu
+device code, so they don't need A3. Any host with a Python 3.10+
+installation suffices. The reference 2026-04-24 execution ran
+`torch_npu/compat/*` shim checks on the local workstation with no
+torch installed at all, and 10/10 passed.
 
-Start a persistent named container for this session. Use a name that
-includes the session date and the drift ID (e.g.
-`drift-validate-<SHA>-<DATE>`). Do NOT use `--rm`. See
-`memory/persistent_npu_container.md` for rationale.
+**Use A3 container when**:
+- The shim's import chain transitively triggers `import torch_npu`
+  at module top level (rare; avoid by using `importlib.util.spec_from_file_location`
+  to load the compat file without executing its parent package's
+  `__init__.py` — see Step 4).
+- The drift involves runtime behavior (F9 C++ ABI) that only manifests
+  on the device. Out of scope for this skill — but do not confuse
+  "I want A3 for completeness" with "the skill requires A3".
 
-If all davinci devices are ns-locked by other users' containers, start
-the container **without any `--device`** flags; CPU-only mode is
-fine for this skill because the checks don't open NPU.
+**If you do go to A3**: pick a base image with the pre-patch project
+(torch_npu or vllm-ascend) installed — e.g., the most recent
+`easyr1-npu-*fixc*` from `docker images`. Start a persistent named
+container (never `--rm`); per `memory/persistent_npu_container.md`,
+--rm can leave udevid namespace locks on exit. If all davinci devices
+are ns-locked by other users (check `dmesg | grep uda_occupy_dev_by_ns`),
+start the container **without any `--device`** flags; the checks here
+do not open an NPU device.
 
 ### Step 3 — apply your patch inside the container
 
@@ -148,12 +175,19 @@ Per-family. For an F1 removed-symbol shim, two files:
    `vllm_ascend/__init__.py` avoids the `torch_npu → CANN` dependency
    chain.
 5. Check: `_UPSTREAM_HAS_<X>` attribute on the loaded module is
-   `False`. (If the shim doesn't expose this, add it — it's a standard
-   part of the F1 template.)
+   `False`, IF the shim exposes one. F1 template usually does; some
+   F2-path-move shims use `_SOURCE` (string naming which path won)
+   instead; some use neither (pure re-export). If the shim exposes
+   neither flag, skip this check — do NOT edit the shim to add a
+   flag from a validator skill, that is out of scope.
 6. Check: the exported symbol's `__module__` points at your loaded
    test module name (proving it's the local class, not the upstream).
 7. Check: any structural property the local fallback must preserve
-   (e.g. `issubclass(local, FusedMoE)`).
+   (e.g. `issubclass(local, FusedMoE)` for F1 with local class body).
+   For F2-path-move re-export shims, structural check is not
+   applicable — the shim's job is to route the import, not to
+   redefine behavior. Identity check (`compat.X is NewUpstream.X`
+   or `compat.X is OldUpstream.X`) replaces the structural check.
 8. End with `RESULT <pass>/<total>` print and `sys.exit(0 if ok else 1)`.
 
 **`verify_old.py`** (OLD-upstream path — shim's try branch):
@@ -241,25 +275,53 @@ read these first:
    `memory/a3_uda_ns_conflict.md`, `memory/a3_chip_economy.md`
    — A3 operational quirks.
 
-## Reference execution (2026-04-24)
+## Reference executions
 
-First real run, performed by the author on 2026-04-24:
+### 2026-04-24 run #1 — vllm-ascend F1 shims on A3
+
 - Target: F1 shims for `SharedFusedMoE` (commit `5e584ce9e`) and
   `DefaultMoERunner` (commit `809d83c2d`) on personal fork branch
   `vllm-main_auto_porting`.
 - Base image: `easyr1-npu-torch211-fixc:ascend-day0-torch211-20260423`.
 - Container: `f1-validate-20260424` (CPU-only — all davinci devices
-  held by `roll_npu_new`, `vllm_ascendreleases013`, `lynn_verl`).
+  held by other users' containers).
 - Result:
-  - `verify_old.py`: 4/4 PASS (OLD vllm, shim pass-through)
-  - `verify_new.py`: 5/5 PASS (NEW vllm, shim fallback)
+  - `verify_old.py`: 4/4 PASS (OLD vllm, shim pass-through).
+  - `verify_new.py`: 5/5 PASS (NEW vllm, shim fallback).
   - Combined: 9/9 PASS.
-- The reference verify scripts as executed are preserved at
-  `/tmp/z00637938/f1_verify.py` and `/tmp/z00637938/f1_verify_old.py`
-  on A3, and in the skill's `references/` once copied in. An LLM
-  can use them as templates by (a) substituting the symbol name,
-  (b) substituting the leaf module path, (c) substituting the
-  base-class or alias target in the stub block.
+
+### 2026-04-24 run #2 — torch_npu F2-path-move shims, local execution, cold-driven
+
+- Target: 5 compat shims for torch 2.11→2.12 drift on personal fork
+  `gitcode.com/zhengshencn_hwca/pytorch` branch `torch-2.12_auto_porting`.
+  Shims under `torch_npu/compat/`: `sympy_functions`, `inductor_ir`,
+  `inductor_codegen_common`, `inductor_codegen_simd`, `dynamo_utils`.
+- Execution: local Python 3.11, no A3, no torch install. Stub parent
+  packages via `sys.modules`, load compat file via
+  `importlib.util.spec_from_file_location`.
+- Driven by: a fresh agent given ONLY this SKILL.md as input, no
+  memory of the patch author's approach — verifies the skill is
+  LLM-reproducible from cold.
+- Result:
+  - `sympy_functions`: 3/3 OLD + 3/3 NEW.
+  - `inductor_ir`: 5/5 OLD + 5/5 NEW.
+  - `inductor_codegen_common`: 2/2 OLD + 2/2 NEW.
+  - `inductor_codegen_simd`: 3/3 OLD + 3/3 NEW.
+  - `dynamo_utils`: 1/1 OLD + 1/1 NEW.
+  - Combined: **10/10 invocations PASS**, every individual check PASS.
+- This run is what this skill is REALLY for: LLM takes the skill +
+  a bare patch-summary and produces a binary pass/fail without the
+  author's help.
+
+## Canonical verify-script templates
+
+`references/templates/<shim_name>_verify_{old,new}.py` holds the
+actual scripts used in reference run #2. An LLM can use them as
+templates by (a) substituting the symbol name(s), (b) substituting
+the upstream module paths, (c) filling the stub-module attributes.
+If your shim structure matches one of these five (F1, F2-rename, or
+F2-path-move re-export), the closest template only needs 5-10
+line-level edits.
 
 ## What this skill is NOT
 
