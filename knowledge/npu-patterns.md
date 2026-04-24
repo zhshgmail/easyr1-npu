@@ -573,11 +573,69 @@ If ANY check fails, use precise language ("V1.4 smoke manually verified on both 
 
 ---
 
+### NPU-OPS-011 — before creating an NPU container, read NPU-OPS-009; do not rm+recreate to "try a different config"
+
+**Symptom**: Fresh `docker run` with just `--device /dev/davinci*` + a few ad-hoc bind mounts fails inside container with:
+
+```
+DrvMngGetConsoleLogLevel failed. (ret=4)
+dcmi model initialized failed, because the device is used. ret is -8020
+```
+
+and dmesg spams `uda_occupy_dev_by_ns … Conflict open udevid. (access_ns=X; ns=Y)`. Looks like an NPU occupancy conflict with another container.
+
+**The tempting-but-wrong follow-up**: `docker stop && docker rm && docker run` with a different chip (`/dev/davinci0` → `/dev/davinci7`). Fails the same way. Try again with `--ipc=host`. Fails. Try `--privileged`. Etc. Each recreate is a new throwaway container, and each attempt keeps missing some setting that NPU-OPS-009 already documented.
+
+**Root cause** (two layered):
+
+1. **The dmesg error is misleading in the same way NPU-OPS-009 already documented**. `dcmi -8020` + `uda_occupy_dev_by_ns` is a downstream symptom of incomplete NPU containerization (bind mounts missing `/etc/ascend_install.info`, or binding entire `/usr/local/Ascend/driver` instead of just `lib64` + `version.info`). It is **not** an ns-level occupancy conflict between containers. Sibling containers on the same host using the correct bind set all work fine simultaneously.
+2. **Frequent `rm`+`run` cycles amplify the damage**: each recreated container is a new ns, so you never get past the same failure twice in the same container. And frequent recreates risk leaking an NPU udevid ns lock on a driver bug version — you can end up with a stale lock and think the platform is broken when the fault is your churn.
+
+**Fix (discipline)**:
+
+1. **Before `docker run` for NPU work, read NPU-OPS-009**. It names the exact bind set. If the helper script (`run-npu-container.sh` or equivalent) is in the repo, use it; do not hand-roll a `docker run` from memory.
+2. **If the first container fails, do not immediately `rm`+`run`**. Instead:
+   - `docker inspect <a-known-working-sibling-container>` and diff `.HostConfig.Binds` / `.Devices` / `.IpcMode` / `.Privileged` against your broken one.
+   - Compare against NPU-OPS-009's minimum set.
+   - Decide what is actually missing BEFORE touching the container state.
+3. **One corrective `rm`+`run`** with the full correct config is fine. **Four** is the anti-pattern — by then you've already stopped thinking and are just varying knobs.
+4. **Do not run driver reset or host reboot as a "try one more thing"**. That's how the 443 port was lost 2026-04-20: dmesg-reading a symptom as cause, assuming driver reset would help, wedging PCI enumeration, and needing a full host reboot (which lost the ssh port forwarder). NPU-OPS-009 step 4 already codifies this — do not re-learn the lesson.
+
+**Fix (minimum working NPU-container config on A3, synthesis of NPU-OPS-009 and today)**:
+
+```bash
+docker run \
+  --privileged \                                        # from working sibling
+  --ipc=host --shm-size=<large> \                       # from working sibling
+  --device /dev/davinci_manager --device /dev/devmm_svm --device /dev/hisi_hdc \
+  --device /dev/davinciN   # (per chip — all or 1) \
+  -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 \
+  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+  -v /usr/local/dcmi:/usr/local/dcmi \
+  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+  -v /etc/ascend_install.info:/etc/ascend_install.info \
+  -v /etc/ascend_driver.conf:/etc/ascend_driver.conf \
+  -v /etc/ascend_filelist.info:/etc/ascend_filelist.info \
+  ...
+```
+
+Note the three `/etc/ascend_*.info`/`.conf` files: missing any of them leads to the same dcmi-8020 symptom. Run `docker inspect lynn_verl` (or any known-working sibling) and copy its `HostConfig.Binds` verbatim minus the user-data binds.
+
+**Commit ref**: — (lesson landing during triton-ascend v3.5.0 → v3.6.0 NPU smoke 2026-04-25. Reinforces NPU-OPS-009; does not supersede it).
+
+**Generalizable rules**:
+
+1. **"Config likely wrong on my side" is the base rate for NPU-container failures on a host where sibling containers succeed.** Always suspect own config first.
+2. **KB entries describing exactly this symptom are load-bearing**. If a fresh session creates a container without reading the relevant OPS entry and fails in the exact documented way, the bug is the skipped read, not the config.
+3. **Container churn is not a debugging tool**. The difference between one carefully-configured recreate and four speculative ones is the same difference as between a debugger and `printf` — sometimes necessary, but the debugger should come first.
+
+---
+
 ## IDs defined (summary)
 
 - Code patterns: `NPU-CP-001` ... `NPU-CP-007` (7 entries)
 - Platform bugs: `NPU-BUG-001` ... `NPU-BUG-004` (4 entries)
 - Environment/config: `NPU-ENV-001` ... `NPU-ENV-004` (4 entries)
-- Operational: `NPU-OPS-001` ... `NPU-OPS-010` (10 entries — adds the process anti-pattern NPU-OPS-010)
+- Operational: `NPU-OPS-001` ... `NPU-OPS-011` (11 entries — adds the NPU container hand-roll anti-pattern NPU-OPS-011)
 
-**Total: 25 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
+**Total: 26 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
