@@ -41,11 +41,14 @@ from pathlib import Path
 @dataclass
 class Drift:
     kind: str                  # "removed_symbol" / "renamed" / "sig_change" / ...
-    vllm_path: str             # path inside vllm repo
+    vllm_path: str             # path inside vllm repo (where removed/changed)
     symbol: str                # symbol name that changed
     detail: str = ""
     matched_family: str = ""   # F1..F8 or "" if unmatched
     ascend_callsites: list[tuple[str, int, str]] = field(default_factory=list)
+    # new-location guesses (if the symbol moved rather than being deleted).
+    # populated only for F1 hits where the fix requires knowing the new home.
+    new_home_candidates: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -285,6 +288,39 @@ def detect_sig_changes(vllm_path: Path, ref: str) -> list[Drift]:
     return drifts
 
 
+def find_new_home_candidates(vllm_path: Path, ref: str, symbol: str,
+                              exclude_path: str) -> list[str]:
+    """Grep the target ref's tree for where `symbol` is defined now.
+
+    Excludes the path the symbol was removed from (to avoid showing the
+    old home in its current state). Returns paths relative to the vllm
+    repo root; up to 5 candidates."""
+    if not symbol or symbol.startswith("_"):
+        return []
+    # Use git grep against the target ref so we don't have to actually
+    # check the working tree out.
+    r = subprocess.run(
+        ["git", "-C", str(vllm_path), "grep", "-l", "-E",
+         rf"^(class|def) {symbol}( |\(|:)",
+         ref, "--", "vllm/"],
+        capture_output=True, text=True, check=False,
+    )
+    hits = []
+    for line in r.stdout.splitlines():
+        # Output like "<ref>:vllm/foo/bar.py"
+        if ":" not in line:
+            continue
+        path = line.split(":", 1)[1]
+        if path == exclude_path:
+            continue
+        if "/tests/" in path or path.startswith("tests/"):
+            continue
+        if path.endswith(".pyi") or path.endswith(".pyi.in"):
+            continue
+        hits.append(path)
+    return sorted(set(hits))[:5]
+
+
 def match_drift_to_family(drift: Drift) -> str:
     for rule in FAMILY_RULES:
         if rule.kind == drift.kind:
@@ -349,6 +385,12 @@ def main() -> int:
     print(f"      {len(impactful)} drifts impact vllm-ascend "
           f"({len(filtered_out)} filtered as internal-name collision)")
 
+    print(f"[3/4] finding new-home candidates for F1 drifts ...")
+    for d in impactful:
+        if d.kind == "removed_symbol":
+            d.new_home_candidates = find_new_home_candidates(
+                args.vllm_path, args.vllm_ref, d.symbol, d.vllm_path)
+
     print(f"[3/4] matching impactful drifts to KB families ...")
     unmatched = []
     for d in impactful:
@@ -368,8 +410,14 @@ def main() -> int:
     ]
     for d in impactful:
         lines.append(f"## [{d.matched_family or 'UNMATCHED'}] {d.symbol} — {d.kind}\n")
-        lines.append(f"- vllm path: `{d.vllm_path}`")
+        lines.append(f"- vllm path (removed/changed): `{d.vllm_path}`")
         lines.append(f"- detail: {d.detail}")
+        if d.new_home_candidates:
+            lines.append("- **new-home candidates on target ref** (for F1 fallback import):")
+            for p in d.new_home_candidates:
+                lines.append(f"  - `{p}`")
+        elif d.kind == "removed_symbol":
+            lines.append("- new-home candidates: NONE FOUND (symbol truly gone — may be F1-real-removal, not F2-path-move)")
         lines.append("- vllm-ascend call sites:")
         for site in d.ascend_callsites:
             lines.append(f"  - `{site[0]}:{site[1]}` — {site[2][:120]}")
@@ -396,6 +444,7 @@ def main() -> int:
                 "vllm_path": d.vllm_path,
                 "family": d.matched_family,
                 "ascend_sites": len(d.ascend_callsites),
+                "new_home_candidates": d.new_home_candidates,
             }
             for d in impactful
         ],
