@@ -21,7 +21,18 @@
 
 ### 步骤 1 —— 扫描：哪些 torch 私有符号会被移走？
 
-**四步扫描脚本**（都在 `src/skills/torch-npu/port-expert/scripts/`）：
+**一键扫描**（`sweep.sh` 会按顺序调用四个 scanner）：
+
+```bash
+cd <easyr1-npu-repo>
+./src/skills/torch-npu/port-expert/scripts/sweep.sh \
+  --baseline v2.11.0 \
+  --target v2.12.0-rc3 \
+  --pt-repo /path/to/community-pytorch-checkout \
+  --torch-npu-path /path/to/torch-npu-checkout
+```
+
+或**分步调用**（都在 `src/skills/torch-npu/port-expert/scripts/`）：
 
 ```bash
 # 第一步：提取 torch_npu 里所有 from torch._* import 对

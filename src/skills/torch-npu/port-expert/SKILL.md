@@ -30,25 +30,24 @@ classify A/B/C. Phases below (P0..P6) describe this mode.
 after cold-drive caught the gap): torch_npu source already has a
 branch for the target torch version, but we need to patch the
 `from torch._inductor...` / `from torch._dynamo...` imports that
-broke between torch N.x and N.y. Skip P2-P4 entirely. Run the four
-scanner scripts in sequence:
+broke between torch N.x and N.y. Skip P2-P4 entirely. Run:
 
 ```bash
-# (assumes <pt-repo> is community pytorch checkout,
-#  <torch-npu> is torch_npu checkout, <baseline> and <target> are
-#  torch tags like v2.11.0 and v2.12.0-rc3)
-
-python3 scripts/extract_imports.py --root <torch-npu>/torch_npu > /tmp/pairs.txt
-python3 scripts/check_drift.py    --pt-repo <pt-repo> --pairs-file /tmp/pairs.txt --baseline-tag <baseline> --target-tag <target>  # F1/F2-path-move
-python3 scripts/check_sig_drift.py --pt-repo <pt-repo> --pairs-file /tmp/pairs.txt --baseline-tag <baseline> --target-tag <target>  # F3
-python3 scripts/check_f7_f8.py    --pt-repo <pt-repo> --torch-npu-path <torch-npu> --baseline-tag <baseline> --target-tag <target>  # F7/F8
+# One-command sweep (F1 + F2-path-move + F3 + F7 + F8):
+scripts/sweep.sh --baseline <e.g. v2.11.0> --target <e.g. v2.12.0-rc3> \
+  --pt-repo <community-pytorch> --torch-npu-path <torch-npu>
 ```
+
+`sweep.sh` runs `extract_imports` → `check_drift` → `check_sig_drift`
+→ `check_f7_f8` in sequence and emits a summary with per-family exit
+codes. You can also call each scanner individually (useful when
+iterating on a single family); see `docs/torch-npu/PORTING-GUIDE.md`
+for the per-step breakdown.
 
 Classify each finding per family, apply shims at
 `torch_npu/compat/<module>.py` (or inline for tiny cases), validate
 with `/drift-port-validate`. Commit to fork branch
-`<target-torch-version>_auto_porting`. See
-`docs/torch-npu/PORTING-GUIDE.md` for the full user-facing walkthrough.
+`<target-torch-version>_auto_porting`.
 
 **If uncertain which mode**: look at the user request. "Build overlay
 for torch X" → Mode A. "Port torch_npu to torch Y's API drift" /
