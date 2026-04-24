@@ -2,9 +2,10 @@
 
 **给下一个 session / 另一个 dedicated agent 接手本项目时用**。只读这一篇文档 + `README`/`CLAUDE.md` 就能接着干。本文件补那些**不在其他 md 里、但下一个人必须知道的一次性 / stateful / 未解决事项**。
 
-最新更新：**2026-04-24 (深夜连续 session)**。**本次：port-expert skill
-体系闭环 + F1-F8 drift 分类学 + 3 个自动扫描工具 + 3 次 cold-drive
-发现并修复 16 个 skill/KB 级 gap**。详见 §0.5。
+最新更新：**2026-04-24 (全天 + 深夜连续 session)**。**本次：完整 4-上游
+port-expert 体系闭环 + F1-F8 drift 分类学 + 8 个自动扫描工具 + 5 次
+fresh-LLM cold-drive 发现并修复 28+ skill/KB bug + 2 个 fork PR 开好**。
+详见 §0.5。
 
 前次：2026-04-23 晚班。早班：Stage 2 + Stage 3 初版
 (transformers-day0, vllm-day0) scaffolding。**晚班：3-layer Day-0
@@ -36,14 +37,24 @@ cold-drive)。
 1. **drift 分类学 F1-F8 + F2-path-move**（跨上游通用）：
    - `src/skills/vllm-ascend/port-expert/references/patterns/domains/vllm-api-drift.md`
 
-2. **8 个自动扫描工具**（覆盖 F1-F8 除 F6）：
-   - vllm-ascend: `kb_drive_test.py` (F1/F2-rename/F3/F5), `sweep.sh` (commit-range wrapper), `check_f4.py` (F4), `check_f7_f8.py` (F7/F8 AST)
-   - torch_npu: `extract_imports.py` + `check_drift.py` (F1/F2-path-move), `check_sig_drift.py` (F3), `check_f7_f8.py` (F7/F8 AST)
+2. **8 个自动扫描工具 + 2 个 sweep wrapper**（覆盖 F1-F8 除 F6）：
+   - vllm-ascend: `kb_drive_test.py` (F1/F2-rename/F3/F5), `sweep.sh` (chains all 4), `check_f4.py`, `check_f7_f8.py`
+   - torch_npu: `extract_imports.py` + `check_drift.py` (F1/F2-path-move), `check_sig_drift.py` (F3), `check_f7_f8.py` (F7/F8 AST), `sweep.sh`
 
-3. **3 次 cold-drive**（新 agent 读 SKILL.md 从头跑）：
+3.5 **4 个上游 port-expert skill + 1 shared validator**:
+   - `vllm-ascend/port-expert` (Plugin, F1-F8 scanner)
+   - `torch-npu/port-expert` (Plugin + 深私有 API, F2-path-move 主导)
+   - `transformers/port-expert` (Plugin 小 surface, Stage 0 fast-path)
+   - `triton-ascend/port-expert` (Fork 模式，git rebase)
+   - `_shared/drift-port-validate` (OLD/NEW 双路径验证器，覆盖前 3 个)
+
+3. **5 次 fresh-LLM cold-drive**（新 agent 读 SKILL.md 从头跑）：
    - `drift-port-validate` × torch_npu: 10/10 PASS, 6 个 doc gap 全修 + 10 个 verify-script 作为 canonical templates 入库
-   - `torch-npu/port-expert`: 5 个 SKILL.md gap + KB 13-row 误分类；修复；新增 row 14 真实 drift (`Union` from `torch._inductor.codecache`)；row 1-13 标"defensive not observed"
-   - `vllm-ascend/port-expert`: 5 个 SKILL.md gap；加 Mode Sweep + sweep.sh；scanner FAMILY_RULES 诚实化（F4-F8 列为 UNDETECTED_FAMILIES）
+   - `torch-npu/port-expert` Mode B v1: 5 个 SKILL.md gap + KB 13-row 误分类；修复；新增 row 14 真实 drift (`Union` from `torch._inductor.codecache`)
+   - `vllm-ascend/port-expert`: 5 个 SKILL.md gap；加 Mode Sweep + sweep.sh；scanner FAMILY_RULES 诚实化
+   - `torch-npu/port-expert` Mode B v3 (pro-active): 4 个 CLI 一致性 gap（check_f7_f8 用 `--torch-path` 改成 `--pt-repo` 对齐其他；check_sig_drift PEP 604 normalizer 扩展；PORTING-GUIDE 缺第 4 步；SKILL.md Mode B 没 inline 4 条命令）—— 全修
+   - `porting-self-challenge`（self-critic skill 本身）: 3 个 doc gap（frontmatter 说 "8-question" 但 body 10 道；Step 1 强制 Discord 发消息；"background task finished" 可能误导）—— 全修
+   - `transformers/port-expert`: 5 个 gap（缺 Stage 0 快速决策树；KB_INDEX 把 5.6.0 标 "community latest" 会 stale；缺 firewalled-host fallback；verl fixture 应提升为 mandatory 步骤；agent.md vs SKILL.md 阅读 scope 不清）—— 全修
 
 4. **实战扫描数字**：
    - vllm 156 commits → 2 真 drift（都修了）
