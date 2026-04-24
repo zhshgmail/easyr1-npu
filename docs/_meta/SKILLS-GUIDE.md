@@ -327,7 +327,7 @@ cat /tmp/review-prompt.txt | \
 ### 与主 8 skill 的关系
 
 - 主 8 skill 解决"EasyR1 在 A3 上跑起来 + 新版本升级整个 RL 栈"
-- port-expert 3 skill 解决"某一个上游库的新版本漂移到 NPU 适配"
+- port-expert 5 skill 解决"某一个上游库的新版本漂移到 NPU 适配"
 
 两套**不重叠**：port-expert 假设 NPU base image 已经有某一旧版本，你要把上游最新版本桥接进去。主 skill 假设你要做的是端到端 RL 栈的一次完整迁移。
 
