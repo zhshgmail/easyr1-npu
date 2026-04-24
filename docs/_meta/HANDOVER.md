@@ -2,8 +2,12 @@
 
 **给下一个 session / 另一个 dedicated agent 接手本项目时用**。只读这一篇文档 + `README`/`CLAUDE.md` 就能接着干。本文件补那些**不在其他 md 里、但下一个人必须知道的一次性 / stateful / 未解决事项**。
 
-最新更新：**2026-04-23 (晚班更新)**。早班：Stage 2 + Stage 3 初版
-(transformers-day0, vllm-day0) scaffolding。**晚班（本次）：3-layer Day-0
+最新更新：**2026-04-24 (深夜连续 session)**。**本次：port-expert skill
+体系闭环 + F1-F8 drift 分类学 + 3 个自动扫描工具 + 3 次 cold-drive
+发现并修复 16 个 skill/KB 级 gap**。详见 §0.5。
+
+前次：2026-04-23 晚班。早班：Stage 2 + Stage 3 初版
+(transformers-day0, vllm-day0) scaffolding。**晚班：3-layer Day-0
 chain 完整打通 + codified**：torch 2.11 manual port → deploy artifacts →
 vllm-ascend Fix B+ patch → V1.3 PASS → 2 个新 skill
 (`torch-day0-expert`, `vllm-ascend/day0-expert`) + shared deploy-artifacts
@@ -20,6 +24,52 @@ cold-drive)。
 7. **每层之间插 Phase 2.5 deploy artifacts**：下层 upstream 团队从已部署状态开始，不重做
 8. **C-patch scope 限华为开源**（vllm-ascend / torch_npu / triton-ascend / transformers NPU integrations）
 9. **Autonomous 模式 = 不 pause 在 trivial 判断**；路径失败记 memory + 走下一条；fill build time 做独立工作
+
+---
+
+## 0.5 2026-04-24 session 摘要（接手前必读）
+
+**目标**：上一个晚班说"port-expert skill 写好了"，但从来没**冷启动**跑过。本次闭环：让 skills 真正能被另一个 LLM 独立执行、产出 fork 上的 port、自动扫描找 drift。
+
+**本次产出**（全部 push 到 main；commit 看 `git log` 最近 ~25 个）：
+
+1. **drift 分类学 F1-F8 + F2-path-move**（跨上游通用）：
+   - `src/skills/vllm-ascend/port-expert/references/patterns/domains/vllm-api-drift.md`
+
+2. **3 个自动扫描工具**（vllm-ascend + torch_npu 各一套）：
+   - vllm-ascend: `kb_drive_test.py`, `sweep.sh`
+   - torch_npu: `extract_imports.py`, `check_drift.py`, `check_sig_drift.py`
+
+3. **3 次 cold-drive**（新 agent 读 SKILL.md 从头跑）：
+   - `drift-port-validate` × torch_npu: 10/10 PASS, 6 个 doc gap 全修 + 10 个 verify-script 作为 canonical templates 入库
+   - `torch-npu/port-expert`: 5 个 SKILL.md gap + KB 13-row 误分类；修复；新增 row 14 真实 drift (`Union` from `torch._inductor.codecache`)；row 1-13 标"defensive not observed"
+   - `vllm-ascend/port-expert`: 5 个 SKILL.md gap；加 Mode Sweep + sweep.sh；scanner FAMILY_RULES 诚实化（F4-F8 列为 UNDETECTED_FAMILIES）
+
+4. **实战扫描数字**：
+   - vllm 156 commits → 2 真 drift（都修了）
+   - torch 437 (mod,sym) pairs → 1 真 F1（修了）+ 37 sig change → 0 确认-breaking（都是 cosmetic 或 additive）
+
+5. **Fork 现状**：
+   - `github.com/zhshgmail/vllm-ascend` `vllm-main_auto_porting`: 2 commits
+   - `gitcode.com/zhengshencn_hwca/pytorch` `torch-2.12_auto_porting`: 2 commits
+
+6. **Q9 + Q10 加入 self-critic skill**：
+   - Q9 loop-closure (N/total 计算)
+   - Q10 premature-stop (停下来问 meta 问题前必须先过 10 道自问)
+   - 配套 `docs/_meta/kb/challenge_patterns/09-loop-closure.md` + `10-premature-stop-asking.md`
+
+**未来 session 可立即做的事**（不需问）：
+- 扩展 F4-F8 自动检测（都列在 UNDETECTED_FAMILIES 里）
+- 给 fork branch 开 gitcode / github PR
+- 扩 F3 scanner cosmetic-filter 规则
+
+**阻塞等 A3 的事**：V1.3 / V1.4 真跑验证 (namespace 被其他 user 占满)
+
+**高价值入口文档**：
+- [`docs/vllm-ascend/PORTING-GUIDE.md`](../vllm-ascend/PORTING-GUIDE.md)
+- [`docs/torch-npu/PORTING-GUIDE.md`](../torch-npu/PORTING-GUIDE.md)
+- [`docs/_meta/SKILLS-GUIDE.md`](SKILLS-GUIDE.md) §6.5
+- `src/skills/*/port-expert/references/KB_INDEX.md`（vllm-ascend 和 torch-npu 都有）
 
 ---
 
