@@ -90,6 +90,19 @@ Running `scripts/kb_drive_test.py` over 156 post-0.20.0 vllm commits
 surfaced 2 additional F1 drifts that will hit vllm-ascend when it
 moves to vllm main tip. Not yet ported.
 
+### F2-path-move discovered by P2 cold-start (2026-04-25) — pending
+
+| Family | vllm commit | Symbol | Old path (broken) | New path | vllm-ascend sites | Fix status |
+|---|---|---|---|---|---|---|
+| **F2-path-move** | `cde8d2471` (PR #40732) | `SpecDecodeBaseProposer` | `vllm.v1.spec_decode.eagle` | `vllm.v1.spec_decode.llm_base_proposer` | 2 sites in `vllm_ascend/spec_decode/eagle_proposer.py` | **DONE on cold branch** — commit `ad2b7272` on `vllm-main_cold_20260425`; compat module `vllm_ascend/compat/spec_decode_base_proposer.py` |
+
+Surfaced by the 2026-04-25 fresh-LLM cold-start (see
+`docs/_meta/cold-start-pass-criteria.md`). Not caught by the yesterday
+`vllm-main_auto_porting` branch because the import line
+`from vllm.v1.spec_decode.eagle import EagleProposer, SpecDecodeBaseProposer`
+landed on vllm-ascend `origin/main` only recently; earlier analysis
+looked at older HEAD and misclassified as internal-name collision.
+
 ### F7/F8 discovered by check_f7_f8.py sweep (2026-04-24 late) — verified no-op
 
 Running `scripts/check_f7_f8.py --baseline v0.20.0 --target origin/main`

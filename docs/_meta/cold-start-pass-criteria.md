@@ -80,10 +80,13 @@ from current baseline v2.11.0. Follow
 2. **Real drift identified**: agent reported `Union` re-export drop
    from `torch._inductor.codecache`. Evidence: grep transcript.
 
-3. **Compat written**: on fresh branch, file
-   `torch_npu/_inductor/ascend_npu_ir/ascend_npu_ir/codecache.py` has
-   the `try/except` for `Union`. py_compile passes. Evidence:
-   `git show`, `python3 -m py_compile`.
+3. **Compat written**: on fresh branch, a compat module at
+   `torch_npu/compat/inductor_codecache.py` (or equivalent path) exists
+   with try/except for `Union`; OR inline try/except in the call-site
+   file `torch_npu/_inductor/ascend_npu_ir/ascend_npu_ir/codecache.py`.
+   Either shape is valid — the compat module approach is actually
+   preferred per the F2-path-move KB template. py_compile passes on
+   touched files. Evidence: `git show`, `python3 -m py_compile`.
 
 4. **F2-path-move shims**: either created all 5 compat modules
    (sympy_functions / inductor_ir / inductor_codegen_common /
