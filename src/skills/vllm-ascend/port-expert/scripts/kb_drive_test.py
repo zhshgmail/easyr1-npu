@@ -77,13 +77,17 @@ FAMILY_RULES = [
                     "F5 SUSPECT: class with buffer-shaped methods removed; verify by reading KB §F5"),
 ]
 
-# Families documented in the KB but NOT yet scanner-detected. Surfaced
-# in the final report so the user knows they still need manual inspection.
+# Families documented in the KB but NOT yet scanner-detected by this
+# per-commit scanner. F7/F8 are now covered by the sister tool
+# `check_f7_f8.py` (AST-based tag-range scan). F4/F6 remain manual.
 UNDETECTED_FAMILIES = [
     ("F4", "return-type migration (scalar → NamedTuple/dict)"),
     ("F6", "kv_cache tensor-vs-list contract"),
-    ("F7", "new required attribute on NPU subclass (naive detector too noisy — needs AST class-scope tracking)"),
-    ("F8", "new required method on NPU subclass (naive detector too noisy — needs AST class-scope tracking)"),
+]
+# Also manual in THIS scanner but auto-detected elsewhere:
+EXTERNALLY_DETECTED = [
+    ("F7", "new required attribute on NPU subclass — run scripts/check_f7_f8.py"),
+    ("F8", "new required method on NPU subclass — run scripts/check_f7_f8.py"),
 ]
 
 
@@ -573,11 +577,13 @@ def main() -> int:
     for rule in FAMILY_RULES:
         lines.append(f"- **{rule.family}** — {rule.description}")
     lines.append("")
-    lines.append("NOT auto-detected (still require manual KB §F{N} inspection):")
+    lines.append("NOT auto-detected by this scanner:")
     for fid, desc in UNDETECTED_FAMILIES:
+        lines.append(f"- **{fid}** — {desc} (still manual via KB §F{fid[1:]})")
+    for fid, desc in EXTERNALLY_DETECTED:
         lines.append(f"- **{fid}** — {desc}")
     lines.append("")
-    lines.append("A clean `impact_ascend: 0` therefore does NOT mean no drift — only no F1/F2-rename/F3 drift.")
+    lines.append("A clean `impact_ascend: 0` therefore does NOT mean no drift — also run `scripts/check_f7_f8.py` for class-surface changes.")
     lines.append("\n---\n")
     for d in impactful:
         lines.append(f"## [{d.matched_family or 'UNMATCHED'}] {d.symbol} — {d.kind}\n")
