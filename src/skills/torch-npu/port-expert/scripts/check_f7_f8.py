@@ -166,8 +166,10 @@ def diff_class(baseline_members, target_members):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--torch-path", required=True, type=Path,
-                   help="community pytorch checkout")
+    p.add_argument("--pt-repo", dest="torch_path", required=True, type=Path,
+                   help="community pytorch checkout (alias: --torch-path)")
+    p.add_argument("--torch-path", dest="torch_path", type=Path,
+                   help=argparse.SUPPRESS)  # accepted for backward-compat
     p.add_argument("--torch-npu-path", required=True, type=Path,
                    help="torch_npu checkout")
     p.add_argument("--baseline-tag", required=True)

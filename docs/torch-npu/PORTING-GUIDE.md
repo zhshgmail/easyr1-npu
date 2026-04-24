@@ -21,7 +21,7 @@
 
 ### 步骤 1 —— 扫描：哪些 torch 私有符号会被移走？
 
-**三步扫描脚本**（都在 `src/skills/torch-npu/port-expert/scripts/`）：
+**四步扫描脚本**（都在 `src/skills/torch-npu/port-expert/scripts/`）：
 
 ```bash
 # 第一步：提取 torch_npu 里所有 from torch._* import 对
@@ -45,10 +45,22 @@ python3 src/skills/torch-npu/port-expert/scripts/check_sig_drift.py \
   --baseline-tag v2.11.0 \
   --target-tag v2.12.0-rc3 \
   --out /tmp/sig_drift.json
+
+# 第四步：F7/F8 基类新属性/新方法扫描（AST class-scope）
+python3 src/skills/torch-npu/port-expert/scripts/check_f7_f8.py \
+  --pt-repo /path/to/community-pytorch-checkout \
+  --torch-npu-path /path/to/torch-npu-checkout \
+  --baseline-tag v2.11.0 \
+  --target-tag v2.12.0-rc3 \
+  --out /tmp/f78_scan.json
 ```
+
+所有 4 个脚本的 CLI 共用 `--pt-repo` / `--baseline-tag` / `--target-tag` flag，便于串联调用。
 
 输出结果：
 - `check_drift.py`：列出所有"baseline 有但 target 没有"的符号，每条带 drift 类型（`at-original` / `submodule` / `not-here` / `mod-gone`）
+- `check_sig_drift.py`：列出签名变化，按 cosmetic / additive-with-defaults / potentially-breaking 分类
+- `check_f7_f8.py`：列出 torch_npu 子类化的 parent 类上新增的公开属性/方法
 - `check_sig_drift.py`：列出签名变化，区分 cosmetic-only（PEP 604）/ additive-with-defaults（非破坏性）/ potentially-breaking（需要修）
 
 2026-04-24 v2.11.0→v2.12.0-rc3 实际扫描结果：437 个 (mod, symbol) 对 → 1 个真实 F1 drift（`torch._inductor.codecache::Union`）+ 37 个签名变化（21 cosmetic + 7 additive + 9 可能破坏但绝大多数也是 cosmetic typing 没真破坏）。

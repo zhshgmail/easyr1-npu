@@ -141,18 +141,29 @@ def main():
         """Strip PEP 604 rewrites and other cosmetic changes that don't
         affect calling semantics. Callers pass values, not types, so a
         type-annotation refactor is not a real F3 drift."""
-        # Union[A, B] <=> A | B
-        # Optional[X] <=> X | None
         s = sig
-        # Repeatedly flatten Union[...] to A|B|... form
-        for _ in range(3):
-            s = re.sub(r"Union\[([^\[\]]+)\]",
-                       lambda m: "|".join(x.strip() for x in m.group(1).split(",")),
-                       s)
-            s = re.sub(r"Optional\[([^\[\]]+)\]",
-                       lambda m: f"{m.group(1).strip()}|None",
-                       s)
-        # Collapse whitespace around | and in args
+        # Iteratively flatten Union[...] / Optional[...] — may be nested
+        # inside other generics, so loop until fixed point.
+        prev = None
+        while prev != s:
+            prev = s
+            # Union[A, B, ...] -> A|B|... (handles nested brackets via non-greedy match)
+            s = re.sub(
+                r"Union\[((?:[^\[\]]|\[[^\]]*\])+)\]",
+                lambda m: "|".join(x.strip() for x in m.group(1).split(",")),
+                s,
+            )
+            # Optional[X] -> X|None
+            s = re.sub(
+                r"Optional\[((?:[^\[\]]|\[[^\]]*\])+)\]",
+                lambda m: f"{m.group(1).strip()}|None",
+                s,
+            )
+        # Also: `Iterable[X]` vs `list[X] | tuple[X, ...]` is often a narrowing
+        # the caller won't notice if they always pass list/tuple anyway; we
+        # don't auto-normalize that one because it IS a real contract change
+        # in theory. Keep as-is.
+        # Collapse whitespace around punctuation
         s = re.sub(r"\s*\|\s*", "|", s)
         s = re.sub(r"\s*,\s*", ",", s)
         s = re.sub(r"\s*\(\s*", "(", s)
