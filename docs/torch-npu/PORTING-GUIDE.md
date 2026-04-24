@@ -21,25 +21,37 @@
 
 ### 步骤 1 —— 扫描：哪些 torch 私有符号会被移走？
 
-这是一个半自动过程，目前还没有对应 torch_npu 的 `kb_drive_test.py` 脚本（TBD）。手动做：
+**三步扫描脚本**（都在 `src/skills/torch-npu/port-expert/scripts/`）：
 
 ```bash
-# 1. 先进 torch_npu checkout 扫 torch 私有 import
-cd <torch_npu-checkout>
-grep -rh "from torch\._[a-z_]* import" --include="*.py" torch_npu/ \
-  | sort -u
+# 第一步：提取 torch_npu 里所有 from torch._* import 对
+cd <easyr1-npu-repo>
+python3 src/skills/torch-npu/port-expert/scripts/extract_imports.py \
+  --root /path/to/torch-npu-checkout/torch_npu \
+  > /tmp/imports_by_module.txt
 
-# 2. 把 "from <private_mod> import <symbols>" 提取成 (private_mod, symbol) 对
-# 3. 对每对在目标 torch 版本的源码树里 grep，看符号还在不在该 path
+# 第二步：F1/F2-path-move 扫描（符号是否还在旧路径）
+python3 src/skills/torch-npu/port-expert/scripts/check_drift.py \
+  --pt-repo /path/to/community-pytorch-checkout \
+  --pairs-file /tmp/imports_by_module.txt \
+  --baseline-tag v2.11.0 \
+  --target-tag v2.12.0-rc3 \
+  --out /tmp/drift.json
 
-cd <community-pytorch-checkout>
-git checkout <target-torch-tag>
-# for each (private_mod, symbol):
-git grep -l "^class SYMBOL\|^def SYMBOL\|^SYMBOL *=" -- torch/
-# 如果结果里有 target 的 private_mod 文件 → 没漂移
-# 如果是其他文件 → F2-path-move
-# 如果什么都没有 → F1
+# 第三步：F3 签名变化扫描
+python3 src/skills/torch-npu/port-expert/scripts/check_sig_drift.py \
+  --pt-repo /path/to/community-pytorch-checkout \
+  --pairs-file /tmp/imports_by_module.txt \
+  --baseline-tag v2.11.0 \
+  --target-tag v2.12.0-rc3 \
+  --out /tmp/sig_drift.json
 ```
+
+输出结果：
+- `check_drift.py`：列出所有"baseline 有但 target 没有"的符号，每条带 drift 类型（`at-original` / `submodule` / `not-here` / `mod-gone`）
+- `check_sig_drift.py`：列出签名变化，区分 cosmetic-only（PEP 604）/ additive-with-defaults（非破坏性）/ potentially-breaking（需要修）
+
+2026-04-24 v2.11.0→v2.12.0-rc3 实际扫描结果：437 个 (mod, symbol) 对 → 1 个真实 F1 drift（`torch._inductor.codecache::Union`）+ 37 个签名变化（21 cosmetic + 7 additive + 9 可能破坏但绝大多数也是 cosmetic typing 没真破坏）。
 
 **高风险扫描顺序**（torch_npu 历史 import 最多的私有模块，先扫这些）：
 
@@ -140,7 +152,7 @@ Commit message 里写明：
 
 ## 下一步延伸
 
-- **scanner 脚本**：给 torch_npu 写对应的 `kb_drive_test.py`（目前 vllm-ascend 有一个，torch 版本要适配 tag 比较 vs commit 比较的差异）
+- ~~**scanner 脚本**：给 torch_npu 写对应的 `kb_drive_test.py`~~ ✅ 已完成（2026-04-24）：三步扫描链路已就位，见上文步骤 1
 - **F3/F5 检测**：torch._inductor 函数签名变化（F3）和 IR class 重构（F5）是下一步
 - **C++ ABI 漂移**：torch_npu 有 `torch._C` 层的 9 个 import，这些可能遇到 F9 族（ABI 变化）。F9 族还没在 KB 里建立
 
