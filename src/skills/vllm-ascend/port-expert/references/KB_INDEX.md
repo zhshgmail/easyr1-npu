@@ -90,27 +90,25 @@ Running `scripts/kb_drive_test.py` over 156 post-0.20.0 vllm commits
 surfaced 2 additional F1 drifts that will hit vllm-ascend when it
 moves to vllm main tip. Not yet ported.
 
-### F7/F8 discovered by check_f7_f8.py sweep (2026-04-24 late) — pending
+### F7/F8 discovered by check_f7_f8.py sweep (2026-04-24 late) — verified no-op
 
 Running `scripts/check_f7_f8.py --baseline v0.20.0 --target origin/main`
-found 5 new attrs/methods added to parent classes that vllm-ascend
-subclasses. Each is a potential F7 (new attr) / F8 (new method) that
-the subclass may need to handle or override. Verify semantically before
-patching — some may be transparent inheritance.
+found 5 new attrs/methods. **Verification (2026-04-24 late)**: each
+base-class addition has a safe default or is a pure data attr that the
+NPU subclass transparently inherits — **no fix needed** until/unless
+NPU code paths start exercising these new members.
 
-| Family | Parent class | New member | vllm path | vllm-ascend subclass |
+| Family | Parent class | New member | Default in base | NPU subclass action |
 |---|---|---|---|---|
-| **F8** | `AttentionBackend` | `supports_batch_invariance` (method) | `vllm/v1/attention/backend.py` | `AscendAttentionBackend` (platform.py:519) |
-| **F7** | `CommonAttentionMetadata` | `seq_lens_cpu_upper_bound` (attr) | `vllm/v1/attention/backend.py` | `AscendCommonAttentionMetadata` (attention/utils.py:125) |
-| **F7** | `InputBatch` | `seq_lens_cpu_upper_bound` (attr) | `vllm/v1/worker/gpu/input_batch.py` | `NPUInputBatch` (worker/npu_input_batch.py) |
-| **F8** | `MergedColumnParallelLinearWithLoRA` | `apply` (method) | `vllm/lora/layers/column_parallel_linear.py` | (verify LoRA-NPU subclass exists) |
-| **F8** | `ReplicatedLinearWithLoRA` | `apply` (method) | `vllm/lora/layers/replicated_linear.py` | (verify LoRA-NPU subclass exists) |
+| **F8** | `AttentionBackend` | `supports_batch_invariance()` classmethod | `return False` | inherit False; NPU doesn't advertise batch invariance |
+| **F7** | `CommonAttentionMetadata` | `seq_lens_cpu_upper_bound: Tensor \| None` | `None` | inherit None; NPU code doesn't read it |
+| **F7** | `InputBatch` | `seq_lens_cpu_upper_bound: Tensor \| None` | `None` | inherit None |
+| **F8** | `MergedColumnParallelLinearWithLoRA` | `apply()` method | impl body calls super().apply | LoRA-NPU subclass (if any) inherits from subclass of this class |
+| **F8** | `ReplicatedLinearWithLoRA` | `apply()` method | impl body calls super().apply | (same as above) |
 
-To verify + fix: for each row, open the subclass, check whether the
-new member's behavior is inherited for free (base class has a usable
-default) or needs overriding. If override needed, add minimal method /
-attr to the NPU subclass. File-level changes only; no compat shim
-module needed (F7/F8 fixes go directly on the subclass file).
+Re-run the F7/F8 scanner on each future vllm upgrade — if a new
+finding has a `raise NotImplementedError` or no default, that one is
+NOT safe to inherit and needs real override.
 
 ### F1/F2 discovered by kb_drive_test harness — pending port (2026-04-24)
 
