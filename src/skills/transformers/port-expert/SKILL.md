@@ -60,12 +60,22 @@ classification {A/B/C} back to caller.
 ## Workflow
 
 ```
-P0  parse args (target version, base image, fixture consumer ref)
-P1  pip-overlay probe: inside base image, pip install target version,
-    measure drift vs base image's transformers
-P2  upstream branch fork from fixture consumer ref (transformers pin
-    loosened)
-P3  spawn transformers-day0-worker:
+P0   parse args (target version, base image, fixture consumer ref)
+P0.5 firewalled-host check: if the machine running this skill cannot
+     reach PyPI / docker hub (common for developer laptops behind a
+     corporate proxy), SKIP P1 and use the static byte-match path in
+     Stage 0 above. For outcome A this suffices. For B/C, the wet-run
+     steps MUST happen on A3 host (or another net-reachable box); emit
+     "pending A3 execution" marker instead of attempting them locally.
+P1   pip-overlay probe: inside base image, pip install target version,
+     measure drift vs base image's transformers
+P2   consumer-fixture loosening — MANDATORY even on outcome A if the
+     consumer (verl / EasyR1 / user repo) has a hard `transformers<X`
+     pin and X <= target. Branch from consumer ref, loosen the pin,
+     push; provenance = "orchestrator-fixture". Without this step, the
+     downstream V1.1/V1.3/V1.4 smokes will fail at consumer pip install
+     regardless of NPU adapter status.
+P3   spawn transformers-day0-worker:
     - API-diff analysis (ALL_ATTENTION_FUNCTIONS, npu_flash_attention sig,
       modeling_utils hooks)
     - Decision: A/B/C
@@ -73,8 +83,17 @@ P3  spawn transformers-day0-worker:
     - If B: cherry-pick NPU FA adaptation to target sig, build wheel,
       rebuild overlay, verify smokes
     - If C: emit blocker report with specific ecosystem piece naming
-P4  return outcome + image tag (A/B) or blocker doc (C)
+P4   return outcome + image tag (A/B) or blocker doc (C)
 ```
+
+### SKILL vs agent.md / state_machine.yaml scoping
+
+- **SKILL.md (this file)** = decision tree + classification KB + Stage 0
+  fast-path. Reading this + KB_INDEX is sufficient for dry classification.
+- **agent.md / state_machine.yaml** = wet-run runbook (A3 docker commands,
+  smoke harness integration, deploy artifact generation). Only needed when
+  running P3 / P4 end-to-end on A3. A cold-driving LLM doing dry-classify
+  can skip these.
 
 ## Stage 0 constraints for this expert
 
