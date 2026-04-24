@@ -44,8 +44,12 @@
   是 **其它** day-0 expert 的 C-patch 域；如果 delta 真的要到那边修，
   说明 target 选错了或者 session 要先回到上游 expert
 - `src/skills/**` 自身
-- `vllm_ascend_C.cpython-*.so` —— 这是编译产物，靠 rebuild 不是 patch
-  手写；C++ 改动属于 Fix C tech debt 不归本 session
+- `vllm_ascend_C.cpython-*.so` 直接手写编辑（这是编译产物）
+  
+  **注意**（2026-04-24 user 纠正）：**重编 `.so`（含 C++ source 改动
+  + CMakeLists 调整 + 让 `_TORCH_VERSION_BUILT_FOR` 常量被正确注入）
+  是本 expert 的本职工作，不是"超出 scope"**。见下面 Fix level 中
+  Level 4 被重新归为本 session 必做项。
 
 ## Outcome 矩阵
 
@@ -61,16 +65,54 @@
 同一个 bug 可能有多层 fix。按**最小 invasive**顺序试：
 
 1. **Env-var / CLI flag** — 不改 vllm-ascend 任何代码，只靠消费者配置
-   环境变量（如 `VLLM_BATCH_INVARIANT=1` 关掉 broken 的 custom op 路径）
+   环境变量
 2. **Python-layer guard at plugin entry point** — 在 `vllm_ascend/__init__.py`
-   自动设 env var，让用户无感；同时在 `enable_custom_op()` 或相邻
-   checkpoint 加 defense-in-depth
+   自动设 env var
 3. **Python-layer source edit in affected call site** — 如 forward_oot
    添加 version-gated branch
-4. **C++ source edit** — 需要重编 `.so`，属于长期 Fix C，不归本 session
+4. **C++ source edit + `.so` rebuild** — 改 CMakeLists / 改 C++ source /
+   重编 `vllm_ascend_C.so`
 
-Level 1-3 是本 session 的工作；Level 4 记进 PR material 的
-"follow-up work" 和独立的 tech debt task。
+**Level 4 是本 session 的工作，不是"tech debt"** (2026-04-24 user 纠正)：
+
+当上游层 torch 发生 ABI 破坏性变化（如 torch 2.10 → 2.11 的
+dispatcher refactor），`vllm_ascend_C.so` 按老 ABI 编的就会
+SIGSEGV。这时候**正确的 port 顺序是 Level 4 先做**，不是靠
+Level 1 的 `VLLM_BATCH_INVARIANT=1` 回退糊过去：
+
+- Level 1 回退路径（batch-invariant + triton-ascend linear）对
+  推理 single-prompt greedy smoke 够用，但在**训练 FSDP actor 的
+  backward path** 上数值和 native custom op 不一致，entropy_loss /
+  KL 这类 loss metric 会发散
+- 所以靠 Level 1 能让推理 smoke 过，但**不能**声称 port 完成
+- 真正的 port 标准是**重编 `.so` + guard 返回 True + native custom
+  op 在训练 backward 下可用 + 训练 entropy_loss 进 baseline band**
+
+**Level 4 执行 checklist**：
+
+1. `nm -D vllm_ascend_C*.so | grep TORCH_VERSION` 确认 `.so` 有哪个
+   torch version 常量；`ldd` 确认链接的 libtorch.so 版本
+2. 改 CMakeLists.txt / 改 C++ source：把 `_TORCH_VERSION_BUILT_FOR`
+   常量正确 export，值来自 CMake 的 `Torch_VERSION` 或 runtime 探测
+3. 在带正确 torch headers 的 overlay container 里 rebuild：
+   `python3 setup.py build_ext --inplace`
+4. 生成的 `.so` 通过三条验证：
+   - `nm` / `strings` 看 `_TORCH_VERSION_BUILT_FOR` 值正确
+   - `_torch_abi_safe_for_custom_ops()` 返回 True
+   - `torch.ops._C_ascend.<op>(...)` 调用不 segfault + 数值合理
+5. 把新 `.so` COPY 进 overlay image；**不**设 `VLLM_BATCH_INVARIANT=1`，
+   让 native custom op 路径生效
+6. 在 native path 下验证推理 + 训练 smoke 都过
+
+**反模式**（本 expert 不该做）：
+
+- ❌ `.so` 不重编 + 靠 `VLLM_BATCH_INVARIANT=1` 让推理 smoke 过 +
+  把训练异常归为"已知 limitation"。这是把真问题藏在下游，违反本
+  expert 的交付标准
+- ❌ 声称 "C++ rebuild 属于 tech debt 不归本 session"。当上游 torch
+  ABI 变了，C++ rebuild **就是** port 的核心内容
+- ❌ 只做 V1.3 推理 smoke 就叫 port 完成。V1.4 训练 + entropy_loss
+  进 band 是最低标准
 
 ## Target delta 来源
 
