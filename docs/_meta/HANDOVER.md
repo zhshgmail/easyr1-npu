@@ -36,9 +36,9 @@ cold-drive)。
 1. **drift 分类学 F1-F8 + F2-path-move**（跨上游通用）：
    - `src/skills/vllm-ascend/port-expert/references/patterns/domains/vllm-api-drift.md`
 
-2. **3 个自动扫描工具**（vllm-ascend + torch_npu 各一套）：
-   - vllm-ascend: `kb_drive_test.py`, `sweep.sh`
-   - torch_npu: `extract_imports.py`, `check_drift.py`, `check_sig_drift.py`
+2. **8 个自动扫描工具**（覆盖 F1-F8 除 F6）：
+   - vllm-ascend: `kb_drive_test.py` (F1/F2-rename/F3/F5), `sweep.sh` (commit-range wrapper), `check_f4.py` (F4), `check_f7_f8.py` (F7/F8 AST)
+   - torch_npu: `extract_imports.py` + `check_drift.py` (F1/F2-path-move), `check_sig_drift.py` (F3), `check_f7_f8.py` (F7/F8 AST)
 
 3. **3 次 cold-drive**（新 agent 读 SKILL.md 从头跑）：
    - `drift-port-validate` × torch_npu: 10/10 PASS, 6 个 doc gap 全修 + 10 个 verify-script 作为 canonical templates 入库
@@ -59,9 +59,11 @@ cold-drive)。
    - 配套 `docs/_meta/kb/challenge_patterns/09-loop-closure.md` + `10-premature-stop-asking.md`
 
 **未来 session 可立即做的事**（不需问）：
-- 扩展 F4-F8 自动检测（都列在 UNDETECTED_FAMILIES 里）
-- 给 fork branch 开 gitcode / github PR
-- 扩 F3 scanner cosmetic-filter 规则
+- ~~扩展 F4-F8 自动检测~~ ✅ F4/F7/F8 全做了，只有 F6（runtime 断言）仍手动
+- 给 fork branch 开 gitcode / github PR（`vllm-main_auto_porting` + `torch-2.12_auto_porting`）
+- 扩 F3 scanner cosmetic-filter 规则（Iterable[Any] → list[Any]|tuple[Any,...] 这类 typing narrowing 目前还算 "potentially-breaking"）
+- 验证 torch_npu 的 3 个 F7/F8 候选（AsyncCompile/GridExpr/PythonWrapperCodegen）在真实 torch 2.12 运行时的行为
+- F6 runtime 断言的 instrumentation 方案
 
 **阻塞等 A3 的事**：V1.3 / V1.4 真跑验证 (namespace 被其他 user 占满)
 
