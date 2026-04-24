@@ -301,13 +301,17 @@ cat /tmp/review-prompt.txt | \
 - vllm 主仓合并了 API 重构，vllm-ascend 没跟上 → 用 `vllm-ascend/port-expert`
 - 想验证你刚写的 compat shim 两条分支都对 → 用 `drift-port-validate`
 
-### 三个 skill
+### 五个 skill
 
-| Skill 名 | 做什么 | 关键工具 | 用户指南 |
+| Skill 名 | 上游类型 | 做什么 | 关键工具 |
 |---|---|---|---|
-| `vllm-ascend/port-expert` | 扫 vllm 新版本 diff，找出 vllm-ascend 受影响的符号，按 F1-F8 族匹配并建议修法 | `scripts/kb_drive_test.py`, `scripts/sweep.sh` | [`docs/vllm-ascend/PORTING-GUIDE.md`](../vllm-ascend/PORTING-GUIDE.md) |
-| `torch-npu/port-expert` | 扫 torch 新版本里所有 `torch._<private>` 符号，找出 torch_npu 受影响的导入路径搬家 | `scripts/extract_imports.py`, `scripts/check_drift.py`, `scripts/check_sig_drift.py` | [`docs/torch-npu/PORTING-GUIDE.md`](../torch-npu/PORTING-GUIDE.md) |
-| `_shared/drift-port-validate` | 验证写好的 compat shim 两条分支（OLD upstream 保留 + NEW upstream fallback）都对 | `references/templates/*_verify_{old,new}.py` | 无专属用户指南，在每个 port-expert 的 `/drift-port-validate` 步骤里被调用 |
+| `vllm-ascend/port-expert` | Plugin | 扫 vllm 新版本 diff，找 vllm-ascend 受影响符号，按 F1-F8 族匹配 | `kb_drive_test.py` / `sweep.sh` / `check_f4.py` / `check_f7_f8.py` |
+| `torch-npu/port-expert` | Plugin + 深私有 API | 扫 torch 私有 API 搬家，F2-path-move 主导 | `extract_imports.py` / `check_drift.py` / `check_sig_drift.py` / `check_f7_f8.py` / `sweep.sh` |
+| `transformers/port-expert` | Plugin（小，1 文件 143 行） | 静态 byte-compare NPU 集成文件 + ALL_ATTENTION_FUNCTIONS key 集合 | `Stage 0` 决策树（无 scanner 需要，手动 git show 够用） |
+| `triton-ascend/port-expert` | **Fork**（非 plugin） | git rebase + 手动 conflict 解决 | 无 scanner（用 `git rebase --onto`，记录 conflict surface） |
+| `_shared/drift-port-validate` | 验证 | 验证写好的 compat shim 两条分支（OLD + NEW）都对 | `references/templates/*_verify_{old,new}.py` |
+
+**关键区别**：前 3 个是 plugin 形态（可以用 F1-F8 scanner），triton-ascend 是 fork 形态（要走 git rebase）。不同的上游类型用不同的 port-expert pattern。
 
 ### 典型调用链
 
