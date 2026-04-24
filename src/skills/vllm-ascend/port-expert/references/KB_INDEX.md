@@ -7,18 +7,26 @@
 | [../../_shared/references/ALWAYS_LOADED_UNIVERSAL.md](../../_shared/references/ALWAYS_LOADED_UNIVERSAL.md) | Cross-expert OL | Phase A |
 | [ALWAYS_LOADED_RULES.md](ALWAYS_LOADED_RULES.md) | OL-03 + OL-08 + outcome matrix + fix-level selection | Phase A |
 | [patterns/domains/vllm-ascend-probe.md](patterns/domains/vllm-ascend-probe.md) | Reproducer minimization + call-site location + C++ ABI drift detection | Phase A + B |
+| [patterns/domains/vllm-api-drift.md](patterns/domains/vllm-api-drift.md) | vllm API drift families F1–F8 (removed symbol / rename / sig change / return-type / buffer API / kv_cache / new attr / new method) | Phase B + C when root cause is vllm community API change |
 | [../../_shared/references/patterns/domains/day0-deploy-artifacts.md](../../_shared/references/patterns/domains/day0-deploy-artifacts.md) | 5 deploy deliverables | Phase E |
 
 ## Quick symptoms → classification
 
-| Symptom | Likely outcome | Fix level |
-|---|---|---|
-| vllm-ascend main tip already has the fix (the shipped release just doesn't) | **A** | ship overlay pointing at newer vllm-ascend commit; no patch needed |
-| Segfault in profile_run at `torch._ops.py:1269 __call__` → `vllm_ascend/ops/*.py forward_oot` | **C-patch** | **C++ ABI drift** on `vllm_ascend_C`; route around via python-layer guard + env var (Fix B+) |
-| `ImportError: cannot import name 'X' from vllm...` where vllm dropped the symbol | **C-patch** | forward-compat helper in vllm-ascend that tries both old + new import paths |
-| Segfault or error only in batch-invariant-NON-gated path | **C-patch** | need code change (env-var workaround alone won't help) |
-| V1.3 FAIL but fix belongs to community vllm (e.g. their dispatcher change is the actual bug) | **C-report** | file upstream, session ends at report |
-| Consumer just needs to set `VLLM_BATCH_INVARIANT=1` to work | **B** | document env-var workaround in ONBOARDING |
+| Symptom | Likely outcome | Fix level | Route to |
+|---|---|---|---|
+| vllm-ascend main tip already has the fix (the shipped release just doesn't) | **A** | ship overlay pointing at newer vllm-ascend commit; no patch needed | — |
+| Segfault in profile_run at `torch._ops.py:1269 __call__` → `vllm_ascend/ops/*.py forward_oot` | **C-patch** | **C++ ABI drift** on `vllm_ascend_C`; route around via python-layer guard + env var (Fix B+) | `vllm-ascend-probe.md` Phase B |
+| `ImportError: cannot import name 'X' from vllm...` where vllm dropped the symbol | **C-patch** | forward-compat helper in vllm-ascend that tries both old + new import paths | `vllm-api-drift.md` **F1** |
+| `AttributeError: module 'vllm.X' has no attribute 'OldName'` after vllm rename | **C-patch** | alias the new name back to the old at import time | `vllm-api-drift.md` **F2** |
+| `TypeError: func() missing/unexpected argument` on a vllm call after upgrade | **C-patch** | runtime signature sniff via `inspect.signature` | `vllm-api-drift.md` **F3** |
+| Arithmetic/indexing error on a previously-scalar vllm return | **C-patch** | return-type migration (scalar → NamedTuple) | `vllm-api-drift.md` **F4** |
+| Many `.np` / `.copy_to_gpu` / `CpuGpuBuffer` call sites failing together | **C-patch** | thin compat helper (`to_gpu`/`np_view`) instead of N-site migration | `vllm-api-drift.md` **F5** |
+| `AssertionError: attn_layer.kv_cache must be single tensor` or silent token garbage | **C-patch** | version-detect kv_cache contract (list vs stacked tensor) | `vllm-api-drift.md` **F6** |
+| `AttributeError: 'NPUX' has no attribute 'Y'` where vllm base class added Y | **C-patch** | add attr with NPU-correct default (not `True` to silence) | `vllm-api-drift.md` **F7** |
+| `NotImplementedError` on a base class method vllm made required | **C-patch** | implement minimal NPU-semantic version | `vllm-api-drift.md` **F8** |
+| Segfault or error only in batch-invariant-NON-gated path | **C-patch** | need code change (env-var workaround alone won't help) | `vllm-ascend-probe.md` |
+| V1.3 FAIL but fix belongs to community vllm (e.g. their dispatcher change is the actual bug) | **C-report** | file upstream, session ends at report | — |
+| Consumer just needs to set `VLLM_BATCH_INVARIANT=1` to work | **B** | document env-var workaround in ONBOARDING | — |
 
 ## Known ABI drift surfaces (2026-04-23)
 
@@ -49,6 +57,32 @@
   (`811271d1`, merged 2026-04-03) — switched to `vllm.envs.VLLM_BATCH_INVARIANT`.
   So vllm 0.19.1 is **not a valid Day-0 target** (upstream already handled).
   See memory `day0_real_target.md`.
+
+## Concrete case registry — vllm 0.20.0 drift (observed 2026-04-23/24)
+
+Sourced from trace branch on fork during the vllm 0.20.0 Day-0 session.
+Each row is one fix landed against vllm-ascend; future drifts match by
+family ID.
+
+| Family | vllm PR | Symptom (where to grep) | Affected vllm-ascend file |
+|---|---|---|---|
+| **F1** | PR #37880 | `create_vllm_config_for_draft_model` removed | `vllm_ascend/spec_decode/draft_proposer.py` |
+| **F1** | — | `vllm_is_batch_invariant` public getter removed (vllm ≥0.19) | `ascend_config.py`, `batch_invariant.py`, `sample/sampler.py`, `utils.py` |
+| **F2** | PR #37975 | `GatedDeltaNet` rename | `vllm_ascend/patch/worker/patch_qwen3_next.py`, `patch_qwen3_5.py` |
+| **F3** | PR #32951 | `_get_cumsum_and_arange` signature change | `vllm_ascend/worker/model_runner_v1.py` `_prepare_inputs` |
+| **F3** | PR #32951 | `_prepare_input_ids` now takes `num_reqs` | `model_runner_v1.py` |
+| **F4** | — | `compile_or_warm_up_model` returns `CompilationTimes` NamedTuple | `vllm_ascend/worker/worker.py` |
+| **F5** | PR #32951 | 11 `.np` / `.copy_to_gpu` / `.gpu` / `.cpu` sites — `CpuGpuBuffer` migration (Revert round-tripped once) | `model_runner_v1.py` |
+| **F6** | — | `attn_layer.kv_cache` must be single stacked tensor (not list) | `model_runner_v1.py`, `patch/worker/patch_qwen3_next_mtp.py` |
+| **F7** | — | `forward_includes_kv_cache_update=False` + `do_kv_cache_update` method required | `vllm_ascend/attention/attention_v1.py` |
+| **F7** | — | `NPUInputBatch.logprob_token_ids` attribute required | `vllm_ascend/worker/npu_input_batch.py` |
+| **F8** | — | `BlockTable.clear_row` method required | `vllm_ascend/worker/block_table.py` |
+| **F8** | PR #38468 | `Platform.manual_seed_all` required | `vllm_ascend/platform.py` |
+| **F8** | PR #37487 | `attention_v1.forward_impl` must pre-populate `self.key_cache` | `attention/attention_v1.py` |
+
+Trace branch on fork: `ascend-day0-torch211-20260423` (23 commits,
+range `c91d752..3ecb82f4`). For the concrete diffs, check that branch;
+for how-to-generalize, read `patterns/domains/vllm-api-drift.md`.
 
 ## Fix pattern — auto-enable batch-invariant at plugin entry
 
