@@ -58,23 +58,31 @@ class FamilyMatchRule:
     description: str
 
 
+# Only families that have actual detector functions implemented below
+# are listed here. F4 (return-type migration), F5 (buffer API), F6
+# (kv_cache contract), F7 (new-required-attr), F8 (new-required-method)
+# are described in the KB but NOT automatically detected by this scanner —
+# they require runtime / base-class inspection that is out of scope here.
+# A clean scan output (impact_ascend=0) only means no F1/F2/F3 drift;
+# the user must still manually check the KB §F4..F8 sections on each
+# new vllm release.
 FAMILY_RULES = [
     FamilyMatchRule("F1", "removed_symbol",
                     "Removed symbol (import) — Upstream deleted a public symbol vllm-ascend imports"),
-    FamilyMatchRule("F2", "renamed",
+    FamilyMatchRule("F2-rename", "renamed",
                     "Renamed type/class — Upstream renamed a class/type vllm-ascend imports or subclasses"),
     FamilyMatchRule("F3", "sig_change",
                     "Signature change — Upstream added/removed/reordered args on a function vllm-ascend calls"),
-    FamilyMatchRule("F4", "return_type_change",
-                    "Return-type migration — Scalar → NamedTuple/dict"),
-    FamilyMatchRule("F5", "buffer_api_migration",
-                    "Buffer API migration — CpuGpuBuffer ↔ plain tensor"),
-    FamilyMatchRule("F6", "kv_cache_contract",
-                    "kv_cache tensor-vs-list contract change"),
-    FamilyMatchRule("F7", "new_attr_required",
-                    "New required attribute on NPU integration class"),
-    FamilyMatchRule("F8", "new_method_required",
-                    "New required method on NPU integration class"),
+]
+
+# Families documented in the KB but NOT yet scanner-detected. Surfaced
+# in the final report so the user knows they still need manual inspection.
+UNDETECTED_FAMILIES = [
+    ("F4", "return-type migration (scalar → NamedTuple/dict)"),
+    ("F5", "buffer API migration (CpuGpuBuffer ↔ plain tensor)"),
+    ("F6", "kv_cache tensor-vs-list contract"),
+    ("F7", "new required attribute on NPU subclass"),
+    ("F8", "new required method on NPU subclass"),
 ]
 
 
@@ -406,8 +414,20 @@ def main() -> int:
         f"Impact vllm-ascend: {len(impactful)}",
         f"Matched to KB family: {len(impactful) - len(unmatched)}",
         f"Unmatched (KB gap): {len(unmatched)}",
-        "\n---\n",
+        "",
+        "## ⚠ Detector coverage",
+        "",
+        "This scanner only catches the following drift families automatically:",
     ]
+    for rule in FAMILY_RULES:
+        lines.append(f"- **{rule.family}** — {rule.description}")
+    lines.append("")
+    lines.append("NOT auto-detected (still require manual KB §F{N} inspection):")
+    for fid, desc in UNDETECTED_FAMILIES:
+        lines.append(f"- **{fid}** — {desc}")
+    lines.append("")
+    lines.append("A clean `impact_ascend: 0` therefore does NOT mean no drift — only no F1/F2-rename/F3 drift.")
+    lines.append("\n---\n")
     for d in impactful:
         lines.append(f"## [{d.matched_family or 'UNMATCHED'}] {d.symbol} — {d.kind}\n")
         lines.append(f"- vllm path (removed/changed): `{d.vllm_path}`")
@@ -436,6 +456,8 @@ def main() -> int:
         "impact_ascend": len(impactful),
         "matched": len(impactful) - len(unmatched),
         "unmatched": len(unmatched),
+        "detector_covers": [r.family for r in FAMILY_RULES],
+        "undetected_families": [f for f, _ in UNDETECTED_FAMILIES],
         "proposal_path": str(proposal_path),
         "drifts": [
             {
