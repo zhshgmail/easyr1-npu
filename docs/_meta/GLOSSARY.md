@@ -6,9 +6,9 @@
 
 ---
 
-## 1. Day-0 skill 的 outcome 分类
+## 1. Port outcome 分类
 
-Day-0 skill（`vllm-day0-expert` / `torch-day0-expert` / `vllm-ascend/day0-expert` / `transformers-day0-expert`）每跑完一个 session，产出**一个**下列 outcome：
+Port skill（每个上游的 `<upstream>/port-expert/`）每跑完一个 session，产出**一个**下列 outcome。**Day-0 vs upgrade 的区分已废弃**（2026-04-23T22:29 user 指令）——同一个 port-expert 同时覆盖"NPU 还没适配"和"shim 到已适配 image"两种场景。
 
 | Outcome | 含义 | 下游拿到什么 | 案例 |
 |---|---|---|---|
@@ -23,7 +23,7 @@ Day-0 skill（`vllm-day0-expert` / `torch-day0-expert` / `vllm-ascend/day0-exper
 
 ## 2. Fix-level 阶梯（C-patch 内部的复杂度分层）
 
-`C-patch` 内部，补丁的**侵入性**分 4 个 Level，Day-0 session **优先级从低到高**选：
+`C-patch` 内部，补丁的**侵入性**分 4 个 Level，port session **优先级从低到高**选：
 
 | Level | 名字 | 改什么 | 例子 | session 内能做？ |
 |---|---|---|---|---|
@@ -36,9 +36,9 @@ Day-0 skill（`vllm-day0-expert` / `torch-day0-expert` / `vllm-ascend/day0-exper
 
 ---
 
-## 3. "Fix A / Fix B+ / Fix C" 这批速记（torch 2.11 Day-0 session 专用）
+## 3. "Fix A / Fix B+ / Fix C" 这批速记（torch 2.11 port session 专用）
 
-这是 **2026-04-23 torch 2.11 porting session** 内部用的速记，不是通用术语。严格讲它们是上面 Level-ladder 的**具体实例**。各自只在 torch 2.11 Day-0 上下文有意义，其他 Day-0 session（比如 vllm 0.20）**不应该用这套标签**。
+这是 **2026-04-23 torch 2.11 porting session** 内部用的速记，不是通用术语。严格讲它们是上面 Level-ladder 的**具体实例**。各自只在 torch 2.11 port 上下文有意义，其他 port session（比如 vllm 0.20）**不应该用这套标签**。
 
 | 标签 | 对应 Level | 干了什么 | 产物 |
 |---|---|---|---|
@@ -56,7 +56,7 @@ Day-0 skill（`vllm-day0-expert` / `torch-day0-expert` / `vllm-ascend/day0-exper
 
 ## 4. Smoke rung（V1.x / V2.x）
 
-EasyR1 port 验证的不同**深度**。数字越大，覆盖越深。一次 port 不必都跑，但每次 Day-0 / upgrade session 至少跑到其对应的 rung。
+EasyR1 port 验证的不同**深度**。数字越大，覆盖越深。一次 port 不必都跑，但每次 port session 至少跑到其对应的 rung。
 
 | Rung | 名字 | 覆盖什么 | 时长估算 | chip 数 |
 |---|---|---|---|---|
@@ -66,7 +66,7 @@ EasyR1 port 验证的不同**深度**。数字越大，覆盖越深。一次 por
 | **V1.5** | 4-chip training | 同 V1.4 recipe scaled to 4 chips（2 A3 cards），`world_size=4` HCCL cross-card | 4-10min | 4（跨卡 HCCL） |
 | **V2.2** | full GRPO training | 完整 reward + multiple epochs 训练收敛，不是只 2 step smoke | 小时级 | ≥4 |
 
-**Day-0 session 的最小 G2（gate 2）**：V1.3 PASS 算"推理能跑"；V1.4 PASS 才算"训练能跑"。V1.3 PASS 但 V1.4 FAIL 是 known 状态（如 torch 2.11 Fix B+），session 标记为"部分 outcome"。
+**port session 的最小 G2（gate 2）**：V1.3 PASS 算"推理能跑"；V1.4 PASS 才算"训练能跑"。V1.3 PASS 但 V1.4 FAIL 是 known 状态（如 torch 2.11 Fix B+），session 标记为"部分 outcome"。
 
 **V1.3 PASS 的严谨定义**：
 - 3 个 prompt 全部产出**非空**输出（formal criterion）
@@ -78,7 +78,7 @@ EasyR1 port 验证的不同**深度**。数字越大，覆盖越深。一次 por
 
 ## 5. Session tag 命名规范
 
-每次 Day-0 / upgrade / probe session 产出的 workspace / image / branch 都以 session-tag 命名，格式：
+每次 port / probe session 产出的 workspace / image / branch 都以 session-tag 命名，格式：
 
 ```
 <expert-name>-<short-purpose>-<YYYYMMDD>-<HHMM>
@@ -97,7 +97,7 @@ EasyR1 port 验证的不同**深度**。数字越大，覆盖越深。一次 por
 
 ## 6. Upstream 范围 + 编辑权限矩阵
 
-Day-0 expert 的 C-patch **允许直接改**（Huawei-owned）：
+Port expert 的 C-patch **允许直接改**（Huawei-owned）：
 - `github.com/vllm-project/vllm-ascend`
 - `gitcode.com/Ascend/pytorch`（`torch_npu`）
 - `gitcode.com/Ascend/triton-ascend`
@@ -114,7 +114,7 @@ C-report-only（我们不改，只报）：
 
 ## 7. 术语链条 cheat-sheet
 
-把一个 Day-0 session 结果**完整描述**的正确模板：
+把一个 port session 结果**完整描述**的正确模板：
 
 > **Outcome** = C-patch
 > **Fix level** = Level 4（C++ rebuild + CMakeLists 修改）
@@ -132,4 +132,5 @@ C-report-only（我们不改，只报）：
 |---|---|---|
 | "main2main skill / main2main scope" | （直接说是 vllm-ascend 团队的 main-branch 同步工作） | 自造词，memory `no_invented_scope_boundaries.md` 里说明过是用来合理化停工的 excuse |
 | "Day-0 skill boundary hit at layer N" | （直接说具体哪个 drift layer 卡住 + 为什么） | 同上，是发明的边界 |
+| "day0 vs upgrade" 二分 | 统一叫 **port** | 2026-04-23T22:29 user 指令：同一件事不应硬拆，已合并所有 day0-expert + upgrade-expert 到 port-expert |
 | "outcome C" 单独（不带 -patch / -report 后缀） | `C-patch` 或 `C-report` | 2026-04-23 before 把 C 拆成两种：Huawei-owned vs community |
