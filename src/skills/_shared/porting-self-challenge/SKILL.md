@@ -1,11 +1,14 @@
 ---
 name: porting-self-challenge
 description: >
-  Before accepting a new porting goal, before reporting completion, or before any
-  destructive action — read the lesson KB under docs/_meta/kb/porting_lessons/,
-  read the challenge-pattern KB under docs/_meta/kb/challenge_patterns/, and run
-  the 8-question self-challenge below. Record outcome in Discord; if any question
-  fails to answer with concrete evidence, stop and ask the user before proceeding.
+  Before accepting a new porting goal, before reporting completion, before any
+  destructive action, or before stopping mid-work to ask the user a meta-question
+  — read the lesson KB under docs/_meta/kb/porting_lessons/, read the
+  challenge-pattern KB under docs/_meta/kb/challenge_patterns/, and run the
+  10-question self-challenge below. Record outcome in Discord (or in a log file
+  when offline); if any question fails to answer with concrete evidence, STOP
+  the original action and either continue with the obvious next task or ask the
+  user only if the legitimate-stop conditions in Q10 are met.
 argument-hint: >
   context: a short sentence describing what the user just asked or what I'm about
   to claim complete (e.g. "user asked: do transformers port", or "about to claim:
@@ -36,15 +39,20 @@ This skill is a mandatory gate BEFORE any of the following:
 
 Do NOT run this skill when:
 - I personally feel a sub-step went well
-- A background task finished (that's a notification, not a completion claim)
-- I'm writing routine Discord progress updates
+- A background task finished **unless it's followed by a stop / ask / claim**
+  (a scanner returning clean is a tool exit, NOT a completion event; stopping
+  right after because "scanners clean" triggers the skill, not the scanner's
+  own exit)
+- I'm writing routine Discord progress updates without a meta-question at the end
 
 ## How to run
 
-Step 1. Announce to Discord that I'm running the gate:
-```
-[SELF-CHALLENGE] context: <one line>
-```
+Step 1. Announce that I'm running the gate. Default: post to Discord with
+`[SELF-CHALLENGE] context: <one line>`. Offline / meta-test mode (e.g. a
+skill cold-drive harness, unit test, or environment without a Discord
+chat_id): write the same line to `/tmp/self_challenge_<timestamp>.log`
+instead, and continue. The goal is an auditable record, not specifically
+Discord.
 
 Step 2. Read the two KBs fully:
 - `docs/_meta/kb/porting_lessons/index.md` + each lesson listed there
