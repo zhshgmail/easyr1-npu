@@ -90,6 +90,34 @@ Running `scripts/kb_drive_test.py` over 156 post-0.20.0 vllm commits
 surfaced 2 additional F1 drifts that will hit vllm-ascend when it
 moves to vllm main tip. Not yet ported.
 
+### F7/F8 discovered by check_f7_f8.py sweep (2026-04-24 late) — pending
+
+Running `scripts/check_f7_f8.py --baseline v0.20.0 --target origin/main`
+found 5 new attrs/methods added to parent classes that vllm-ascend
+subclasses. Each is a potential F7 (new attr) / F8 (new method) that
+the subclass may need to handle or override. Verify semantically before
+patching — some may be transparent inheritance.
+
+| Family | Parent class | New member | vllm path | vllm-ascend subclass |
+|---|---|---|---|---|
+| **F8** | `AttentionBackend` | `supports_batch_invariance` (method) | `vllm/v1/attention/backend.py` | `AscendAttentionBackend` (platform.py:519) |
+| **F7** | `CommonAttentionMetadata` | `seq_lens_cpu_upper_bound` (attr) | `vllm/v1/attention/backend.py` | `AscendCommonAttentionMetadata` (attention/utils.py:125) |
+| **F7** | `InputBatch` | `seq_lens_cpu_upper_bound` (attr) | `vllm/v1/worker/gpu/input_batch.py` | `NPUInputBatch` (worker/npu_input_batch.py) |
+| **F8** | `MergedColumnParallelLinearWithLoRA` | `apply` (method) | `vllm/lora/layers/column_parallel_linear.py` | (verify LoRA-NPU subclass exists) |
+| **F8** | `ReplicatedLinearWithLoRA` | `apply` (method) | `vllm/lora/layers/replicated_linear.py` | (verify LoRA-NPU subclass exists) |
+
+To verify + fix: for each row, open the subclass, check whether the
+new member's behavior is inherited for free (base class has a usable
+default) or needs overriding. If override needed, add minimal method /
+attr to the NPU subclass. File-level changes only; no compat shim
+module needed (F7/F8 fixes go directly on the subclass file).
+
+### F1/F2 discovered by kb_drive_test harness — pending port (2026-04-24)
+
+Running `scripts/kb_drive_test.py` over 156 post-0.20.0 vllm commits
+surfaced 2 additional F1 drifts that will hit vllm-ascend when it
+moves to vllm main tip. Not yet ported.
+
 | Family | vllm commit | Removed symbol | vllm-ascend sites |
 |---|---|---|---|
 | **F1** | `5e584ce9e` | `SharedFusedMoE` class | 9 (utils.py, ops/fused_moe, _310p/fused_moe) |
