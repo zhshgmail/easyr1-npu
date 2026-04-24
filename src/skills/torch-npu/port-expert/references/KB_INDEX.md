@@ -188,6 +188,10 @@ Ranked by torch_npu import-site count (2026-04-24 manual count):
 6. If the symbol is gone from the tree → **F1** → file upstream issue.
 7. If the symbol's signature changed → **F3**.
 
-A scanner script for this (analog of `kb_drive_test.py` for torch) is
-TBD — see the torch-npu port-expert `SKILL.md` for the manual workflow
-in the meantime.
+Scanner scripts for this workflow are at
+`src/skills/torch-npu/port-expert/scripts/`:
+- `extract_imports.py` — collect `from torch._<private> import X` pairs
+- `check_drift.py` — F1 / F2-path-move detection (at-original / submodule / not-here / mod-gone)
+- `check_sig_drift.py` — F3 signature change detection with PEP 604 + additive-default filters
+- `check_f7_f8.py` — F7/F8 class-API additions on subclassed parents (AST)
+- `sweep.sh` — one-command wrapper chaining all 4 scanners

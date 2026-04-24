@@ -92,7 +92,10 @@ is given:
 5. Novel findings go into P3. Each novel finding is one commit on the
    fork branch.
 
-A ready-made sweep wrapper is a TODO; today you run the loop in bash.
+A ready-made sweep wrapper is at `scripts/sweep.sh`: it chains
+`kb_drive_test` per-commit + `check_f4.py` + `check_f7_f8.py` and
+cross-checks against the KB case registry. One command returns the
+full drift classification for a tag range.
 
 ## Scanner coverage (2026-04-24 late)
 
