@@ -90,31 +90,85 @@ community-already-applied commits vs NPU-specific commits.
 
 - **Text-level merge**: all 12 conflicts resolved, `git commit` clean.
 - **`py_compile`** of all Python files touched: PASS.
-- **`py_compile`** of 12 NPU backend Python files (`third_party/ascend/backend/*.py`): PASS.
-- **`import triton`** at Python level: **FAILS** at `from triton._C.libtriton import getenv` — needs compiled C extension. **This is the signal that text-level merge is only half the work.**
-- **C++ build**: NOT ATTEMPTED this session (needs LLVM prebuild + A3 hardware).
+- **C++ build** on A3 x86 NPU host (verl-8.5.2 image, CANN 8.3.RC2):
+  **PASS after 6 LLVM API drift fixes** (see next section).
+- **`import triton`** at Python level: **PASS** after 1 dead-import fix
+  (circular). `triton.__version__ == '3.6.0'`; 3 backends discovered.
+- **NPU JIT kernel smoke** (`@triton.jit vector_add`): **FAILS deep**
+  in the pipeline. Reaches `bishengir-compile` stage with CANN
+  integration mismatch — see § "Runtime drift surfaces" + § "CANN gate".
+
+## LLVM API drifts discovered during P4 build (community v3.5.0 → v3.6.0)
+
+Each surfaced one-by-one during compile; fix in sequence and rebuild.
+
+| # | File + line | Community change | Fix on LLVM `fad32722` base |
+|---|---|---|---|
+| 1 | `python/src/llvm.cc:278` | New dump-MIR code uses `llvm::sys::fs::OF_None` | Add `#include "llvm/Support/FileSystem.h"` (missing include — community header hygiene bug) |
+| 2 | `third_party/nvidia/lib/TritonNVIDIAGPUToLLVM/TritonGPUToLLVM.cpp:222` | `NVVM::NVVMMemorySpace::Shared` | Renamed in LLVM: `kSharedMemorySpace` |
+| 3 | `third_party/amd/lib/TritonAMDGPUToLLVM/TritonGPUToLLVM.cpp:292` | Same `::Shared` site | Same `kSharedMemorySpace` |
+| 4 | `third_party/amd/python/triton_amd.cc:422,424,426,475` | Passes `llvm::Triple` where older LLVM expected `llvm::StringRef` | `triple.getTriple()` instead of `triple` |
+| 5 | `third_party/amd/lib/TritonAMDGPUTransforms/Utility.cpp:32` | `scf::ForOp::getStaticTripCount()` | Not in old LLVM; reimplement inline from `mlir::getConstantIntValue(lb/ub/step)` |
+
+Note drifts #2/3 come from an LLVM enum rename that hit both nvidia
+AND amd backend's near-identical `TritonGPUToLLVM.cpp` files (same
+"16B-align smem" site). Classic cross-backend duplication; watch for
+all copies.
+
+## Python-layer drift surfaces (post-build, at import + runtime)
+
+| # | Site | Error | Fix |
+|---|---|---|---|
+| 6 | `third_party/ascend/backend/compiler.py:63` | `ImportError: cannot import name 'backends' ... (circular import)` | Delete unused `from triton.runtime import driver` — dead import, triggers circular chain through `triton.runtime.driver`  |
+| 7 | `NPUOptions` dataclass | `KeyError: 'Keyword argument instrumentation_mode was specified but unrecognised'` | Add `instrumentation_mode: str = ""` to the dataclass. Community v3.6.0's `jit.py` injects this kwarg unconditionally before `_pack_args`; every backend's Options must declare it (AMD/nvidia already did). |
+| 8 | 2x `pm.run(mod)` calls in ascend `compiler.py` | `pm.run(): incompatible function arguments. Expected (pass_manager, module, str)` | Change to `pm.run(mod, 'make_ttir')` / `pm.run(mod, 'make_ttadapter')` — community made stage-name a required 2nd arg. |
+| 9 | `NPUOptions.use_bytecode: bool = True` default | `dialect 'func' does not implement the bytecode interface ... bytecode version 6 produced by: MLIR22.0.0git` | Flip default to `False`. Community v3.6.0 emits MLIR bytecode v6 from MLIR 22.x; current CANN image's `bishengir-opt` was built against older MLIR and can't parse v6. Until CANN ships a matching bishengir, take the direct Linalg-IR path. |
+
+## CANN gate — hard wall at `bishengir-compile`
+
+After all 9 fixes above, the pipeline runs end-to-end through triton →
+MLIR-adapter → Linalg-IR → invokes `bishengir-compile`. Next error:
+
+```
+bishengir-compile: Unknown command line argument '--link-aicore-bitcode=...'.
+```
+
+**Diagnosis**: community triton-ascend v3.6.0's ascend backend invokes
+`bishengir-compile --link-aicore-bitcode=<libdevice.10.bc>` at two
+sites (`third_party/ascend/backend/compiler.py` lines 509 and 709),
+but the `bishengir-compile` shipped in the current CANN image
+(`cann-8.5.1` + `cann-8.5.2` under `/usr/local/Ascend/`) does **not
+know** that flag (`--help` shows none of `bitcode|aicore`).
+
+**Boundary call**: this is a **CANN/bishengir version compatibility**
+issue, explicitly out of scope per this skill's SKILL.md:
+
+- **Fix pattern**: bump CANN runtime in the image to a version whose
+  `bishengir-compile` supports `--link-aicore-bitcode`, OR port
+  triton-ascend's invocation back to whatever flag the current CANN's
+  bishengir accepts.
+- **Owner**: AIL team (CANN toolkit / bishengir release process) or
+  the image-owning Huawei Ascend team, not the triton-ascend
+  rebase-responder.
+- **Hand-off artifact**: `v3.6.0_manual_porting` branch on fork, final
+  commit exposes this gate as the last pipeline step.
 
 ## Remaining work after text-merge
 
-1. **LLVM API drift check**: does `fad32722` LLVM base provide all MLIR
-   APIs that community v3.6.0 `lib/` uses? If not, either (a) port the
-   community change to old LLVM APIs, or (b) bump LLVM base +
-   re-patch. Only discoverable via build.
-2. **AscendNPU-IR version sync**: triton-ascend v3.6.0 may require a
-   specific AscendNPU-IR commit; submodule pin may need update.
-3. **CANN runtime compat**: NPU kernels in `third_party/ascend/lib/`
-   link against CANN. Check if CANN version on A3 matches.
-4. **Build + test cycle** on A3. Inside a NPU container with
-   `TRITON_CODEGEN_BACKENDS=ascend` and CANN installed. Run
-   `python/test/unit/ascend/` if present.
-5. **Smoke NPU JIT**: tiny `@triton.jit` kernel on NPU device, e.g.
-   `vector_add(x, y, out)`.
+1. **LLVM API drift check**: ✅ **DONE** this pass. Captured above.
+2. **AscendNPU-IR version sync**: not yet needed for v3.5.0→v3.6.0;
+   submodule hash `1b33649151424798b95187fb5fc4824f982607e4` works.
+3. **CANN runtime compat**: ❌ **BLOCKED** at bishengir CLI drift.
+   Requires CANN/bishengir bump — out of scope (see above).
+4. **Build + test cycle** on A3: ✅ build + `import triton` working;
+   `python/test/unit/ascend/` not attempted (same CANN gate).
+5. **Smoke NPU JIT**: ❌ blocked by same CANN gate.
 
 ## Case registry
 
 | # | Rebase | Landed on fork branch | Status |
 |---|---|---|---|
-| 1 | 2026-04-25 community v3.6.0 → triton-ascend main | `gitcode.com/zhengshencn_hwca/triton-ascend` branch `v3.6.0_manual_porting` (commit after merge) | **Text-merge DONE**; compile + A3 smoke **PENDING** |
+| 1 | 2026-04-25 community v3.6.0 → triton-ascend main | `gitcode.com/zhengshencn_hwca/triton-ascend` branch `v3.6.0_manual_porting` (commits `249feb0f` merge → `eed31db39` LLVM drift → `59ea4fba0` python runtime drift) | **Text-merge DONE**; **C++ build + `import triton` DONE** (9 drifts); **NPU JIT smoke BLOCKED** on bishengir CLI mismatch (CANN version gate; AIL team scope) |
 
 ## What is NOT this skill's job
 
