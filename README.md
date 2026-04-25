@@ -1,5 +1,7 @@
 # easyr1-npu
 
+> **要看本周做了什么 / 正在做什么 / 还没做什么，去 [`STATUS.md`](STATUS.md) — 这是项目状态的唯一权威页。** 本 README 只用于按用户路径选你要走哪条线。
+
 **把 EasyR1（`hiyouga/EasyR1`）移植到 Ascend 910C (A3) NPU，并沉淀一套可复用的"GPU RL 框架→NPU"移植 skills。**
 
 本仓交付两件事：
