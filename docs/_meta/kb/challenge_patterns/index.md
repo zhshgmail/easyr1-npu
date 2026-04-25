@@ -47,3 +47,7 @@ the user surfaces a new challenge mode.
 ## 10 — "你能不能总结下如何才能让你自己以后不要问这么愚蠢的问题？" (premature-stop-asking audit)
 
 - [`10-premature-stop-asking.md`](10-premature-stop-asking.md)
+
+## 11 — "两个 binary 的 LLVM 一致么？" (cross-binary IR pipeline version check)
+
+- [`11-cross-binary-ir-pipeline-version-check.md`](11-cross-binary-ir-pipeline-version-check.md)

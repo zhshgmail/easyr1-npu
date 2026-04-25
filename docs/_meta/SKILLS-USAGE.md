@@ -42,6 +42,15 @@ cd easyr1-npu
 python3 src/skills/_shared/scanners/<scanner-name>.py --help
 ```
 
+## Hooks（critic 自动触发）
+
+本仓配置了 [Claude Code hooks](https://code.claude.com/docs/en/hooks.md)，在以下时机自动触发 `/porting-self-challenge` 自查：
+
+- **SessionEnd**：每次 Claude Code 会话结束时，按 `docs/_meta/kb/challenge_patterns/` 11 条问题做一次自查，必要时把新教训写回 `docs/_meta/kb/porting_lessons/`。
+- **PostToolUse `git commit`**：每次提交后由 `.claude/hooks/critic-on-significant-commit.sh` 检查 commit message，如果是 feat/fix/perf 或者动了 SKILL/KB/port-expert，给当前 session 留一条 `[CRITIC-HOOK]` 提示，提醒在对外宣布完成前先跑 `/porting-self-challenge`。
+
+配置在 `.claude/settings.json`（仓内项目级，团队共享）。如要 opt-out，删除或修改对应条目即可。
+
 ## 责任边界
 
 工具链产出的修改落在 `gitcode.com/zhengshencn_hwca/<上游仓>` 这一组演示性分支。**正式 PR 由对应上游仓的维护者基于这些分支提交到他们自己的官方仓库。**

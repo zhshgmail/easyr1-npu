@@ -1,0 +1,28 @@
+{
+  "$schema": "https://code.claude.com/schemas/settings.json",
+  "_comment": "Project-level Claude Code settings. Hooks below auto-trigger the porting-self-challenge critic at major step completion / session wrap-up. See docs/_meta/SKILLS-USAGE.md §Hooks for rationale and docs/_meta/kb/challenge_patterns/ for the 11 critic patterns.",
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "Session is ending. Run /porting-self-challenge to perform the critic self-check defined in src/skills/_shared/porting-self-challenge/SKILL.md. Take as context: this session's git log on the working branch + any [SELF-CHALLENGE FAIL] tracebacks already posted to Discord. If the 10 questions reveal a new failure mode, append a porting_lesson and a challenge_pattern before exiting."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "if": "Bash(git commit *)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/critic-on-significant-commit.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
