@@ -1,12 +1,15 @@
 # easyr1-npu
 
-> **要看本周做了什么 / 正在做什么 / 还没做什么，去 [`STATUS.md`](STATUS.md) — 这是项目状态的唯一权威页。** 本 README 只用于按用户路径选你要走哪条线。
+> **想看现状（做了什么 / 在做 / 没做）→ [`STATUS.md`](STATUS.md)**
+> **想用 skills（上游 maintainer）→ [`docs/_meta/SKILLS-USAGE.md`](docs/_meta/SKILLS-USAGE.md)**
+>
+> README 只是用户路径选择器；它不代表所有路径都已交付。**未完成的路径在表格里会标 ⏳ 或 ❌**。
 
-**把 EasyR1（`hiyouga/EasyR1`）移植到 Ascend 910C (A3) NPU，并沉淀一套可复用的"GPU RL 框架→NPU"移植 skills。**
+**项目目标**：把 EasyR1（`hiyouga/EasyR1`）移植到 Ascend 910C (A3) NPU，并沉淀一套可复用的"GPU 上游 → NPU 适配"skill 体系给上游 maintainer 用。
 
-本仓交付两件事：
-1. **EasyR1 在 A3 上能跑** —— 代码改动在 [`zhshgmail/EasyR1`](https://github.com/zhshgmail/EasyR1) 的 **`ascend-port`** 分支（20 个 commit）
-2. **一套可复用的移植 skills** —— 下一次 EasyR1 版本升级 / CANN 升级 / 别的 RL 框架（OpenRLHF / TRL）移植都能套用
+**目前的两件交付物**：
+1. ✅ EasyR1 v1 在 A3 上能跑（文本 RL，与 GPU 基线 entropy_loss 对齐） —— 代码在 [`zhshgmail/EasyR1` `ascend-port`](https://github.com/zhshgmail/EasyR1/tree/ascend-port) 分支（20 commit）
+2. ⏳ 4 个 NPU 上游 port-expert skill：vllm-ascend / torch-npu / transformers / triton-ascend。前 3 个真实 cold-drive 通过；triton-ascend 端到端 smoke 进行中。详见 [`STATUS.md`](STATUS.md) §"做完的"
 
 > **📣 2026-04-20 Scope 说明（勘误）**：之前版本的 README / SKILLS-GUIDE 把"改 NPU 上游库"和"改 CANN / torch_npu C++ 层"都打成 ❌ 不在 scope 是**错误的表述**。
 >
@@ -21,18 +24,19 @@
 
 ## 选你要走的路径
 
-本仓服务**四类用户**，按你的目标选：
-
-| # | 你想要 | 路径 | 读哪本 |
+| # | 你想要 | 状态 | 入口 |
 |---|---|---|---|
-| 1 | **只想在 A3 上把 EasyR1 跑起来** | 用 v1 已验证发布路径（`ascend-port` 分支 + CANN 8.5.0 image） | [`docs/easyr1/PORT-GUIDE.md`](docs/easyr1/PORT-GUIDE.md) |
-| 2 | **复现 / 自动化 EasyR1 移植** | 从 0 跑移植流程（用 8 个 skill + `fetch-upstream.sh`） | [`docs/_meta/SKILLS-GUIDE.md`](docs/_meta/SKILLS-GUIDE.md) |
-| 3 | **用带新依赖（transformers 5 / CANN 8.5.1）的 EasyR1** | 看 drill 演练当前状态 + 自行验证 | [`docs/transformers/UPGRADE-DRILL-STATUS.md`](docs/transformers/UPGRADE-DRILL-STATUS.md) |
-| 4 | **复现"把 EasyR1 + 新依赖一起移植到 NPU"的自动流程** | 走 `image-upgrade-drill` skill 7 步流程 | [`docs/_meta/SKILLS-GUIDE.md`](docs/_meta/SKILLS-GUIDE.md) §8 + [`docs/transformers/UPGRADE-DRILL-STATUS.md`](docs/transformers/UPGRADE-DRILL-STATUS.md) |
-| 5 | **把 vllm-ascend 适配到一个新版本的 vllm**（扫描 drift + 按族写 shim + 验证） | 用 `/vllm-ascend-day0` skill + kb_drive_test 扫描器 + `/drift-port-validate` 验证 | [`docs/vllm-ascend/PORTING-GUIDE.md`](docs/vllm-ascend/PORTING-GUIDE.md) |
-| 6 | **把 torch_npu 适配到一个新版本的 torch**（扫描私有模块搬家 + 按 F2-path-move 族写 shim） | `sweep.sh` 一键跑 4 个 scanner (extract_imports + check_drift + check_sig_drift + check_f7_f8) → 按 F-family 模板写 `torch_npu/compat/` shim → `/drift-port-validate` 验证 | [`docs/torch-npu/PORTING-GUIDE.md`](docs/torch-npu/PORTING-GUIDE.md) |
-| 7 | **把 transformers 适配到一个新版本**（NPU 面很小，90% outcome A） | Stage 0 快速决策树：byte-compare NPU 集成文件 + ALL_ATTENTION_FUNCTIONS key 集合，通常无需 A3 | [`src/skills/transformers/port-expert/SKILL.md`](src/skills/transformers/port-expert/SKILL.md) |
-| 8 | **把 triton-ascend 适配到新版本 triton**（Fork 模式，不是 plugin） | `git rebase --onto <new-triton-tag> <current-base>` → 手动解决 conflict（KB 列了 5 个历史 surface）→ rebuild + NPU smoke | [`src/skills/triton-ascend/port-expert/SKILL.md`](src/skills/triton-ascend/port-expert/SKILL.md) |
+| 1 | 在 A3 上把 EasyR1 跑起来 | ✅ Done（v1 文本 RL，与 GPU 基线对齐） | [`docs/easyr1/PORT-GUIDE.md`](docs/easyr1/PORT-GUIDE.md) |
+| 2 | 复现 / 自动化 EasyR1 移植（"重做一次"） | ⏳ skill chain 部分跑通；客户级 5 分钟 reproducer 待补 | [`docs/_meta/SKILLS-GUIDE.md`](docs/_meta/SKILLS-GUIDE.md) |
+| 3 | 用带新依赖（transformers 5 / CANN 8.5.1）的 EasyR1 | ⏳ drill 早期阶段过 | [`docs/transformers/UPGRADE-DRILL-STATUS.md`](docs/transformers/UPGRADE-DRILL-STATUS.md) |
+| 4 | 复现"EasyR1 + 新依赖一起 NPU 适配"自动流程 | ⏳ 跟路径 3 共享进度 | [`docs/_meta/SKILLS-GUIDE.md`](docs/_meta/SKILLS-GUIDE.md) §8 |
+| 5 | **vllm-ascend** maintainer 适配新 vllm | ✅ cold-drive 跑通（vllm `main`, 13/13 PASS） | skill：[`SKILLS-USAGE.md`](docs/_meta/SKILLS-USAGE.md) / 详细 [`docs/vllm-ascend/PORTING-GUIDE.md`](docs/vllm-ascend/PORTING-GUIDE.md) |
+| 6 | **torch-npu** maintainer 适配新 torch | ✅ cold-drive 跑通（`torch 2.12-rc3`, 6/6 PASS） | skill：[`SKILLS-USAGE.md`](docs/_meta/SKILLS-USAGE.md) / 详细 [`docs/torch-npu/PORTING-GUIDE.md`](docs/torch-npu/PORTING-GUIDE.md) |
+| 7 | **transformers** maintainer 适配新版本 | ✅ cold-drive 跑通（`v5.4` outcome A） | skill：[`SKILLS-USAGE.md`](docs/_meta/SKILLS-USAGE.md) / [`SKILL.md`](src/skills/transformers/port-expert/SKILL.md) |
+| 8 | **triton-ascend** maintainer 升 community triton | ⏳ v3.5.0→v3.6.0 manual port 完成 9/9 漂移修复；NPU 端到端 smoke 进行中 | skill：[`SKILLS-USAGE.md`](docs/_meta/SKILLS-USAGE.md) / [`SKILL.md`](src/skills/triton-ascend/port-expert/SKILL.md) |
+
+> 路径 5–8 的 cold-drive 真实 fork 分支链接在 [`STATUS.md`](STATUS.md)。
+> 状态符号：✅ = 真跑通 + 独立复核；⏳ = 部分通过或在跑；❌ = 还没开始。
 
 ---
 
