@@ -23,6 +23,23 @@ context: inline
 3. Text-level clean merge is **only half the work**. C++ build on A3 +
    NPU smoke is the other half, and exposes LLVM API drift that text
    merge can't see.
+4. **Recommended end-to-end baseline (production-equivalent)**: vendor
+   `triton_ascend-3.2.0` wheel + matching CANN image's bundled
+   `bishengir-compile`. Validated 6/6 PASS on the smoke suite at
+   `repo/src/scripts/smoke_triton_vector_add.py` (vec_add fp32 / masked /
+   bf16 / fp16 / reduction sum / dot 16x16x16). See § "End-to-end
+   baseline reproducer" below.
+5. **Source-build path (main branch with new community-triton merge)
+   is currently BLOCKED end-to-end**: main's libtriton.so is built
+   against LLVM 22 (`cmake/llvm-hash.txt = fad32722`) and emits new MLIR
+   text syntax (`bufferization.to_tensor : memref<…> to tensor<…>`).
+   The bishengir-compile shipped in CANN 8.5.x and the one buildable
+   from `AscendNPU-IR` (all branches) is built against LLVM 19 and
+   cannot parse that syntax — fails with `custom op 'to' is unknown`.
+   Code-side fixes (text merge, drift fixes, build, import) are still
+   correct and ship as fork branch + KB; **end-to-end NPU smoke must
+   wait for Huawei CI to release a bishengir-compile built against
+   LLVM 22**. This boundary is the skill's documented blocker.
 
 ## Why this skill is different from vllm-ascend / torch_npu
 
@@ -112,11 +129,58 @@ Common follow-ups that only surface here:
 
 ### P5 — NPU smoke
 
+Recommended: run the 6-pattern suite at
+`repo/src/scripts/smoke_triton_vector_add.py`. It exercises elementwise
+fp32/bf16/fp16, masked load/store, reduction, and `tl.dot` 16x16x16
+patterns; pass criterion is `6/6 PASS` with per-kernel atol budgets.
+
 ```bash
-# tiny @triton.jit vector_add on NPU
-python python/test/unit/ascend/<smoke>.py        # if present
-# else: minimal vector_add(x, y, out) via torch_npu inductor path
+python /workspace/repo/scripts/smoke_triton_vector_add.py
+# Expect: 6/6 PASS, max abs err per kernel within atol
 ```
+
+If only the merged `triton-ascend` source build is available (no vendor
+wheel), see § "Source-build path is BLOCKED" below — smoke will fail
+at `bishengir-compile` parse step with `custom op 'to' is unknown`,
+and that is the documented blocker, not a regression in your merge.
+
+## End-to-end baseline reproducer (vendor-released configuration)
+
+```bash
+# Inside an A3 container started via repo helper (see NPU-OPS-009/011):
+pip uninstall -y triton triton-ascend
+pip install triton_ascend==3.2.0
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+python /workspace/repo/scripts/smoke_triton_vector_add.py
+# 6/6 PASS confirms triton-ascend NPU end-to-end works on this image.
+```
+
+Validated 2026-04-26 on `quay.io/ascend/verl:verl-8.5.2-a3-...qwen3-5`
+image: 6/6 PASS, all kernels max abs err 0.000e+00 vs torch reference.
+
+## Source-build path is BLOCKED end-to-end (until Huawei ships LLVM-22 bishengir)
+
+The full source-build path is:
+1. `git merge <community-tag>` into fork branch.
+2. Resolve conflicts per `references/KB_INDEX.md` recipes.
+3. `pip install -e .` against OBS-prebuilt LLVM 22 — produces
+   `python/triton/_C/libtriton.so`.
+4. `import triton` succeeds; backends discoverable.
+5. `@triton.jit` compile: invokes `bishengir-compile <kernel.ttadapter.mlir>`.
+6. **Parse error**: `custom op 'to' is unknown (tried 'func.to' as well)`
+   on `bufferization.to_tensor %x : memref<…> to tensor<…>`.
+
+Root cause: triton-ascend's libtriton.so emits MLIR text in LLVM 22
+syntax; CANN 8.5.x's bundled `bishengir-compile 0.1.0` and any
+`bishengir-compile` you can build from public AscendNPU-IR
+(`cd708029e0`-pinned across all its branches) are built against
+LLVM 19, whose parser does not accept that syntax.
+
+Fix is on Huawei CI side, not on the skill consumer's side. Until
+that ships, `P5 — NPU smoke` for a freshly-merged source build will
+be skipped with documented blocker; the skill's deliverable for
+that case is "fork branch with merge + drift fixes + KB updated"
+(see KB_INDEX.md case registry).
 
 ### P6 — push and file PR
 

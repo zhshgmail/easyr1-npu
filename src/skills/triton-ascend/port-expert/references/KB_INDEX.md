@@ -168,7 +168,24 @@ issue, explicitly out of scope per this skill's SKILL.md:
 
 | # | Rebase | Landed on fork branch | Status |
 |---|---|---|---|
-| 1 | 2026-04-25 community v3.6.0 → triton-ascend main | `gitcode.com/zhengshencn_hwca/triton-ascend` branch `v3.6.0_manual_porting` (commits `249feb0f` merge → `eed31db39` LLVM drift → `59ea4fba0` python runtime drift) | **Text-merge DONE**; **C++ build + `import triton` DONE** (9 drifts); **NPU JIT smoke BLOCKED** on bishengir CLI mismatch (CANN version gate; AIL team scope) |
+| 1 | 2026-04-25 community v3.6.0 → triton-ascend main | `gitcode.com/zhengshencn_hwca/triton-ascend` branch `v3.6.0_manual_porting` (commits `249feb0f` merge → `eed31db39` LLVM drift → `59ea4fba0` python runtime drift) | **Text-merge DONE**; **C++ build + `import triton` DONE** (9 drifts); **NPU JIT smoke BLOCKED** on `bishengir-compile` LLVM-version gap (libtriton emits LLVM-22 MLIR text, public bishengir built from LLVM 19 cannot parse) |
+| 2 | 2026-04-26 vendor-released baseline (production-equivalent end-to-end PASS) | n/a — uses pip-installed `triton_ascend==3.2.0` wheel + image-bundled CANN 8.5.2 `bishengir-compile 0.1.0` (e4e2ba9841d1, 2026-04-09) | **6/6 PASS** on `repo/src/scripts/smoke_triton_vector_add.py` (vec_add fp32 / masked / bf16 / fp16, reduction sum, dot 16x16x16). All kernels max abs err 0.000e+00. Validated on `quay.io/ascend/verl:verl-8.5.2-a3-...qwen3-5`. |
+
+## Why two case-1/case-2 paths exist
+
+- **Case 1** (source build of merged main): tracks what changes when
+  community ships a new triton tag. Code-side fixes ship as fork
+  branch; end-to-end smoke is blocked on Huawei CI shipping a
+  matching `bishengir-compile`. The fork branch is the deliverable
+  to upstream maintainers regardless.
+- **Case 2** (vendor-released): tracks the latest production-shipping
+  configuration users can actually run today. Use to validate that
+  any A3 image change still hosts a working triton-ascend (e.g.
+  during CANN base-image upgrade drills).
+
+When upgrading triton-ascend in production, validate **both**: case 1
+to confirm the upstream code side is mergeable, case 2 to confirm
+vendor wheel + image keep working as the rollback / customer baseline.
 
 ## What is NOT this skill's job
 
