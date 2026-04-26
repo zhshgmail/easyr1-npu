@@ -15,15 +15,15 @@
   使用方法：[`docs/easyr1/PORT-GUIDE.md`](docs/easyr1/PORT-GUIDE.md)。
 
 - **vllm-ascend 版本升级工具链**：可处理社区 vllm 升级时的 API 漂移识别、修复模板、修复后验证。已对社区 vllm `main` 版本完整跑通一遍。
-  产出分支：[`zhengshencn_hwca/vllm-ascend` 分支 `vllm-main_cold_20260425`](https://gitcode.com/zhengshencn_hwca/vllm-ascend/tree/vllm-main_cold_20260425)。
+  产出分支：[`zhshgmail/vllm-ascend` 分支 `vllm-main_cold_20260425`](https://github.com/zhshgmail/vllm-ascend/tree/vllm-main_cold_20260425)（含 `PR_MATERIAL.md`）。
 
 - **torch-npu 版本升级工具链**：处理 torch 私有模块路径变化、签名变化、新增字段/方法的扫描和修复。已对 `torch 2.12-rc3` 完整跑通一遍。
-  产出分支：[`zhengshencn_hwca/pytorch` 分支 `torch-2.12-rc3_cold_20260425`](https://gitcode.com/zhengshencn_hwca/pytorch/tree/torch-2.12-rc3_cold_20260425)。
+  产出分支：[`zhengshencn_hwca/pytorch` 分支 `torch-2.12-rc3_cold_20260425`](https://gitcode.com/zhengshencn_hwca/pytorch/tree/torch-2.12-rc3_cold_20260425)（含 `PR_MATERIAL.md`）。
 
 - **transformers 版本升级工具链**：检查 `ALL_ATTENTION_FUNCTIONS` 等 NPU 关键集成点的字节级变化。已对 `v5.4` 完成判定（无需修改）。
 
 - **triton-ascend 版本升级工具链（fork-merge 模型）**：`v3.5.0 → v3.6.0` 已完成代码合并 + 9 处 LLVM/Python 漂移定位修复 + C++ 构建通过 + Python 导入通过。
-  产出分支：[`zhengshencn_hwca/triton-ascend` 分支 `v3.6.0_manual_porting`](https://gitcode.com/zhengshencn_hwca/triton-ascend/tree/v3.6.0_manual_porting)。
+  产出分支：[`zhengshencn_hwca/triton-ascend` 分支 `v3.6.0_manual_porting`](https://gitcode.com/zhengshencn_hwca/triton-ascend/tree/v3.6.0_manual_porting)（含 `PR_MATERIAL.md`）。
 
 - **triton-ascend NPU 端到端 smoke**：在 A3 容器内用 vendor `triton_ascend-3.2.0` wheel + image 自带 CANN 8.5.2 `bishengir-compile`，跑 `@triton.jit vector_add` on NPU，输出与 torch 参考实现 exact match（max abs err 0.000e+00）。验证脚本：[`src/scripts/smoke_triton_vector_add.py`](src/scripts/smoke_triton_vector_add.py)。
 
@@ -61,4 +61,4 @@
 
 ## 责任边界
 
-工具链产出的修改落在 `gitcode.com/zhengshencn_hwca/<上游仓>` 这一组演示性分支，作为可见的修复样例与验证凭据。**正式 PR 由对应上游仓的维护者基于这些分支提交到他们自己的官方仓库**——本仓不替代该流程。
+工具链产出的修改落在演示性 fork 分支（`github.com/zhshgmail/<vllm-ascend|transformers>` 或 `gitcode.com/zhengshencn_hwca/<pytorch|triton-ascend>`），每条分支根目录含 `PR_MATERIAL.md`，是给上游 maintainer 的 PR 包（diff、commit 序列、reproducer、已知边界）。**正式 PR 由对应上游仓的维护者基于这些分支 + `PR_MATERIAL.md` 提交到他们自己的官方仓库**——本仓不替代该流程。
