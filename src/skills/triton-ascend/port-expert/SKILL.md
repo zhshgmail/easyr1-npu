@@ -154,10 +154,25 @@ on the A3 host. Adjust `--device /dev/davinciN` for whichever NPU chip
 you have free (precheck via `npu-smi info -t proc-mem -i <NPU_ID>`,
 abort if "Process id" lines present — see `memory/a3_chip_economy.md`).
 
+**Path conventions** (substitute literally):
+- `<workspace-owner>` = the user that owns the cloned repo on A3 host
+  (typically NOT the SSH login user; a3 is usually accessed as `root`
+  but the workspace lives under a regular user's home, e.g.
+  `/home/z00637938/workspace/easyr1-npu`). Set once via
+  `export WORKSPACE_OWNER=z00637938` (adjust) and use
+  `${WORKSPACE_OWNER}` in the commands below.
+
 ```bash
+export WORKSPACE_OWNER=z00637938   # adjust to whichever user owns the repo on A3
+
+# 0) If the smoke script is not yet on A3, sync it there from your dev tree
+#    (one-time):
+#    scp <dev-host>:<repo>/src/scripts/smoke_triton_vector_add.py \
+#        root@<a3-host>:/home/${WORKSPACE_OWNER}/workspace/easyr1-npu/repo/scripts/
+
 # 1) On A3 host, ensure the vendor wheel is present (one-time, ~52 MB):
-mkdir -p /data/$USER/triton-ascend-vendor
-cd /data/$USER/triton-ascend-vendor
+mkdir -p /data/${WORKSPACE_OWNER}/triton-ascend-vendor
+cd /data/${WORKSPACE_OWNER}/triton-ascend-vendor
 [ -f triton_ascend-3.2.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl ] || \
   wget -c "https://files.pythonhosted.org/packages/7f/f3/d4e6ddbaf6f07b72ceb29f0f739c4c8fba2ff476eac07aeb7ae6f654fce0/triton_ascend-3.2.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
 
@@ -178,8 +193,8 @@ docker run --rm \
   -v /etc/ascend_filelist.info:/etc/ascend_filelist.info \
   -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
   -v /etc/hccn.conf:/etc/hccn.conf \
-  -v /home/$USER/workspace/easyr1-npu:/workspace \
-  -v /data/$USER/triton-ascend-vendor:/wheels \
+  -v /home/${WORKSPACE_OWNER}/workspace/easyr1-npu:/workspace \
+  -v /data/${WORKSPACE_OWNER}/triton-ascend-vendor:/wheels \
   -e ASCEND_RT_VISIBLE_DEVICES=0 \
   quay.io/ascend/verl:verl-8.5.2-a3-ubuntu22.04-py3.11-qwen3-5 \
   bash -c '
