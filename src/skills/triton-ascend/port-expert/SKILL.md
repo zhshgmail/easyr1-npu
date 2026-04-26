@@ -130,9 +130,12 @@ Common follow-ups that only surface here:
 ### P5 — NPU smoke
 
 Recommended: run the 6-pattern suite at
-`repo/src/scripts/smoke_triton_vector_add.py`. It exercises elementwise
-fp32/bf16/fp16, masked load/store, reduction, and `tl.dot` 16x16x16
-patterns; pass criterion is `6/6 PASS` with per-kernel atol budgets.
+`repo/scripts/smoke_triton_vector_add.py` (relative to repo root on
+the A3 host clone; the dev-side master at `repo/src/scripts/` is the
+authoritative source and gets sync'd to `repo/scripts/` on the A3 host
+before running). It exercises elementwise fp32/bf16/fp16, masked
+load/store, reduction, and `tl.dot` 16x16x16 patterns; pass criterion
+is `6/6 PASS` with per-kernel atol budgets.
 
 ```bash
 python /workspace/repo/scripts/smoke_triton_vector_add.py
@@ -146,14 +149,57 @@ and that is the documented blocker, not a regression in your merge.
 
 ## End-to-end baseline reproducer (vendor-released configuration)
 
+This block is the full reproducer including the `docker run` invocation
+on the A3 host. Adjust `--device /dev/davinciN` for whichever NPU chip
+you have free (precheck via `npu-smi info -t proc-mem -i <NPU_ID>`,
+abort if "Process id" lines present — see `memory/a3_chip_economy.md`).
+
 ```bash
-# Inside an A3 container started via repo helper (see NPU-OPS-009/011):
-pip uninstall -y triton triton-ascend
-pip install triton_ascend==3.2.0
-source /usr/local/Ascend/ascend-toolkit/set_env.sh
-python /workspace/repo/scripts/smoke_triton_vector_add.py
-# 6/6 PASS confirms triton-ascend NPU end-to-end works on this image.
+# 1) On A3 host, ensure the vendor wheel is present (one-time, ~52 MB):
+mkdir -p /data/$USER/triton-ascend-vendor
+cd /data/$USER/triton-ascend-vendor
+[ -f triton_ascend-3.2.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl ] || \
+  wget -c "https://files.pythonhosted.org/packages/7f/f3/d4e6ddbaf6f07b72ceb29f0f739c4c8fba2ff476eac07aeb7ae6f654fce0/triton_ascend-3.2.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+
+# 2) On A3 host, ensure the smoke script is present at the path used inside the container.
+#    The dev-side master is at <repo>/src/scripts/smoke_triton_vector_add.py;
+#    sync to A3-clone <repo>/scripts/smoke_triton_vector_add.py if not there.
+
+# 3) Run the smoke (one-shot --rm container; precheck device first).
+docker run --rm \
+  --privileged --network=host --ipc=host --shm-size=64g \
+  --device /dev/davinci_manager --device /dev/devmm_svm --device /dev/hisi_hdc \
+  --device /dev/davinci2 \
+  -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 \
+  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+  -v /usr/local/dcmi:/usr/local/dcmi \
+  -v /etc/ascend_install.info:/etc/ascend_install.info \
+  -v /etc/ascend_driver.conf:/etc/ascend_driver.conf \
+  -v /etc/ascend_filelist.info:/etc/ascend_filelist.info \
+  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+  -v /etc/hccn.conf:/etc/hccn.conf \
+  -v /home/$USER/workspace/easyr1-npu:/workspace \
+  -v /data/$USER/triton-ascend-vendor:/wheels \
+  -e ASCEND_RT_VISIBLE_DEVICES=0 \
+  quay.io/ascend/verl:verl-8.5.2-a3-ubuntu22.04-py3.11-qwen3-5 \
+  bash -c '
+    pip uninstall -y triton triton-ascend
+    pip install /wheels/triton_ascend-3.2.0-*.whl
+    source /usr/local/Ascend/ascend-toolkit/set_env.sh
+    python /workspace/repo/scripts/smoke_triton_vector_add.py
+  '
+# Expect: =6/6 PASS=  with all kernels max abs err 0.000e+00 vs torch reference.
 ```
+
+Notes:
+- The bind set above is the minimum that satisfies CANN's `dcmi_init`
+  inside container (per NPU-OPS-009). Removing any bind line breaks
+  NPU enumeration.
+- `--device /dev/davinciN` for `N` = chip index. Default to the chip
+  free per `npu-smi info`.
+- The vendor wheel is hosted on PyPI but A3's egress to PyPI may be
+  slow (10s of minutes for 54 MB). The wget-then-bind pattern above
+  keeps the wheel cached on the host so subsequent runs are fast.
 
 Validated 2026-04-26 on `quay.io/ascend/verl:verl-8.5.2-a3-...qwen3-5`
 image: 6/6 PASS, all kernels max abs err 0.000e+00 vs torch reference.
