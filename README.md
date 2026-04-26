@@ -2,7 +2,7 @@
 
 把 EasyR1（`hiyouga/EasyR1`）适配到 Ascend 910C (A3) NPU，并沉淀一套针对 NPU 上游（vllm-ascend / torch-npu / transformers / triton-ascend）的可复用版本升级工具链。
 
-最后更新 2026-04-25。
+最后更新 2026-04-26。
 
 ---
 
@@ -25,9 +25,11 @@
 - **triton-ascend 版本升级工具链（fork-merge 模型）**：`v3.5.0 → v3.6.0` 已完成代码合并 + 9 处 LLVM/Python 漂移定位修复 + C++ 构建通过 + Python 导入通过。
   产出分支：[`zhengshencn_hwca/triton-ascend` 分支 `v3.6.0_manual_porting`](https://gitcode.com/zhengshencn_hwca/triton-ascend/tree/v3.6.0_manual_porting)。
 
+- **triton-ascend NPU 端到端 smoke**：在 A3 容器内用 vendor `triton_ascend-3.2.0` wheel + image 自带 CANN 8.5.2 `bishengir-compile`，跑 `@triton.jit vector_add` on NPU，输出与 torch 参考实现 exact match（max abs err 0.000e+00）。验证脚本：[`src/scripts/smoke_triton_vector_add.py`](src/scripts/smoke_triton_vector_add.py)。
+
 ### 进行中
 
-- **triton-ascend v3.6.0 的 NPU 端到端验证**：`bishengir-compile` 在当前 CANN 8.5.x 二进制中缺少 `--link-aicore-bitcode` 选项（该选项定义于 [AscendNPU-IR](https://gitcode.com/Ascend/AscendNPU-IR) 子模块），需要从源码构建。LLVM 22 + 79 处 Huawei 补丁已应用，编译进行中（限 2 线程，共享主机原则）。
+- **triton-ascend main 分支端到端验证**：v3.5.0 → v3.6.0 源码合并通过、构建通过、Python 导入通过；但 main 分支的 libtriton.so 用 LLVM 22 编译，emit 的 MLIR 文本含新语法（`bufferization.to_tensor : memref<…> to tensor<…>`），当前公开的 bishengir-compile（CANN 8.5.x 自带的 0.1.0 / AscendNPU-IR 各分支自建）均基于 LLVM 19，无法解析。需等 Huawei 内部 CI ship 一个 LLVM 22 编译的 bishengir-compile 才能跑通。代码层面修复已经全部到位。
 
 ### 待启动
 
