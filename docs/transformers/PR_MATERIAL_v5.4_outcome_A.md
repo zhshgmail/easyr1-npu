@@ -1,40 +1,90 @@
-# PR material — transformers v5.4 outcome A (no edits required)
+# PR material — transformers v5.4 outcome A-with-note
 
 > Hand-off note for the **transformers maintainers** and for anyone
 > evaluating whether transformers v5.4 has any NPU-integration impact.
 
 ## Outcome
 
-After running the transformers-day0 cold-drive against `v5.4`, the
-result is **outcome A: no NPU-integration drift**. No fork branch was
-created because no source edits were needed.
+After running the transformers-day0 stage-0 decision tree against
+`v5.4` (validated against `v5.3.0` as baseline) on A3 host on
+2026-04-27, the result is **outcome A-with-note**: no source edits
+required for v5.3-era consumer code paths to keep working, but two
+additive surface changes are worth flagging for forward-looking NPU
+consumers.
 
-This document records what was checked, why it was negative, and how
-to re-validate when the next transformers version ships.
+Earlier this skill case was reported as plain "outcome A (no NPU
+drift)" — the present file is the honest re-validation that landed
+during T21 (real on-A3 smoke pass for the 3 day-0 skills).
 
-## What was checked
+## What was checked (validated 2026-04-27)
 
-The transformers port-expert skill performs a stage-0 quick decision
-tree before committing any A3 hardware time:
+The stage-0 decision tree from the transformers port-expert skill:
 
-1. **Byte-compare** the transformers files that NPU integrations
-   typically touch. For v5.4 vs v5.3:
-   - `src/transformers/modeling_utils.py` (PyTorch state-dict load /
-     custom device hooks): no NPU-relevant block changed
-   - `src/transformers/integrations/__init__.py`: no NPU-specific
-     entry added or removed
-   - `src/transformers/utils/import_utils.py` (`is_torch_npu_available`,
-     `is_torch_xpu_available` etc.): no signature change
+### Step 1 — `npu_flash_attention.py` byte-compare
 
-2. **`ALL_ATTENTION_FUNCTIONS` key set diff**: NPU-relevant keys
-   (e.g. `"sdpa"`, `"flash_attention_2"`, `"npu_flash_attention"`)
-   present in both versions with same callable shape.
+`src/transformers/integrations/npu_flash_attention.py` between v5.3.0
+(138 lines) and v5.4.0 (143 lines): **DIFFERS**, additive.
 
-3. **No new mandatory device hook** added to any base class that
-   torch_npu/transformers users register against.
+```
+138a139,143
+> # This function is not implemented but should never be called because block table is not used on NPU
+> def npu_flash_attn_with_kvcache():
+>     raise NotImplementedError("npu_flash_attn_with_kvcache is not implemented")
+```
 
-Stage 0 decision tree concluded: **outcome A** — no shim, no fork,
-no patch.
+v5.4 added a placeholder `npu_flash_attn_with_kvcache()` that raises
+`NotImplementedError`. The comment says "should never be called
+because block table is not used on NPU" — i.e. this is a guard for a
+v5.4-era kvcache dispatch route that is intentionally not implemented
+on NPU.
+
+**Impact**: zero impact on v5.3-era consumer code paths (the symbol
+didn't exist). v5.4-era code that explicitly routes through
+`npu_flash_attn_with_kvcache` will hit `NotImplementedError`. Most
+consumers (EasyR1, vllm-ascend) do not.
+
+### Step 4 — `ALL_ATTENTION_FUNCTIONS` key set
+
+| Version | Keys |
+|---|---|
+| v5.3.0 (8) | `flash_attention_2`, `flash_attention_3`, `flex_attention`, `paged\|eager`, `paged\|flash_attention_2`, `paged\|flash_attention_3`, `paged\|sdpa`, `sdpa` |
+| v5.4.0 (10) | `flash_attention_2`, `flash_attention_3`, **`flash_attention_4`**, `flex_attention`, `paged\|eager`, `paged\|flash_attention_2`, `paged\|flash_attention_3`, **`paged\|flash_attention_4`**, `paged\|sdpa`, `sdpa` |
+
+v5.4 adds `flash_attention_4` and `paged|flash_attention_4`. These
+are additive (no removed key, no changed default).
+
+**Impact**: zero impact on consumers using `flash_attention_2` /
+`sdpa` / `flex_attention` (the typical NPU-friendly choices).
+Consumers explicitly selecting `attn_implementation="flash_attention_4"`
+would route to a community impl that may not run on NPU; those
+consumers would need to pick a different `attn_implementation`.
+
+### Steps 2 + 3 — import chain + spec
+
+```
+is_torch_npu_available(): True
+transformers.integrations.npu_flash_attention spec found: True
+```
+
+Both unchanged from v5.3.
+
+## Stage 0 decision
+
+Per skill SKILL.md: "If 1-3 all YES and 4 shows only additive entries
+(no new NPU-routing default), **outcome A with note** — skip the full
+workflow, emit the classification, write the note in ONBOARDING."
+
+Step 1 is "byte-differs but additive only", step 4 is "additive only,
+no NPU-routing default changed". → **outcome A-with-note**.
+
+## Notes for ONBOARDING
+
+- v5.4 added `npu_flash_attn_with_kvcache` as a `NotImplementedError`
+  placeholder. NPU paths through `transformers.integrations.npu_flash_attention`
+  will not break; only direct calls into the new placeholder do.
+- v5.4 added `flash_attention_4` family. NPU consumers should not
+  select that `attn_implementation`; stay on `flash_attention_2` /
+  `sdpa` / `flex_attention`.
 
 ## Independent re-verification
 
