@@ -94,25 +94,19 @@ P6  handoff: overlay image + ONBOARDING + PR material (if C-patch)
   `_import_device_backends()` auto-load mechanism. Use py_compile /
   AST checks for build-time syntax validation.
 
-## Invariants
+## Invariants + outcome classification
 
-- G1: orchestrator never edits torch/torch_npu source directly. Worker
-  edits `upstream/torch-npu/**` only on ascend-day0-torch<stamp> branch.
-- G2: container runtime import of `torch` and `torch_npu` inside overlay
-  image MANDATORY (Day-0 is a runtime-compat claim).
-- G3: outcome A needs 6/6 smoke PASS + ONBOARDING `Validated
-  combinations` row; C-patch needs patch + re-verified smoke; C-report
-  needs blocker with reproducer + suggested fix.
+Shared across all 3 day-0 skills (vllm-ascend / torch-npu /
+transformers): see [`_shared/upstream-day0-workflow.md`](../../_shared/upstream-day0-workflow.md)
+§"Invariants" + §"Outcome classification".
 
-## Outcome classification (same as vllm-day0 / transformers-day0)
+torch-npu specifics layered on top:
 
-| Outcome | Meaning | Action |
-|---|---|---|
-| A | Runtime smoke 6/6 PASS without patches | Ship overlay + ONBOARDING |
-| A-with-note | Smoke PASS but dep tree has a known gap not hit by smoke | Ship overlay + note in ONBOARDING "known broken" section |
-| B | Smoke fails on consumer-side pin loosen only (no upstream patch) | Patch requirements + smoke PASS |
-| C-patch | Needs torch_npu / Huawei-owned-integration fix | Open branch, patch, rebuild overlay, smoke PASS, PR material |
-| C-report | Needs community torch change | Blocker report with reproducer + suggested fix; session ends at C-report |
+- G2 specialization: Day-0 is a runtime-compat claim → container
+  runtime `import torch; import torch_npu` inside overlay image is
+  MANDATORY (build-only / py_compile is not enough).
+- Branch convention: `ascend-port/torch-<target-version-slug>`
+  (e.g. `ascend-port/torch-2.12-rc3`).
 
 ## Pre-probe discipline (required before target selection)
 
@@ -128,11 +122,11 @@ Before committing to `--target-torch-version X`, verify:
 
 ## See also
 
-- `README.md`, `agent.md`, `state_machine.yaml`
-- `references/ALWAYS_LOADED_RULES.md` — OL rules specific to this expert
-- `references/KB_INDEX.md` — symptom → outcome table + pre-probe results
-- `references/patterns/domains/overlay-image.md` — Dockerfile template
-- `../vllm/port-expert/`, `../transformers/port-expert/` — sibling
-  Day-0 experts; same scaffolding
-- `../_shared/references/patterns/domains/day0-deploy-artifacts.md` —
-  Phase 2.5 deploy artifacts pattern (mandatory for A/C-patch outcomes)
+- **Shared workflow + invariants + outcome classification**:
+  [`_shared/upstream-day0-workflow.md`](../../_shared/upstream-day0-workflow.md)
+- **F1–F8 + F2-path-move drift family taxonomy**:
+  [`_shared/patterns/F-family-taxonomy.md`](../../_shared/patterns/F-family-taxonomy.md)
+- **Fork branch ledger**: [`docs/_meta/UPSTREAM_FORKS.md`](../../../../docs/_meta/UPSTREAM_FORKS.md)
+- torch-npu-specific: `references/ALWAYS_LOADED_RULES.md`, `references/KB_INDEX.md` (cases), `references/patterns/domains/overlay-image.md` (Dockerfile template), `references/patterns/domains/torch-api-drift.md`, `references/patterns/domains/torch-overlay-probe.md`
+- `../vllm/port-expert/`, `../transformers/port-expert/` — sibling Day-0 experts; same scaffolding
+- `../_shared/references/patterns/domains/day0-deploy-artifacts.md` — Phase 2.5 deploy artifacts pattern

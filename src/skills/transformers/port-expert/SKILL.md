@@ -110,21 +110,29 @@ P4   return outcome + image tag (A/B) or blocker doc (C)
   not a band match. The number is RECORDED as the new baseline for
   future runs (and added to SMOKE_BASELINE.md with evidence tag).
 
-## Invariants
+## Invariants + outcome classification
 
-- G1: orchestrator never edits consumer source. Day-0 expert may edit
-  npu_flash_attention adapter IF forward-porting — narrow OL-08 scope.
-- G2: static_check all py edits. Container dry-import MANDATORY for
-  this expert (the whole point is runtime-level compatibility).
-- G3: smoke claims backed by log paths + jsonl numerics. For "fresh
-  baseline" outcomes, explicitly note the baseline is NEW and not
-  compared against historical band.
+Shared across all 3 day-0 skills (vllm-ascend / torch-npu /
+transformers): see [`_shared/upstream-day0-workflow.md`](../../_shared/upstream-day0-workflow.md)
+§"Invariants" + §"Outcome classification".
+
+transformers specifics layered on top:
+
+- G1 narrowing: Day-0 expert may edit `npu_flash_attention` adapter
+  IF forward-porting — narrow OL-08 scope.
+- G2 specialization: container dry-import MANDATORY (the whole point
+  is runtime-level compatibility).
+- G3 specialization: smoke claims backed by log paths + jsonl
+  numerics; for "fresh baseline" outcomes, explicitly note baseline
+  is NEW vs historical band.
+- Branch convention: `ascend-port/transformers-<target-version-slug>`
+  (e.g. `ascend-port/transformers-v5.4`).
 
 ## See also
 
-- `README.md`, `agent.md`, `state_machine.yaml`
-- `references/ALWAYS_LOADED_RULES.md` (OL-03/08)
-- `references/patterns/domains/api-drift-scan.md` — how to do the
-  API-diff across transformers minors
-- `references/patterns/domains/overlay-image.md` — Dockerfile.overlay
-  template
+- **Shared workflow + invariants + outcome classification**:
+  [`_shared/upstream-day0-workflow.md`](../../_shared/upstream-day0-workflow.md)
+- **F1–F8 + F2-path-move drift family taxonomy**:
+  [`_shared/patterns/F-family-taxonomy.md`](../../_shared/patterns/F-family-taxonomy.md)
+- **Fork branch ledger**: [`docs/_meta/UPSTREAM_FORKS.md`](../../../../docs/_meta/UPSTREAM_FORKS.md)
+- transformers-specific: `references/ALWAYS_LOADED_RULES.md` (OL-03/08), `references/patterns/domains/api-drift-scan.md` (Phase A scan protocol), `references/patterns/domains/overlay-image.md` (Dockerfile template)
