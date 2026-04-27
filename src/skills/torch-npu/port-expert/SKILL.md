@@ -47,7 +47,10 @@ for the per-step breakdown.
 Classify each finding per family, apply shims at
 `torch_npu/compat/<module>.py` (or inline for tiny cases), validate
 with `/drift-port-validate`. Commit to fork branch
-`<target-torch-version>_auto_porting`.
+`ascend-port/<target-torch-version-slug>` (e.g.
+`ascend-port/torch-2.12-rc3`); see [`docs/_meta/UPSTREAM_FORKS.md`](../../../../docs/_meta/UPSTREAM_FORKS.md)
+for the authoritative naming convention. (Older sessions used
+`<target-torch-version>_auto_porting` — that naming is deprecated.)
 
 **If uncertain which mode**: look at the user request. "Build overlay
 for torch X" → Mode A. "Port torch_npu to torch Y's API drift" /

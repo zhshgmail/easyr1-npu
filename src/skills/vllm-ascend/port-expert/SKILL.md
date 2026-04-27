@@ -161,8 +161,9 @@ vllm-ascend specifics layered on top:
 - G2 specialization: post-patch smoke for vllm-ascend = V1.3 rollout
   marker match AFTER rebuilding overlay (not just a unit-level shim
   import test).
-- Branch convention: `ascend-port/vllm-<target-version-slug>` (e.g.
-  `ascend-port/vllm-main`, `ascend-port/vllm-v0.21.0`).
+- Branch convention: `ascend-port/<target-version-slug>` where the
+  slug already includes the upstream name (e.g. `ascend-port/vllm-main`,
+  `ascend-port/vllm-v0.21.0`).
 
 ## See also
 
