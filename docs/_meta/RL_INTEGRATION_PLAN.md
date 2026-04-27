@@ -152,8 +152,58 @@ Run V1.4 GSM8K entropy_loss smoke under the overlay image; compare
 to baseline value (recorded in
 `docs/easyr1/SMOKE_BASELINE.md` if present, else fresh-baseline).
 
+### Result (2026-04-27)
+
+**PASS — fresh baseline established.**
+
+- Image: `easyr1-npu:integrated-20260427` SHA
+  `044ba0b7618338051037b7ac144090d80e6a48a4b8e49e0e8366a42c7a2268f1`,
+  size 28.2 GB (overlay layer is small; total = base size).
+- Recipe used: `repo/scripts/run-npu-container.sh --chips 0,1
+  --image easyr1-npu:integrated-20260427 --live-source
+  ~/workspace/easyr1-npu/upstream/EasyR1 -- bash
+  /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh`. Duration
+  ~10 min, 2 GRPO steps + post-train val.
+- Validation metrics: `reward_score 0.0126`,
+  `accuracy_reward 0.014`, `val_response_length mean 184.3`,
+  `val_prompt_length mean 132.3`. Within expected step-2 noise band.
+- Checkpoint saved: A3 `/tmp/z00637938/easyr1_smoke_ckpt/global_step_2/`.
+- Smoke log: A3 `/tmp/z00637938/easyr1-logs/V1.4_integrated_run3.log` (232 KB).
+- entropy_loss / grad_norm not captured in `experiment_log.jsonl`
+  (pre-existing trainer-side jsonl writer quirk on this image stack;
+  not a regression caused by the overlay). Baseline labelled
+  "fresh baseline established, no historical comparison" — first
+  validated run of `vllm 0.20.0 + torch 2.11 + transformers 5.3.0.dev0`
+  combination on EasyR1.
+
+### Lessons captured during T22.7
+
+- `EC-06` (already in OPS KB): ssh-as-root must pass `NPU_USER=<owner>`
+  to `run-npu-container.sh` so `/data/<owner>` and the tokenizer cache
+  bind into the container. Default of `$USER=root` mounts empty paths.
+- `ASCEND_RT_VISIBLE_DEVICES` on this image expects in-container chip
+  indices (0,1), not host phy-ids (2,3). Confused chip-id models
+  between host `npu-smi` and the running image's container view.
+  Pre-check: `npu-smi info -t proc-mem -i N` for the host index;
+  inside container map to local index via the image's
+  `npu-smi info` output.
+
 ## T22.8 — Integrated PR_MATERIAL + ONBOARDING
 
-Integrated hand-off: one-line `docker run easyr1-npu:integrated-<DATE>`
+Integrated hand-off: one-line `docker run easyr1-npu:integrated-20260427`
 recipe that gets a customer to a working EasyR1-on-A3 with zero
 extra steps.
+
+Owned artifacts:
+
+| Item | Location |
+|---|---|
+| Integrated image | A3 host: `easyr1-npu:integrated-20260427` (SHA `044ba0b7618338`) |
+| EasyR1 fork branch | [`github.com/zhshgmail/EasyR1` `ascend-port-integrated-20260427`](https://github.com/zhshgmail/EasyR1/tree/ascend-port-integrated-20260427) (commit `8f5494e` on top of `ascend-port`) |
+| vllm-ascend fork branch (input) | [`github.com/zhshgmail/vllm-ascend` `ascend-port/vllm-main`](https://github.com/zhshgmail/vllm-ascend/tree/ascend-port/vllm-main) head `6bac1f5e` |
+| torch-npu fork branch (input) | [`gitcode.com/zhengshencn_hwca/pytorch` `ascend-port/torch-2.12-rc3`](https://gitcode.com/zhengshencn_hwca/pytorch/tree/ascend-port/torch-2.12-rc3) head `52de87dc1` |
+| transformers fork branch (marker) | [`github.com/zhshgmail/transformers` `ascend-port/transformers-v5.4`](https://github.com/zhshgmail/transformers/tree/ascend-port/transformers-v5.4) |
+| triton-ascend (image vendor) | [`gitcode.com/zhengshencn_hwca/triton-ascend` `ascend-port/triton-v3.6.0`](https://gitcode.com/zhengshencn_hwca/triton-ascend/tree/ascend-port/triton-v3.6.0) — image-default vendor 3.2.0, 6/6 NPU smoke PASS earlier |
+| Smoke log | A3: `/tmp/z00637938/easyr1-logs/V1.4_integrated_run3.log` |
+| Checkpoint | A3: `/tmp/z00637938/easyr1_smoke_ckpt/global_step_2/` |
+| Build context | Local: `/tmp/integrated-overlay/Dockerfile` |
