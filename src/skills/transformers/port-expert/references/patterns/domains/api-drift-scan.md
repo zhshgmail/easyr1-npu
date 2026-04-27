@@ -1,5 +1,13 @@
 # Domain — API drift scan (transformers minor→minor)
 
+> Family taxonomy (F1–F8 + F2-path-move) is **shared across all NPU
+> upstream skills**. See [`_shared/patterns/F-family-taxonomy.md`](../../../../../_shared/patterns/F-family-taxonomy.md).
+> Recent transformers cases (e.g. v5.4 outcome A): see
+> [`KB_INDEX.md`](../../../KB_INDEX.md).
+>
+> Below: the transformers-specific Phase-A scan protocol that
+> populates the per-family classification.
+
 **Load when**: Phase A probing what changed between the base image's
 transformers version and the target community release.
 
