@@ -29,7 +29,7 @@ cd easyr1-npu
 
 每条工具链跑完会产出：
 
-- 一个演示分支，落在 `演示性 fork（`github.com/zhshgmail/<vllm-ascend|transformers>` 或 `gitcode.com/zhengshencn_hwca/<pytorch|triton-ascend>`）`
+- 一个演示分支，落在 `演示性 fork（见 [`UPSTREAM_FORKS.md`](UPSTREAM_FORKS.md) ledger，分支命名约定 `ascend-port/<target-version-slug>`）`
 - 一份修复资料包（`PR_MATERIAL.md`），含 diff 摘要、commit 列表、给上游维护者的简短说明
 
 最近一次运行的产出汇总在主 [`README.md`](../../README.md) 的"已完成"段。
@@ -53,4 +53,4 @@ python3 src/skills/_shared/scanners/<scanner-name>.py --help
 
 ## 责任边界
 
-工具链产出的修改落在 `演示性 fork（`github.com/zhshgmail/<vllm-ascend|transformers>` 或 `gitcode.com/zhengshencn_hwca/<pytorch|triton-ascend>`）` 这一组演示性分支。**正式 PR 由对应上游仓的维护者基于这些分支提交到他们自己的官方仓库。**
+工具链产出的修改落在 `演示性 fork（见 [`UPSTREAM_FORKS.md`](UPSTREAM_FORKS.md) ledger，分支命名约定 `ascend-port/<target-version-slug>`）` 这一组演示性分支。**正式 PR 由对应上游仓的维护者基于这些分支提交到他们自己的官方仓库。**
