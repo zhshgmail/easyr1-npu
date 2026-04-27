@@ -114,16 +114,29 @@ Will execute T22.4 in followup steps.
 
 ## T22.5 — Overlay image build
 
-Single Dockerfile that:
-- Bases on `quay.io/ascend/vllm-ascend:releases-v0.13.0-a3` (has
-  working vllm + vllm_ascend)
+**Base image decision (revised after T22.4 row 3 retry)**:
+`easyr1-npu-vllm0200:iter20-abi-both` (local image on A3 host).
+
+- vllm 0.20.0 (real, not stub — the OLD baseline our shims target)
+- vllm_ascend 0.17.0rc2.dev109+g54879467c (release-13-era + fixes)
+- torch 2.11.0+cpu / torch_npu 2.11.0rc1
+- transformers 5.3.0.dev0 (image default; outcome A-with-note for v5.4)
+
+Rationale: previous attempts targeted vllm-ascend release-13 (vllm 0.13)
+and verl-8.5.2 (vllm 0.18.0+empty stub) — both pre-introduction of the
+symbols our shims target. The vllm0200 image has vllm 0.20.0 and our
+3 shims cleanly resolve OLD paths there.
+
+Single Dockerfile / docker commit that:
+- Bases on `easyr1-npu-vllm0200:iter20-abi-both`
 - Pip overlays each ascend-port branch's edits on top:
   - `torch_npu/compat/` from `ascend-port/torch-2.12-rc3` (precautionary
-    even on torch 2.9 — fix is no-op there but keeps source consistent
-    with future torch bumps)
-  - `vllm_ascend/compat/` from `ascend-port/vllm-main`
-  - transformers ascend-port marker (no source change)
-  - triton-ascend 3.2.0 (image-default vendor)
+    even on torch 2.11 — shim is no-op until torch 2.12 ships, but keeps
+    source consistent for future bumps)
+  - `vllm_ascend/compat/` from `ascend-port/vllm-main` (3 shims: shared_fused_moe / default_moe_runner / spec_decode_base_proposer + 4 swapped call sites). 3/3 import smoke PASS in T22.4 row 3 retry.
+  - transformers ascend-port marker (no source change; image already at 5.3.0.dev0 which is outcome A-with-note for v5.4)
+  - triton-ascend 3.2.0 (image-default vendor; vendor 6/6 baseline PASS)
+  - EasyR1 master with `transformers<5.0.0` cap removed (per row 2)
 - Tag: `easyr1-npu:integrated-<DATE>`
 
 ## T22.6 — EasyR1 master adaptation
