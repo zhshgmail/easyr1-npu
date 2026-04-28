@@ -22,6 +22,7 @@ cd easyr1-npu
 | torch-npu 版本升级 | `/torch-npu-day0` | `--target-torch-version`（如 `2.12-rc3`） |
 | transformers 版本升级 | `/transformers-day0` | `--target-version`（如 `5.4`） |
 | triton-ascend 版本升级 | `/triton-ascend-port` | `--target-triton-version`（如 `v3.6.0`） |
+| **整合 overlay build + V1.4 e2e** | `/integrated-overlay-build` | `--base-image`<br>`--easyr1-branch`<br>`--output-tag`（如 `easyr1-npu:integrated-<DATE>`） |
 
 工具链运行后会执行以下流程：扫描漂移、按 KB 模板生成修复、推送到对应上游的演示分支、跑验证脚本、生成给上游维护者用的修复资料包。
 
