@@ -42,6 +42,7 @@ W428 ... VariableFallbackKernel.cpp:250] Warning: CAUTION:
 | vllm + vllm-ascend | `/vllm-ascend-day0` |
 | transformers（含 NPU FA 集成） | `/transformers-day0` |
 | triton-ascend | `/triton-ascend-port` |
+| **sglang + sgl-kernel-npu** | `/sglang-npu-day0`（T28 新增；NPU 在上游 first-class，3-axis 版本验证） |
 | EasyR1（consumer） | v1 / v2 PORT-GUIDE |
 
 ---
@@ -97,7 +98,7 @@ GPU 上常用，NPU 镜像里要么装不上、要么故意不装。这是下一
 | **bitsandbytes** | 8-bit / 4-bit 量化训练 + QLoRA | **完全无 NPU 支持** | 路径：要么 port bitsandbytes-NPU，要么用 torch_npu native int8/int4 + 自写 LoRA | **高**（QLoRA 是行业刚需） |
 | **torchao** | Inductor-based 量化 | 依赖 torch._inductor NPU codegen | torch_npu 有 inductor 但覆盖不全；专项任务 | 中（量化训练路线） |
 | **TensorRT / torch_tensorrt / onnxruntime** | 推理加速 | NPU 用 ATB / vllm-ascend 替代生态 | 不是同生态，本仓不追 | 低（生态切换） |
-| **sglang / TGI** | 替代 inference engine | 完全没装 | 客户问 sglang on NPU → 当前 N/A，是新 day-0 目标 | 低（vllm-ascend 已盖） |
+| **TGI** | 替代 inference engine | 完全没装 | 客户问 TGI on NPU → 当前 N/A | 低（vllm-ascend / sglang 已盖） |
 | **trl / axolotl / unsloth** | 上层 RL / SFT 框架 | 完全没装 | EasyR1 / verl 已 fill 这块 | 低（已替代） |
 
 ### 档 C 处理方法

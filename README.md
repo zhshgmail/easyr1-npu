@@ -20,6 +20,7 @@
 | torch-npu | A（v2.12-rc3）+ 13 个 defensive shim | on-A3 import PASS | [`ascend-port/torch-2.12-rc3`](https://gitcode.com/zhengshencn_hwca/pytorch/tree/ascend-port/torch-2.12-rc3) |
 | transformers | A-with-note（v5.4.0 / v5.6.2 byte-compat） | byte-compare PASS | [`ascend-port/transformers-v5.4`](https://github.com/zhshgmail/transformers/tree/ascend-port/transformers-v5.4) |
 | triton-ascend | C-patch（v3.6.0 源码合并 + 9 drift 修） | vendor 3.2.0 wheel 6/6 NPU smoke PASS；源码端到端 BLOCKED on bishengir LLVM-22 公开 release | [`ascend-port/triton-v3.6.0`](https://gitcode.com/zhengshencn_hwca/triton-ascend/tree/ascend-port/triton-v3.6.0) |
+| sglang | A（NPU 在上游 first-class，3-axis 版本验证：sglang main + sgl-kernel-npu 2026.04.15.rc4 + CANN 8.5.0） | import smoke PASS（`is_npu()=True`、Engine、sgl_kernel_npu、deep_ep）；端到端推理验证用 `quay.io/ascend/sglang:main-cann8.5.0-a3` | 上游主线 [sgl-project/sglang](https://github.com/sgl-project/sglang) + [sgl-kernel-npu](https://github.com/sgl-project/sgl-kernel-npu)；本仓不 fork |
 | EasyR1 (consumer) | A（`transformers<5.0.0` cap 解除，单 commit） | **V1.4 GRPO smoke PASS**（2 步 + post-train val，2 次独立运行） | [`ascend-port-integrated-20260427`](https://github.com/zhshgmail/EasyR1/tree/ascend-port-integrated-20260427) |
 
 **集成 image**：`easyr1-npu:integrated-20260427`（28.2 GB，SHA `044ba0b76183`，A3 host 上）。

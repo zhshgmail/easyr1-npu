@@ -20,6 +20,7 @@ cd easyr1-npu
 | torch-npu day-0 升级 | `/torch-npu-day0` | `--target-torch-version`（如 `2.12.0-rc3`）<br>`--target-torch-npu-version`（如 `2.12.0rc1`）<br>`--base-image` |
 | transformers day-0 升级 | `/transformers-day0` | `--target-transformers-version`（如 `5.6.2`，注意：upstream tag 是 `v5.6.2` 含前缀 `v`） |
 | triton-ascend port | `/triton-ascend-port` | `--target-triton-version`（如 `v3.6.0`） |
+| sglang NPU 3-axis 版本验证 | `/sglang-npu-day0` | `--target-sglang-tag`（如 `main` / `v0.5.10.post1`）<br>`--target-kernel-npu-tag`（如 `2026.04.15.rc4`）<br>`--target-cann-version`（如 `8.5.0`）<br>`--device-type a3\|a2`（默认 `a3`） |
 | 整合 overlay build + V1.4 e2e | `/integrated-overlay-build` | `--base-image`<br>`--easyr1-branch`<br>`--output-tag`（如 `easyr1-npu:integrated-<DATE>`） |
 
 工具链运行流程：扫描漂移（commit range 或 byte-compare）→ 按 KB 模板生成修复 → 推到对应上游的演示性 fork 分支 → 跑验证脚本 → 生成给上游维护者用的修复资料包（`PR_MATERIAL.md`）。

@@ -30,6 +30,7 @@ graph TB
         STorch["/torch-npu-day0"]
         STrans["/transformers-day0"]
         STriton["/triton-ascend-port"]
+        SSglang["/sglang-npu-day0"]
         SInteg["/integrated-overlay-build"]
         SValid["/drift-port-validate<br/>/porting-self-challenge"]
     end
@@ -97,6 +98,7 @@ graph TB
 |---|---|---|
 | **Day-0 skill**（vllm-ascend / torch-npu / transformers） | 社区某上游放出新版本，对应 NPU 上游还没追上 → 写 forward-compat shim 把新版本接入 | 一次只动一个上游；不混编 |
 | **Port skill**（triton-ascend） | 上游本身是 vendored fork（不是 plugin）→ git merge + 冲突解决，而不是 F1..F8 漂移扫描 | 不能用 F-family 模型 |
+| **3-axis day-0**（`/sglang-npu-day0`） | 上游 NPU 已 first-class（in-tree 在 sgl-project/sglang），但 sglang main / sgl-kernel-npu / CANN+torch_npu 三轴异步演进 → 验证三轴搭配 | 不写 fork（上游已活跃维护），只发现 + 报 issue + 出客户 ONBOARDING |
 | **Integrated overlay**（`/integrated-overlay-build`） | 把 4 个 ascend-port 分支 + EasyR1 master 叠到一个已部署的 base image 上 → 一镜像跑通 V1.4 GRPO | 不在这里修单上游 bug；要修先回单上游 day-0 |
 
 ### 2.2 4 个 NPU 上游的关系
@@ -232,6 +234,7 @@ graph LR
         TorchS["torch-npu/port-expert/<br/>(/torch-npu-day0)"]
         TransS["transformers/port-expert/<br/>(/transformers-day0)"]
         TritonS["triton-ascend/port-expert/<br/>(/triton-ascend-port)"]
+        SglangS["sglang/port-expert/<br/>(/sglang-npu-day0)"]
     end
 
     subgraph Shared["_shared/"]
@@ -283,6 +286,7 @@ graph TD
 | torch-npu | A（v2.12-rc3 outcome A，已加 13 个 defensive shim） | L4 | [`ascend-port/torch-2.12-rc3`](https://gitcode.com/zhengshencn_hwca/pytorch/tree/ascend-port/torch-2.12-rc3) |
 | transformers | A-with-note（v5.4 / v5.6.2 byte-compat） | L2 | [`ascend-port/transformers-v5.4`](https://github.com/zhshgmail/transformers/tree/ascend-port/transformers-v5.4) |
 | triton-ascend | C-patch（v3.6.0 9 drifts，源码合并完成） | L4（vendor wheel 6/6 PASS）；源码端到端 BLOCKED on bishengir LLVM-22 | [`ascend-port/triton-v3.6.0`](https://gitcode.com/zhengshencn_hwca/triton-ascend/tree/ascend-port/triton-v3.6.0) |
+| sglang | A（3-axis 版本验证：sglang main / sgl-kernel-npu 2026.04.15.rc4 / CANN 8.5.0 三轴 published artifact 全 ✓） | L3（import smoke：`is_npu()=True` + Engine + sgl_kernel_npu + deep_ep 全部通过；T28 用 `quay.io/ascend/sglang:main-cann8.5.0-a3` 端到端验证） | 上游已活跃维护，不开 fork；hand-off 走 issue（`sgl-project/sglang`、`sgl-project/sgl-kernel-npu`） |
 | EasyR1（consumer） | A | **L5 PASS**（V1.4 GRPO 2 步 + post-train val，T22.7 + T25.5 双重确认） | [`ascend-port-integrated-20260427`](https://github.com/zhshgmail/EasyR1/tree/ascend-port-integrated-20260427) |
 
 集成 image：`easyr1-npu:integrated-20260427`（28.2 GB，SHA `044ba0b76183`）。
