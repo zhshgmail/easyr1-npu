@@ -222,3 +222,38 @@ captures the workflow that produced
 `easyr1-npu:integrated-20260427` (SHA `044ba0b7618338`) + V1.4 GRPO
 smoke PASS. See `RL_INTEGRATION_PLAN.md` §T22.7 for the original
 run-log.
+
+## T25 cold-drive replay (2026-04-28)
+
+A second fresh agent re-ran P0..P7 against the existing image.
+Results:
+
+- P0..P4 — re-validated: all 4 ascend-port branch tips on
+  `UPSTREAM_FORKS.md`; image `easyr1-npu:integrated-20260427`
+  present on A3 with SHA `044ba0b76183`.
+- **P5 V1.4 GRPO smoke** — re-PASSED on chips 2,3 (in-container
+  index 0,1) after fixing two real bugs caught only by this replay:
+
+  1. **NPU-OPS-014**: A3's `/home/z00637938/workspace/easyr1-npu/repo/`
+     was a stale non-git copy of an early v0 layout (no `src/` dir).
+     Documented commands `bash repo/src/scripts/run-npu-container.sh`
+     fail with `No such file or directory`. Fix: re-`git clone` to
+     A3 from origin/main.
+  2. **NPU-OPS-012 helper bug**: `run-npu-container.sh` was setting
+     `ASCEND_RT_VISIBLE_DEVICES=$CHIPS` — i.e. the host phy-id, not
+     the in-container index. T22.7 worked only because `--chips 0,1`
+     coincides numerically. With `--chips 2,3` or `--chips 4,5`, Ray
+     reports `Total available GPUs 0 is less than total desired GPUs 2`.
+     Fix: helper now derives `IN_CONTAINER_CSV=0,1,...,N-1` and emits
+     that.
+
+- **Smoke result on chips 2,3 with fixed helper**: 2 GRPO step + post-train val PASS, ~10 min.
+  - `accuracy_reward: 0.014` (matches T22.7 baseline 0.014)
+  - `reward_score: 0.013` (within ±10% of T22.7 0.0126)
+  - `val_response_length mean: 184.3` (matches T22.7 184.3)
+  - Checkpoint saved: `/tmp/<owner>/easyr1_smoke_ckpt/global_step_2/actor/`
+
+The **value of cold-drive replay** is exactly catching bugs that
+happy-path testing hides — both fixed bugs would have broken any
+new user picking a non-zero chip range. KB and helper updated; both
+documented for future replays.

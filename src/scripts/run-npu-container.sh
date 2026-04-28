@@ -61,6 +61,17 @@ done
 
 IFS=',' read -ra CHIP_ARR <<< "$CHIPS"
 
+# In-container chip indices after `--device /dev/davinci<host_id>` mapping.
+# CANN's `ASCEND_RT_VISIBLE_DEVICES` resolves against the in-container
+# enumeration (0..N-1 in the order `--device` flags appear), NOT against
+# host phy-ids. Confusing the two leaves Ray with `Total available GPUs 0`
+# even though the chips are mounted into the container. See NPU-OPS-012.
+IN_CONTAINER_IDX=()
+for ((i=0; i<${#CHIP_ARR[@]}; i++)); do
+  IN_CONTAINER_IDX+=("$i")
+done
+IN_CONTAINER_CSV=$(IFS=,; echo "${IN_CONTAINER_IDX[*]}")
+
 # --- Chip occupancy precheck --------------------------------------------------
 # npu-smi -t proc-mem returns lines per chip. If a chip has any "Process id"
 # lines we abort (unless caller explicitly opts out). Shared host rule: never
@@ -131,7 +142,7 @@ docker run --rm \
   -v "/tmp/${NPU_USER}:/tmp/${NPU_USER}" \
   -v "${LIVE_EASYR1}:/opt/easyr1" \
   --network=host --ipc=host --shm-size=64g \
-  -e ASCEND_RT_VISIBLE_DEVICES="${CHIPS}" \
+  -e ASCEND_RT_VISIBLE_DEVICES="${IN_CONTAINER_CSV}" \
   -e HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}" \
   -e HF_HOME="${HF_HOME:-/data/${NPU_USER}/hf-cache}" \
   -e VLLM_ASCEND_ENABLE_NZ="${VLLM_ASCEND_ENABLE_NZ:-0}" \

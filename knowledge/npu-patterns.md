@@ -648,11 +648,13 @@ docker run \
   ...
 ```
 
-The `repo/scripts/run-npu-container.sh --chips 2,3` argument already does the right mapping (sees the host phy-ids, emits the proper flags). Use the helper, don't hand-roll.
+The `repo/src/scripts/run-npu-container.sh --chips 2,3` argument now does the right mapping (auto-derives `IN_CONTAINER_CSV=0,1` and emits `-e ASCEND_RT_VISIBLE_DEVICES=0,1` regardless of host phy-id). Use the helper, don't hand-roll.
 
-**Commit ref**: 5d5d756 (T22.7 V1.4 e2e — discovered by sub-agent during integrated overlay smoke 2026-04-27).
+**Commit refs**:
+- 5d5d756 (T22.7 V1.4 e2e — discovered by sub-agent during integrated overlay smoke 2026-04-27).
+- T25.5 cold-drive replay 2026-04-28 caught a regression: helper was actually setting `ASCEND_RT_VISIBLE_DEVICES=$CHIPS` (host phy-id) — works only when `--chips 0,1` by coincidence; broke for `--chips 2,3` and `--chips 4,5`. Fix added an explicit `IN_CONTAINER_CSV` derivation. Commit: see `src/scripts/run-npu-container.sh` § "In-container chip indices".
 
-**Generalizable rule**: when `device_count() == 0` inside a container that grep-confirms the right davinci device nodes are mounted, suspect `ASCEND_RT_VISIBLE_DEVICES` index-space mismatch BEFORE driver issues.
+**Generalizable rule**: when `device_count() == 0` inside a container that grep-confirms the right davinci device nodes are mounted, suspect `ASCEND_RT_VISIBLE_DEVICES` index-space mismatch BEFORE driver issues. **Validate with non-zero chips** (e.g. `--chips 2,3`, not just `--chips 0,1`) — the latter is a happy-path test that hides this bug.
 
 ---
 
@@ -682,11 +684,36 @@ If you forget, the workaround inside the container is futile (the model files ar
 
 ---
 
+### NPU-OPS-014 — A3 host's `repo/` may be a non-git stale copy from an earlier layout
+
+**Symptom**: Following the SKILL.md or PORT-GUIDE-v2 reproducer fails with `bash: repo/src/scripts/run-npu-container.sh: No such file or directory` even though the file exists on the dev box. Inspecting on A3: `/home/<owner>/workspace/easyr1-npu/repo/.git` is missing, only `repo/scripts/`, `repo/skills/`, `repo/docs/` exist (the **early v0 flat layout**, before the `src/` reorg).
+
+**Root cause**: The A3 host clone is a hand-copied snapshot from a much earlier point in the project, before scripts and skills moved under `src/`. Every doc-side reference to `repo/src/scripts/...` fails because that path doesn't exist — only the root-level `repo/scripts/...` does.
+
+**Fix**:
+
+```bash
+# On A3 host:
+cd /home/<owner>/workspace/easyr1-npu
+mv repo repo.bak-$(date +%s)            # do NOT delete in case there are local edits
+git clone https://github.com/zhshgmail/easyr1-npu.git repo
+# verify the new layout:
+ls repo/src/scripts/run-npu-container.sh
+```
+
+If there were local A3-side edits in the old `repo/`, copy them back into the freshly-cloned tree on a feature branch, push to your fork.
+
+**Commit ref**: T25.5 cold-drive replay 2026-04-28 — caught when the integrated-overlay V1.4 reproducer hit `No such file or directory` on the script path the SKILL documents.
+
+**Generalizable rule**: when reproducing a skill on a new host, **first verify the host's clone is up-to-date with the documented layout**. Treat A3 (or any shared/older host) as a potentially-stale mirror; trust dev-tree paths over A3-side memory. Add `git status` + `git rev-parse HEAD` to the prereq check section of any skill that runs commands against `repo/...` paths.
+
+---
+
 ## IDs defined (summary)
 
 - Code patterns: `NPU-CP-001` ... `NPU-CP-007` (7 entries)
 - Platform bugs: `NPU-BUG-001` ... `NPU-BUG-004` (4 entries)
 - Environment/config: `NPU-ENV-001` ... `NPU-ENV-004` (4 entries)
-- Operational: `NPU-OPS-001` ... `NPU-OPS-013` (13 entries — adds container index semantics NPU-OPS-012 + ssh-as-root NPU_USER NPU-OPS-013)
+- Operational: `NPU-OPS-001` ... `NPU-OPS-014` (14 entries — adds A3 stale-repo NPU-OPS-014)
 
-**Total: 28 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
+**Total: 29 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.

@@ -48,6 +48,7 @@ Full guide: [`docs/easyr1/PORT-GUIDE-v2-integrated.md`](docs/easyr1/PORT-GUIDE-v
 - CANN ≥ 8.5.0 driver installed at `/usr/local/Ascend/`
 - Docker with privileged + `--ipc=host` capability
 - ≥ 50 GB free in `/data/<your-workspace-owner>` for HuggingFace cache + checkpoints
+- **`easyr1-npu` repo on A3 must be a fresh `git clone`** of `https://github.com/zhshgmail/easyr1-npu.git` (NOT a hand-copied snapshot from an earlier layout). The script paths below assume the current `repo/src/scripts/...` layout. Older copies sit at `repo/scripts/...` and will produce `No such file or directory`. See [`knowledge/npu-patterns.md` NPU-OPS-014](knowledge/npu-patterns.md).
 
 ## Common gotchas (both paths)
 
