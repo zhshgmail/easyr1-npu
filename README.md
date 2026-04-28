@@ -2,8 +2,10 @@
 
 把 EasyR1（`hiyouga/EasyR1`）适配到 Ascend 910C (A3) NPU，并沉淀一套针对 NPU 上游（vllm-ascend / torch-npu / transformers / triton-ascend）的可复用版本升级工具链。
 
-最后更新 2026-04-27。
+最后更新 2026-04-28。
 
+> **新用户从这里开始 → [`ONBOARDING.md`](ONBOARDING.md)（一页 quickstart，两条已验证路径）**
+>
 > 各 NPU 上游的 personal fork URL + 当前 `ascend-port/<target>` 分支 + PR_MATERIAL 链接，全部统一记录在 [`docs/_meta/UPSTREAM_FORKS.md`](docs/_meta/UPSTREAM_FORKS.md)。下面进度行里的分支链接如与 ledger 不一致，以 ledger 为准。
 
 ---
@@ -28,6 +30,8 @@
   产出分支：[`zhengshencn_hwca/triton-ascend` `ascend-port/triton-v3.6.0`](https://gitcode.com/zhengshencn_hwca/triton-ascend/tree/ascend-port/triton-v3.6.0)（含 `PR_MATERIAL.md`）。
 
 - **triton-ascend NPU 端到端 smoke**：在 A3 容器内用 vendor `triton_ascend-3.2.0` wheel + image 自带 CANN 8.5.2 `bishengir-compile`，跑 `@triton.jit vector_add` on NPU，输出与 torch 参考实现 exact match（max abs err 0.000e+00）。验证脚本：[`src/scripts/smoke_triton_vector_add.py`](src/scripts/smoke_triton_vector_add.py)。
+
+- **EasyR1 v2 (整合 overlay) e2e** (2026-04-28)：在 `easyr1-npu:integrated-20260427` 镜像（vllm 0.20.0 + torch 2.11 + 4 个 ascend-port 上游 overlay + EasyR1 master 去掉 transformers 上限）上跑 V1.4 GSM8K-style GRPO smoke 通过——2 GRPO step + post-train val，10 分钟，无异常，checkpoint 保存。详见 [`docs/easyr1/PORT-GUIDE-v2-integrated.md`](docs/easyr1/PORT-GUIDE-v2-integrated.md)。
 
 ### 进行中
 
