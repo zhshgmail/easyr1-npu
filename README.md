@@ -38,6 +38,7 @@
 | 想看整体架构、组件分工、端到端流程 | [`docs/_meta/ARCHITECTURE.md`](docs/_meta/ARCHITECTURE.md) |
 | 想用 slash command 触发版本升级工具链 | [`docs/_meta/SKILLS-USAGE.md`](docs/_meta/SKILLS-USAGE.md) |
 | 想看每条工具链当前在哪个 fork / 分支 | [`docs/_meta/UPSTREAM_FORKS.md`](docs/_meta/UPSTREAM_FORKS.md) |
+| 想看下一波 NPU 适配候选清单（镜像里还没 NPU 适配的主要软件） | [`docs/_meta/NPU_ADAPTATION_GAP.md`](docs/_meta/NPU_ADAPTATION_GAP.md) |
 | 想查 NPU 操作模式与已知 bug（29 stable IDs） | [`knowledge/npu-patterns.md`](knowledge/npu-patterns.md) |
 | 想查跨层移植教训（lessons learned） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/) |
 | 你是 vllm-ascend 维护者，想看升级流程详解 | [`docs/vllm-ascend/PORTING-GUIDE.md`](docs/vllm-ascend/PORTING-GUIDE.md) |

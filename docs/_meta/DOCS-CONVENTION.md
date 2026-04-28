@@ -24,6 +24,7 @@
 | 客户跑 EasyR1 (v2 integrated) | [`docs/easyr1/PORT-GUIDE-v2-integrated.md`](../easyr1/PORT-GUIDE-v2-integrated.md) |
 | 整体架构 + 流程（mermaid） | [`docs/_meta/ARCHITECTURE.md`](ARCHITECTURE.md) |
 | 4 fork + EasyR1 fork 的权威分支表 | [`docs/_meta/UPSTREAM_FORKS.md`](UPSTREAM_FORKS.md) |
+| 下一波 NPU 适配 gap（档 B / 档 C 软件） | [`docs/_meta/NPU_ADAPTATION_GAP.md`](NPU_ADAPTATION_GAP.md) |
 | Slash command 使用 | [`docs/_meta/SKILLS-USAGE.md`](SKILLS-USAGE.md) |
 | 术语表 | [`docs/_meta/GLOSSARY.md`](GLOSSARY.md) |
 | 上游维护者面 PORT GUIDE | `docs/{vllm-ascend,torch-npu}/PORTING-GUIDE.md` |

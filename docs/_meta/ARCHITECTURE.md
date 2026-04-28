@@ -301,6 +301,7 @@ graph TD
 
 - [`README.md`](../../README.md) — 项目入口
 - [`UPSTREAM_FORKS.md`](UPSTREAM_FORKS.md) — fork ledger 权威表
+- [`NPU_ADAPTATION_GAP.md`](NPU_ADAPTATION_GAP.md) — 下一波 NPU 适配候选清单（档 B / 档 C 软件）
 - [`SKILLS-USAGE.md`](SKILLS-USAGE.md) — slash command 速查
 - [`GLOSSARY.md`](GLOSSARY.md) — 术语表
 - [`DOCS-CONVENTION.md`](DOCS-CONVENTION.md) — 文档组织 convention
