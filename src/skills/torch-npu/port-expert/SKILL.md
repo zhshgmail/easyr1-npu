@@ -1,5 +1,5 @@
 ---
-name: torch-npu-port
+name: torch-npu-day0
 description: >
   Day-0 NPU probe for a community PyTorch release with NO matching
   torch_npu stable yet. Pip-overlay target torch + torch_npu rc onto an
@@ -8,8 +8,8 @@ description: >
   a deployable overlay image whose next-layer downstream (vllm-ascend,
   triton-ascend, user RL framework) can port against.
 
-  Usage: /torch-day0 --target-torch-version <V> --target-torch-npu-version <V>
-                     --base-image <TAG>
+  Usage: /torch-npu-day0 --target-torch-version <V> --target-torch-npu-version <V>
+                         --base-image <TAG>
 argument-hint: >
   target-torch-version: community torch release under test (e.g. 2.11.0)
   target-torch-npu-version: matching torch_npu, often rc1 for Day-0 (e.g. 2.11.0rc1)
@@ -17,7 +17,7 @@ argument-hint: >
 context: inline
 ---
 
-# /torch-day0 — community PyTorch probe on existing NPU base
+# /torch-npu-day0 — community PyTorch probe on existing NPU base
 
 ## Two modes — decide before Phase 0
 
@@ -30,12 +30,25 @@ classify A/B/C. Phases below (P0..P6) describe this mode.
 after cold-drive caught the gap): torch_npu source already has a
 branch for the target torch version, but we need to patch the
 `from torch._inductor...` / `from torch._dynamo...` imports that
-broke between torch N.x and N.y. Skip P2-P4 entirely. Run:
+broke between torch N.x and N.y. Skip P2-P4 entirely.
+
+Prereq — clone community pytorch with tags:
+```bash
+mkdir -p ~/workspace/easyr1-npu/upstream
+cd ~/workspace/easyr1-npu/upstream
+git clone --filter=blob:none https://github.com/pytorch/pytorch.git pytorch
+git -C pytorch fetch --tags origin
+git -C pytorch tag --list 'v2.11*' 'v2.12*'   # verify baseline + target tags exist
+```
+
+Then run:
 
 ```bash
 # One-command sweep (F1 + F2-path-move + F3 + F7 + F8):
-scripts/sweep.sh --baseline <e.g. v2.11.0> --target <e.g. v2.12.0-rc3> \
-  --pt-repo <community-pytorch> --torch-npu-path <torch-npu>
+bash src/skills/torch-npu/port-expert/scripts/sweep.sh \
+  --baseline v2.11.0 --target v2.12.0-rc3 \
+  --pt-repo ~/workspace/easyr1-npu/upstream/pytorch \
+  --torch-npu-path ~/workspace/easyr1-npu/upstream/torch-npu
 ```
 
 `sweep.sh` runs `extract_imports` → `check_drift` → `check_sig_drift`
@@ -58,7 +71,7 @@ for torch X" → Mode A. "Port torch_npu to torch Y's API drift" /
 
 ## Your role (orchestrator)
 
-Spawn `torch-day0-worker`, wait, read Handoff, propagate {A/B/C, overlay
+Spawn `torch-npu-day0-worker`, wait, read Handoff, propagate {A/B/C, overlay
 image tag, validated combos table, patches} back to caller.
 
 ## Workflow

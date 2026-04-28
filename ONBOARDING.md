@@ -14,7 +14,7 @@ docker pull quay.nju.edu.cn/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest
 git clone -b ascend-port https://github.com/zhshgmail/EasyR1.git
 git clone https://github.com/zhshgmail/easyr1-npu.git
 NPU_USER=<your-workspace-owner> \
-  bash easyr1-npu/scripts/run-npu-container.sh \
+  bash easyr1-npu/src/scripts/run-npu-container.sh \
     --chips 0,1 \
     --image quay.nju.edu.cn/ascend/verl:verl-8.5.0-a3-ubuntu22.04-py3.11-latest \
     --live-source ./EasyR1 \
@@ -27,7 +27,7 @@ Full guide: [`docs/easyr1/PORT-GUIDE.md`](docs/easyr1/PORT-GUIDE.md).
 
 ```bash
 NPU_USER=<your-workspace-owner> \
-  bash easyr1-npu/scripts/run-npu-container.sh \
+  bash easyr1-npu/src/scripts/run-npu-container.sh \
     --chips 0,1 \
     --image easyr1-npu:integrated-20260427 \
     --live-source ./EasyR1 \
@@ -59,7 +59,7 @@ Full guide: [`docs/easyr1/PORT-GUIDE-v2-integrated.md`](docs/easyr1/PORT-GUIDE-v
    host phy-id. Host pre-check `npu-smi info -t proc-mem -i N`
    before launch; runner script handles the mapping.
 3. **NPU container env**: don't hand-roll `docker run`; use
-   `easyr1-npu/scripts/run-npu-container.sh`. Hand-rolled containers
+   `easyr1-npu/src/scripts/run-npu-container.sh`. Hand-rolled containers
    miss critical bind-mounts (`/etc/ascend_install.info`,
    `/etc/ascend_driver.conf`, `/etc/ascend_filelist.info`); see
    `knowledge/npu-patterns.md` NPU-OPS-009 / NPU-OPS-011.

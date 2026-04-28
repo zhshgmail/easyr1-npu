@@ -17,7 +17,7 @@ Last updated 2026-04-28.
 # On A3 host (115.190.166.102), one shot:
 ssh -p 443 root@115.190.166.102 "
   NPU_USER=z00637938 \
-  bash /home/z00637938/workspace/easyr1-npu/repo/scripts/run-npu-container.sh \
+  bash /home/z00637938/workspace/easyr1-npu/repo/src/scripts/run-npu-container.sh \
     --chips 0,1 \
     --image easyr1-npu:integrated-20260427 \
     --live-source /home/z00637938/workspace/easyr1-npu/upstream/EasyR1 \

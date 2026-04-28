@@ -19,6 +19,11 @@ ascend-port/<target-version-slug>
 - Prefix `ascend-port/` avoids colliding with upstream-owned branches
   like `release/v1.1.x` or community feature branches.
 
+EasyR1 (consumer) is an exception: it tracks integration-image builds,
+not an upstream version axis. Its branches use `ascend-port-integrated-<DATE>`
+to pin the exact tree baked into a specific `easyr1-npu:integrated-<DATE>`
+image — see the integrated row below.
+
 ## Active branches
 
 | Upstream | Personal fork | Active branch | Latest case status | PR_MATERIAL |
@@ -27,7 +32,7 @@ ascend-port/<target-version-slug>
 | torch-npu | [`gitcode.com/zhengshencn_hwca/pytorch`](https://gitcode.com/zhengshencn_hwca/pytorch) | [`ascend-port/torch-2.12-rc3`](https://gitcode.com/zhengshencn_hwca/pytorch/tree/ascend-port/torch-2.12-rc3) | T21 on-A3 smoke PASS (OLD path: `_UPSTREAM_HAS_UNION=True`, NEW path simulated: `_UPSTREAM_HAS_UNION=False`) | [`PR_MATERIAL.md`](https://gitcode.com/zhengshencn_hwca/pytorch/blob/ascend-port/torch-2.12-rc3/PR_MATERIAL.md) |
 | transformers | [`github.com/zhshgmail/transformers`](https://github.com/zhshgmail/transformers) | [`ascend-port/transformers-v5.4`](https://github.com/zhshgmail/transformers/tree/ascend-port/transformers-v5.4) | T21 on-A3 smoke: outcome A-with-note (v5.4 adds `npu_flash_attn_with_kvcache` placeholder + `flash_attention_4` keys; both additive only) | [in harness repo: `docs/transformers/PR_MATERIAL_v5.4_outcome_A.md`](../transformers/PR_MATERIAL_v5.4_outcome_A.md) |
 | triton-ascend | [`gitcode.com/zhengshencn_hwca/triton-ascend`](https://gitcode.com/zhengshencn_hwca/triton-ascend) | [`ascend-port/triton-v3.6.0`](https://gitcode.com/zhengshencn_hwca/triton-ascend/tree/ascend-port/triton-v3.6.0) | code-side fixes complete (9 drifts); NPU smoke blocked on bishengir LLVM-22 release; vendor 6/6 baseline PASS separately | [`PR_MATERIAL.md`](https://gitcode.com/zhengshencn_hwca/triton-ascend/blob/ascend-port/triton-v3.6.0/PR_MATERIAL.md) |
-| EasyR1 (consumer) | [`github.com/zhshgmail/EasyR1`](https://github.com/zhshgmail/EasyR1) | [`ascend-port/easyr1-master-on-transformers-5x`](https://github.com/zhshgmail/EasyR1/tree/ascend-port/easyr1-master-on-transformers-5x) | T22.4 row 2: `requirements.txt` lifts `transformers<5.0.0` cap. Validated by on-A3 forward-pass smoke (Qwen2-0.5B, sdpa+flash_attention_2 paths PASS) on transformers 5.3.0.dev0 (image default). Aligned with v5.4 outcome A-with-note. | (no separate PR_MATERIAL — single-line cap loosen; rationale in commit `b13c5d9`) |
+| EasyR1 (consumer) | [`github.com/zhshgmail/EasyR1`](https://github.com/zhshgmail/EasyR1) | [`ascend-port-integrated-20260427`](https://github.com/zhshgmail/EasyR1/tree/ascend-port-integrated-20260427) | T22.4 row 5: `requirements.txt` lifts `transformers<5.0.0` cap; this is the exact branch baked into `easyr1-npu:integrated-20260427`. Validated by V1.4 GRPO smoke PASS (T22.7). Sibling branch `ascend-port/easyr1-master-on-transformers-5x` carries the same cap-loosen but predates the integrated build; both are kept for now. | (single-line cap loosen — see commit message at branch tip + `docs/easyr1/PORT-GUIDE-v2-integrated.md` §"What's overlaid") |
 
 ## Reading order for a maintainer of one of these upstreams
 

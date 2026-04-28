@@ -134,6 +134,29 @@ moves to vllm main tip. Not yet ported.
 | **F1** | `5e584ce9e` | `SharedFusedMoE` class | 9 (utils.py, ops/fused_moe, _310p/fused_moe) |
 | **F1** | `809d83c2d` | `DefaultMoERunner` class | 2 (ops/fused_moe/fused_moe.py) |
 
+### T25 cold-drive replay (2026-04-28) — post-T22 sweep findings
+
+Running `scripts/sweep.sh --commit-range v0.20.0..origin/main` after
+T22's fixes shipped surfaced 3 novel drifts that will hit vllm-ascend
+on the next base-image bump (vllm tip moved 26 commits from v0.20.0).
+**This is the use-case the skill is designed for: re-run after each
+upstream tag bump.**
+
+| Family | vllm commit (PR) | Symbol | Detail | vllm-ascend sites | Fix shape |
+|---|---|---|---|---|---|
+| **F2-rename** | `4c7c69b4e` (PR #40410) | `EagleCudaGraphManager` | Renamed to `EagleCudaGraphManagerBase` and **split** into `PrefillEagleCudaGraphManager` + `DecodeEagleCudaGraphManager` (each with own `capture()` body). | 6 sites in `vllm_ascend/worker/v2/spec_decode/eagle/{aclgraph.py,speculator.py}` | F2-rename shim at `vllm_ascend/compat/eagle_cudagraph.py`: try/except import old name, expose new base name. Subclass `EagleAclGraphManager` may also need to split into prefill/decode variants — re-read PR #40410's diff before patching. |
+| **F8** | (post-v0.20.0) | `EagleSpeculator.capture` | New required method on community `EagleSpeculator` base. NPU `AscendEagleSpeculator(EagleSpeculator)` will inherit; verify base has a default or implement minimal NPU-semantic version per F8 template. | `vllm_ascend/worker/v2/spec_decode/eagle/speculator.py:43` | Likely safe-inherit (base method is defined); verify with `inspect.getsource` after rebase. |
+| **F8** | (post-v0.20.0) | `MMEncoderAttention.process_weights_after_loading` | New required method on community `MMEncoderAttention`. NPU has 2 subclasses (`AscendMMEncoderAttention`, `AscendMMEncoderAttention310`). | `vllm_ascend/_310p/ops/mm_encoder_attention.py:38`, `vllm_ascend/ops/mm_encoder_attention.py:40` | Same: verify base default; if base raises `NotImplementedError`, implement minimal `pass` body or NPU equivalent. |
+
+Verification cmd:
+```bash
+bash src/skills/vllm-ascend/port-expert/scripts/sweep.sh \
+  --commit-range v0.20.0..origin/main \
+  --vllm-path ~/workspace/easyr1-npu/upstream/vllm \
+  --vllm-ascend-path ~/workspace/easyr1-npu/upstream/vllm-ascend
+# expect: 1 novel symbol + 2 F8 additions, exit 1
+```
+
 Reproduce via:
 ```
 python3 scripts/kb_drive_test.py \

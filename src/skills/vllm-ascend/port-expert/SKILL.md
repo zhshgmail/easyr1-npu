@@ -1,5 +1,5 @@
 ---
-name: vllm-ascend-port
+name: vllm-ascend-day0
 description: >
   Day-0 NPU probe for vllm-ascend against a deeper upstream move (e.g.
   new torch that vllm-ascend's C++ extension was not rebuilt for, or
@@ -67,6 +67,33 @@ P6  handoff: patched branch + overlay image + ONBOARDING + PR material
 ```
 
 ## Sweep driver
+
+### Prereq: clone community vllm with full history + tags
+
+Mode Sweep walks the commit graph, so a shallow / tag-less clone won't
+work. From a fresh checkout:
+
+```bash
+mkdir -p ~/workspace/easyr1-npu/upstream
+cd ~/workspace/easyr1-npu/upstream
+git clone https://github.com/vllm-project/vllm.git vllm
+# verify v0.20.0 tag is present:
+git -C vllm tag --list 'v0.20.*'
+```
+
+If you already have a shallow clone:
+`git -C vllm fetch --unshallow --tags origin`.
+
+### Pick the baseline
+
+The baseline is **the last commit / tag your fork is known good
+against**. Today (post-T22, 2026-04-28) for vllm-ascend that is
+**v0.20.0**: it's the version baked into the shipped integrated image
+`easyr1-npu:integrated-20260427`.
+
+When this sweep itself lands a new fix + ships a new integrated
+image, advance the baseline to the new known-good tag (or SHA) for
+the *next* sweep — don't re-scan history we've already addressed.
 
 The cold-drive LLM should use this protocol when no specific failure
 is given:

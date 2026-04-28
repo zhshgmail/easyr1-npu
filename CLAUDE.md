@@ -23,22 +23,48 @@ EasyR1 is a slimmed-down fork of veRL. veRL has already been ported to NPU (see 
 ## Repository layout
 
 ```
-~/workspace/
-├── easyr1-npu/                        # our git-tracked deliverable
+~/workspace/easyr1-npu/
+├── repo/                              # our git-tracked deliverable
 │                                      # (github.com/zhshgmail/easyr1-npu)
 │   ├── README.md                      # entry point — start here
+│   ├── ONBOARDING.md                  # one-page customer quickstart (v1 + v2 paths)
 │   ├── CLAUDE.md                      # this file
 │   ├── docs/
-│   │   ├── PORT-GUIDE.md              # "how to run EasyR1 on A3"
-│   │   ├── SKILLS-GUIDE.md            # "how to redo the port from zero"
-│   │   ├── HANDOVER.md                # current state + open work
-│   │   ├── design.md                  # requirements, task decomp, status — living doc
-│   │   ├── dep-matrix.md              # GPU↔NPU dependency mapping
-│   │   └── porting-journal.md         # dated log of findings
-│   ├── skills/                        # reusable porting skills (CC skill format)
-│   ├── scripts/                       # image inspection, dep extraction, diff tooling
+│   │   ├── easyr1/
+│   │   │   ├── PORT-GUIDE.md              # v1 path — "EasyR1 on verl-8.5.0 + ascend-port"
+│   │   │   ├── PORT-GUIDE-v2-integrated.md# v2 integrated overlay path
+│   │   │   ├── PORT-SUMMARY.md            # high-level port story
+│   │   │   ├── DELIVERABLE.md             # deliverable spec
+│   │   │   ├── dep-matrix.md              # GPU↔NPU dep mapping
+│   │   │   └── porting-journal.md         # dated log of findings
+│   │   ├── _meta/
+│   │   │   ├── UPSTREAM_FORKS.md          # authoritative fork+branch ledger
+│   │   │   ├── HANDOVER.md                # current state + open work
+│   │   │   ├── SKILLS-USAGE.md            # slash-command usage for upstream maintainers
+│   │   │   ├── SKILLS-GUIDE.md            # redo-the-port-from-zero guide
+│   │   │   ├── design.md                  # requirements + task decomp + status
+│   │   │   ├── DOCS-CONVENTION.md         # where each kind of info lives
+│   │   │   ├── RL_INTEGRATION_PLAN.md     # T22 integration log
+│   │   │   └── kb/porting_lessons/        # cross-layer lessons
+│   │   ├── vllm-ascend/PORTING-GUIDE.md
+│   │   ├── torch-npu/PORTING-GUIDE.md
+│   │   ├── transformers/                  # PR_MATERIAL + drill status
+│   │   └── triton-ascend/                 # work plans
+│   ├── src/
+│   │   ├── skills/                    # reusable porting skills (CC skill format)
+│   │   │   ├── _shared/               # shared workflows + patterns + small helpers
+│   │   │   ├── vllm-ascend/port-expert/      # /vllm-ascend-day0
+│   │   │   ├── torch-npu/port-expert/        # /torch-npu-day0
+│   │   │   ├── transformers/port-expert/     # /transformers-day0
+│   │   │   ├── triton-ascend/port-expert/    # /triton-ascend-port
+│   │   │   ├── easyr1/port-expert/           # /easyr1-port
+│   │   │   ├── dep-analysis/expert/          # /dep-analysis
+│   │   │   └── orchestrators/npu-port/       # /npu-port
+│   │   └── scripts/                   # install-skills.sh, run-npu-container.sh, smoke harness
 │   └── knowledge/
-│       └── images/                    # extracted facts from verl-A3 images (pip freeze etc.)
+│       ├── npu-patterns.md            # NPU-CP/BUG/ENV/OPS pattern catalogue
+│       ├── upstream-refs.md           # which upstream tag matches which NPU image
+│       └── images/                    # extracted facts from verl-A3 images
 └── upstream/                          # each subdir is its own git clone, own branch
     ├── EasyR1/                        # github.com/hiyouga/EasyR1           (April tip)
     ├── verl/                          # github.com/verl-project/verl        (April tip, GPU ref)

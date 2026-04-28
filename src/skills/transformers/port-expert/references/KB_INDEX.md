@@ -106,3 +106,30 @@ Session `transformers-day0-trans-day0-wetrun-20260423-0109`:
   band [1.21, 1.34]
 - outcome: A (no patch needed — all new ALL_ATTENTION_FUNCTIONS keys
   expanded without touching the defaults our models use)
+
+## 2026-04-28 T25 cold-drive replay — v5.4.0 → v5.6.2
+
+Stage 0 byte-compare against transformers v5.6.2 (latest patch as of
+2026-04-28):
+
+- `src/transformers/integrations/npu_flash_attention.py` SHA256:
+  `28dc6163...` at v5.4.0; same SHA at v5.6.2 → **byte-identical**.
+- `ALL_ATTENTION_FUNCTIONS` static register sites diff: zero changes
+  between v5.4.0 and v5.6.2.
+- `flash_attention.py` integration file diff: 6 lines net added (not
+  affecting NPU branch).
+
+**Outcome A holds for v5.6.2.** No fix needed; no overlay needed.
+
+Tag-naming note: KB earlier called the baseline "v5.4" (no patch). The
+real upstream tag is `v5.4.0` — use that exact form when running
+`git show v<TAG>:src/transformers/integrations/npu_flash_attention.py`.
+
+Reproducer:
+```bash
+cd ~/workspace/easyr1-npu/upstream/transformers
+git fetch --tags origin
+diff <(git show v5.4.0:src/transformers/integrations/npu_flash_attention.py) \
+     <(git show v5.6.2:src/transformers/integrations/npu_flash_attention.py)
+# expect: empty (exit 0)
+```

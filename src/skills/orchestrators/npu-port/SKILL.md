@@ -33,8 +33,8 @@ You are the orchestrator. You do NOT touch code directly. You:
 2. Create `workspace/npu-port-<SESSION_TAG>/` and record inputs in a
    top-level PROGRESS.md.
 3. Spawn `dep-analysis-worker` via Agent(subagent_type=Explore), brief =
-   `src/skills/dep-analysis-expert/agent.md`, env:
-   - `DEP_ANALYSIS_EXPERT_ROOT=<repo>/src/skills/dep-analysis-expert`
+   `src/skills/dep-analysis/expert/agent.md`, env:
+   - `DEP_ANALYSIS_EXPERT_ROOT=<repo>/src/skills/dep-analysis/expert`
    - `SESSION_TAG=depan-<SESSION_TAG>` (namespace isolation)
    - `CONSUMER_REPO`, `CONSUMER_REF`, `CANDIDATE_IMAGE`
    (re-use the same env vars that `/dep-analysis` uses, minus the
@@ -51,7 +51,7 @@ You are the orchestrator. You do NOT touch code directly. You:
    if it exited `stuck` → RESULTS.md `@review-fail`, surface, exit.
 6. Spawn the consumer port-expert (today: `easyr1-port-worker` at
    `src/skills/easyr1/port-expert/agent.md`) with env:
-   - `EASYR1_EXPERT_ROOT=<repo>/src/skills/easyr1-expert`
+   - `EASYR1_EXPERT_ROOT=<repo>/src/skills/easyr1/port-expert`
    - `SESSION_TAG=easyr1-<SESSION_TAG>`
    - `EASYR1_REF=<consumer-ref>`
    - `REUSE_IMAGE_TAG=<upgraded-image-tag-or-candidate>` (this triggers

@@ -157,6 +157,21 @@ found 6 new attrs/methods on torch parent classes. Verification:
 
 **Conclusion**: All 6 candidates verified safe-inheritance or scanner false-positive. **No torch_npu changes needed for F7/F8 on torch 2.11 → 2.12-rc3.** This is the value of AST class-scope scanning + call-site grep verification: turns 6 "maybe" candidates into 6 "verified no-op" entries that won't waste future-maintainer time.
 
+### T25 cold-drive replay (2026-04-28) — regression check
+
+Re-ran `scripts/sweep.sh --baseline v2.11.0 --target v2.12.0-rc3` from
+clean state (community pytorch fresh-cloned + tags fetched). Results:
+
+- **F1/F2-path-move**: 1 drift — `Union` from `torch._inductor.codecache` — already DONE (row 14, commit `5092fd54c`).
+- **F3 sig drift**: 7 additive-with-defaults (PEP 604 cosmetic) — non-breaking.
+- **F7/F8**: 5 parent classes with new methods — same set previously verified safe-inherit (the prior 6th, `OutputAliasInfo`, dropped by scanner-v2's torch-import filter).
+
+**Outcome A confirmed.** No new ports needed against v2.12.0-rc3.
+This validates that the skill+KB combination is reproducible by a
+fresh agent — the second cold-drive landed on the same conclusion as
+the first. **For the next torch upgrade (e.g. v2.13-rc when it ships),
+re-run sweep.sh and update this KB row.**
+
 ### High-risk surfaces to scan first on every torch upgrade
 
 Ranked by torch_npu import-site count (2026-04-24 manual count):

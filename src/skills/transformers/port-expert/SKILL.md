@@ -1,5 +1,5 @@
 ---
-name: transformers-port
+name: transformers-day0
 description: >
   Day-0 NPU support for a new community transformers release
   (version not shipped in any NPU base image yet). Probe the new version
