@@ -1,7 +1,10 @@
 # `docs/easyr1/` — EasyR1 consumer port 专属文档
 
-本目录收纳**最下游**的 EasyR1 port 文档：PORT-GUIDE（怎么装怎么跑）、PORT-SUMMARY（port 完成度）、porting-journal（按日志）、DELIVERABLE（交付物清单）、dep-chain-audit、npu-adaptation-tasks 等。
+EasyR1 是项目最下游的 consumer。本目录两条客户面文档：
 
-EasyR1 自身不是一个上游库（它是 consumer），但它是**整个项目的最终目标**——其他所有上游 port 都是为了让 EasyR1 在 NPU 上跑起来。
+- [`PORT-GUIDE.md`](PORT-GUIDE.md) — v1 path（verl-8.5.0-a3 image + EasyR1 `ascend-port` 分支）
+- [`PORT-GUIDE-v2-integrated.md`](PORT-GUIDE-v2-integrated.md) — v2 integrated overlay path（4 个 NPU 上游 ascend-port 叠加 + EasyR1 master）
 
-对应 skill 目录：[`src/skills/easyr1/port-expert/`](../../src/skills/easyr1/port-expert/)
+对应 skill 目录：[`src/skills/easyr1/port-expert/`](../../src/skills/easyr1/port-expert/)。
+
+更早期的 dep audit / port summary / journal / deliverable 文档已归档到 [`docs/_archive/obsolete_2026-04-28/`](../_archive/obsolete_2026-04-28/)，仅供历史回看，不是当前活跃文档。

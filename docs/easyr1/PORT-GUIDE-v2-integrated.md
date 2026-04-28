@@ -1,129 +1,100 @@
 # EasyR1 → A3 NPU — v2 (integrated overlay path)
 
-> Ship-ready integrated path: one `docker run`, one EasyR1 master
-> tree, one image, RL-loop e2e validated.
+> Ship-ready 集成路径：一个 `docker run`，一个 EasyR1 master 工作树，一个 image，RL loop 端到端验证。
 >
-> Difference from [v1 path](PORT-GUIDE.md): v2 stacks the 4
-> NPU-upstream ports (vllm-ascend / torch-npu / transformers /
-> triton-ascend) as overlay on a vllm 0.20.0-era base, so EasyR1
-> master with `transformers<5.0.0` cap dropped runs against the
-> newer upstream stack rather than what verl-8.5.0 happened to ship.
+> 与 [v1 path](PORT-GUIDE.md) 区别：v2 把 4 个 NPU 上游 ascend-port 分支（vllm-ascend / torch-npu / transformers / triton-ascend）作为 overlay 叠到 vllm 0.20.0-era base 上，让 EasyR1 master（去掉 `transformers<5.0.0` cap）跑在更新的上游 stack 上。
 
-Last updated 2026-04-28.
+最后更新 2026-04-28（T25.5 第二次独立验证 PASS）。
 
 ## TL;DR
 
 ```bash
-# On A3 host (115.190.166.102), one shot:
-ssh -p 443 root@115.190.166.102 "
-  NPU_USER=z00637938 \
-  bash /home/z00637938/workspace/easyr1-npu/repo/src/scripts/run-npu-container.sh \
+# 在 A3 host 上一条命令：
+ssh -p 443 root@<a3-host> "
+  NPU_USER=<workspace-owner> \
+  bash /home/<workspace-owner>/workspace/easyr1-npu/repo/src/scripts/run-npu-container.sh \
     --chips 0,1 \
     --image easyr1-npu:integrated-20260427 \
-    --live-source /home/z00637938/workspace/easyr1-npu/upstream/EasyR1 \
+    --live-source /home/<workspace-owner>/workspace/easyr1-npu/upstream/EasyR1 \
     -- bash /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh
 "
 ```
 
-Expect: 2 GRPO steps + post-train val pass in ~10 min, checkpoint at
-`/tmp/<NPU_USER>/easyr1_smoke_ckpt/global_step_2/`.
+预期：2 GRPO 步 + post-train val ~10 min PASS，checkpoint 落 `/tmp/<NPU_USER>/easyr1_smoke_ckpt/global_step_2/`。
 
-## Stack (validated 2026-04-28)
+## Stack（验证于 2026-04-28）
 
-| Component | Version | Source |
+| 组件 | 版本 | 来源 |
 |---|---|---|
-| Image | `easyr1-npu:integrated-20260427` (28.2 GB, SHA `044ba0b7618338`) | local on A3 host |
-| Image base | `easyr1-npu-vllm0200:iter20-abi-both` | local on A3 |
+| Image | `easyr1-npu:integrated-20260427`（28.2 GB，SHA `044ba0b76183`） | A3 host 本地 |
+| Image base | `easyr1-npu-vllm0200:iter20-abi-both` | A3 本地 |
 | OS / Python | Ubuntu 22.04 / Python 3.11.14 | base |
 | CANN | 8.5.x bundled | base |
 | torch | 2.11.0+cpu | base |
-| torch_npu | 2.11.0rc1 | base + precautionary `torch_npu/compat/` from `ascend-port/torch-2.12-rc3` |
-| transformers | 5.3.0.dev0 | base |
-| vllm | 0.20.0 (real, not stub) | base |
-| vllm_ascend | 0.17.0rc2.dev109+g54879467c + 3 compat shims | base + overlay from `ascend-port/vllm-main` |
-| triton-ascend | 3.2.0 (image vendor — vendor 6/6 NPU smoke PASS earlier) | base |
-| EasyR1 | master with `transformers<5.0.0` cap dropped | `github.com/zhshgmail/EasyR1` `ascend-port-integrated-20260427` |
+| torch_npu | 2.11.0rc1 | base + `torch_npu/compat/` overlay（`ascend-port/torch-2.12-rc3`） |
+| transformers | 5.3.0.dev0 | base（v5.4 outcome A-with-note，见 `docs/transformers/PR_MATERIAL_v5.4_outcome_A.md`） |
+| vllm | 0.20.0（real，非 stub） | base |
+| vllm_ascend | 0.17.0rc2.dev109+g54879467c + 3 compat shim | base + `ascend-port/vllm-main` overlay |
+| triton-ascend | 3.2.0 image vendor（6/6 NPU smoke PASS） | base |
+| EasyR1 | master + cap 解除 | [`zhshgmail/EasyR1` `ascend-port-integrated-20260427`](https://github.com/zhshgmail/EasyR1/tree/ascend-port-integrated-20260427) |
 
-## What's overlaid on the base
+## Overlay 内容
 
-1. **vllm-ascend compat shims** (`ascend-port/vllm-main`):
+1. **vllm-ascend compat shim**（`ascend-port/vllm-main`）：
    - `vllm_ascend/compat/__init__.py`
-   - `vllm_ascend/compat/shared_fused_moe.py` — F1 shim for vllm PR #35782
-   - `vllm_ascend/compat/default_moe_runner.py` — F1 shim for vllm PR #40560
-   - `vllm_ascend/compat/spec_decode_base_proposer.py` — F2-path-move shim with `find_spec` + lazy `__getattr__`
-   - 3 call-site swaps in `vllm_ascend/{_310p,ops,spec_decode}/`
-2. **torch_npu compat** (`ascend-port/torch-2.12-rc3`, no-op at torch 2.11):
+   - `vllm_ascend/compat/shared_fused_moe.py` — F1 shim（vllm PR #35782）
+   - `vllm_ascend/compat/default_moe_runner.py` — F1 shim（vllm PR #40560）
+   - `vllm_ascend/compat/spec_decode_base_proposer.py` — F2-path-move shim，用 `find_spec` + lazy `__getattr__` 规避 vllm-ascend plugin-init 顺序
+   - 3 处 call-site swap（`vllm_ascend/{_310p,ops,spec_decode}/`）
+2. **torch_npu compat**（`ascend-port/torch-2.12-rc3`，在 torch 2.11 上是 no-op）：
    - `torch_npu/compat/__init__.py`
-   - `torch_npu/compat/inductor_codecache.py` — F2-path-move shim for `Union` re-export
-3. **EasyR1 master + cap loosen** (`ascend-port-integrated-20260427`):
-   - `requirements.txt` `transformers>=4.54.0,<5.0.0` → `transformers>=4.54.0`
-4. **transformers**: image-default 5.3.0.dev0, no overlay (outcome A-with-note for v5.4 — see `docs/transformers/PR_MATERIAL_v5.4_outcome_A.md`)
-5. **triton-ascend**: image vendor 3.2.0, no overlay
+   - `torch_npu/compat/inductor_codecache.py` — F2-path-move shim，`Union` re-export
+3. **EasyR1 master + cap 解除**（`ascend-port-integrated-20260427`）：
+   - `requirements.txt`：`transformers>=4.54.0,<5.0.0` → `transformers>=4.54.0`
+4. **transformers**：image 自带 5.3.0.dev0，无 overlay
+5. **triton-ascend**：image 自带 vendor 3.2.0，无 overlay
 
-## Validation done (T22.7)
+## 验证
 
-V1.4 GSM8K-style GRPO smoke:
+V1.4 GSM8K-style GRPO smoke 跑通两次（独立 agent，不同 chip 对）：
 
-```
-Recipe:    bash /opt/easyr1/examples/qwen2_0_5b_math_grpo_npu_smoke.sh
-Steps:     2 GRPO + post-train val
-Duration:  ~10 min (2 chips, npu:0 + npu:1)
-Outcome:   reward_score=0.0126, accuracy_reward=0.014,
-           val_response_length=184.3, no exceptions, checkpoint saved.
-Baseline:  fresh — first validated run of this stack combination.
-```
+| 运行 | 日期 | chips | accuracy_reward | reward_score | val_response_length |
+|---|---|---|---|---|---|
+| 第一次（fresh baseline） | 2026-04-27 | 0,1 | 0.014 | 0.0126 | 184.3 |
+| 第二次（cold-drive replay） | 2026-04-28 | 2,3 | 0.014 | 0.013 | 184.3 |
 
-Smoke log: A3 `/tmp/z00637938/easyr1-logs/V1.4_integrated_run3.log`
-(232 KB).
+两次均：2 GRPO step + post-train val PASS，checkpoint 保存，无 exception。
 
-`entropy_loss` / `grad_norm` did not appear in `experiment_log.jsonl`
-during this run; this is a pre-existing trainer-side jsonl writer
-quirk on this image stack, not a regression caused by the overlay.
+`entropy_loss` / `grad_norm` 不出现在 `experiment_log.jsonl` —— 这是该 image stack 上 trainer 端 jsonl writer 的既存 quirk，**不是** overlay 引起的回归。
 
-## Known runtime gotchas (recorded during T22.7)
+## 已知 gotcha
 
-1. **ssh-as-root + `$USER`**: when SSH to A3 as `root`, the runner
-   script's default `$USER` resolves to `root`, so `/home/root` /
-   `/data/root` get mounted (empty). The tokenizer cache lives at
-   `/home/<owner>/...` / `/data/<owner>/...`, so the model load
-   fails with `HFValidationError`. **Always pass
-   `NPU_USER=<workspace-owner>`** to `run-npu-container.sh`.
+1. **SSH-as-root + `$USER`**：SSH 到 A3 作为 `root` 时 `$USER=root`，runner 默认 mount `/home/root` / `/data/root`（空目录）。**必须传 `NPU_USER=<workspace-owner>`**。详见 [NPU-OPS-013](../../knowledge/npu-patterns.md)。
 
-2. **`ASCEND_RT_VISIBLE_DEVICES` semantics**: on this image the
-   chip values are **in-container indices** (0,1), NOT host phy-id
-   (0..7). Pre-check on host with `npu-smi info -t proc-mem -i N`,
-   then map to in-container index when launching. The
-   `run-npu-container.sh` `--chips 0,1` flag already does the
-   right mapping; only relevant if you bypass the script.
+2. **`--chips` 与 `ASCEND_RT_VISIBLE_DEVICES`**：`--chips 0,1` 是 host phy-id；runner 自己把对应 `/dev/davinciN` 透传，并自动设 `ASCEND_RT_VISIBLE_DEVICES=0,1,...,N-1`（容器内 index）。**不要手 docker run 直接传 host phy-id**——否则 Ray 报 `Total available GPUs 0`。详见 [NPU-OPS-012](../../knowledge/npu-patterns.md)。
 
-## Skill-chain provenance
+3. **A3 host 的 `repo/` 必须是 git clone**，不能是早期 layout 的手抄拷贝（`repo/scripts/...` 路径）。详见 [NPU-OPS-014](../../knowledge/npu-patterns.md)。
 
-This integrated image was produced by stacking outputs of 4 NPU upstream
-port-expert skills:
+## Skill-chain 来源
 
-- `/torch-npu-day0` — outcome A on image torch 2.9 (T22.4 row 1)
-- `/transformers-day0` — outcome A-with-note on v5.4; on-A3 forward
-  pass PASS for Qwen2-0.5B (T22.4 row 2)
-- `/vllm-ascend-day0` — 3 shims, 3/3 import smoke PASS on vllm 0.20.0
-  base (T22.4 row 3 retry)
-- `/triton-ascend-port` — vendor 6/6 smoke PASS earlier (no overlay
-  needed)
+这个 integrated image 由 4 个 NPU 上游 port-expert skill 的产出叠加产生：
 
-Each per-skill artifact is in `docs/_meta/UPSTREAM_FORKS.md` (the
-authoritative ledger). The integrated `PR_MATERIAL` is **this file**;
-the per-upstream `PR_MATERIAL.md` files at each fork branch root
-remain the maintainer hand-off for those individual repos.
+- `/torch-npu-day0` — outcome A 于 image torch 2.9
+- `/transformers-day0` — outcome A-with-note 于 v5.4，on-A3 forward pass PASS（Qwen2-0.5B）
+- `/vllm-ascend-day0` — 3 shim，3/3 import smoke PASS 于 vllm 0.20.0 base
+- `/triton-ascend-port` — vendor 3.2.0 wheel 6/6 NPU smoke PASS
+
+每条 skill 的 artifact 在 [`docs/_meta/UPSTREAM_FORKS.md`](../_meta/UPSTREAM_FORKS.md)。本文档是 integrated 层的 hand-off；每个上游 fork 分支根目录的 `PR_MATERIAL.md` 是各自上游维护者的 hand-off。
 
 ## Next-version forward plan
 
-- **Image base bump**: when a newer `easyr1-npu-vllm0200:*` (or
-  successor) ships with vllm > 0.20 / torch > 2.11, re-run T22.4
-  rows 1–5 against it; the F-family shims should mostly stay (they
-  forward-compat both directions).
-- **EasyR1 master tracking**: re-run T22.4 row 2 byte-compare
-  whenever EasyR1 master changes `requirements.txt` or
-  `verl/integrations/transformers*` paths.
-- **bishengir LLVM 22 release**: when Huawei ships a bishengir built
-  against LLVM 22, re-attempt the source-build path on
-  `ascend-port/triton-v3.6.0` to validate end-to-end (currently
-  blocked per its `PR_MATERIAL.md`).
+- **Base image 升级**：当新 `easyr1-npu-vllm0200:*` 或后继 image ship 更新 vllm / torch，重新跑 4 条 day-0 skill 对照新 base；F-family shim 大都向后兼容，能继续用。
+- **EasyR1 master 跟踪**：当 EasyR1 master 改 `requirements.txt` 或 `verl/integrations/transformers*` 时，重跑 transformers day-0 byte-compare。
+- **bishengir LLVM 22 release**：Huawei 一旦 ship LLVM-22 版 bishengir-compile，重新跑 `ascend-port/triton-v3.6.0` 源码端到端验证（当前 BLOCKED，详见该分支 `PR_MATERIAL.md`）。
+
+## 见也
+
+- [`PORT-GUIDE.md`](PORT-GUIDE.md) — v1 path
+- [`docs/_meta/ARCHITECTURE.md`](../_meta/ARCHITECTURE.md) — 整体架构与流程
+- [`docs/_meta/UPSTREAM_FORKS.md`](../_meta/UPSTREAM_FORKS.md) — fork ledger
+- [`src/skills/_shared/integrated-overlay-build/SKILL.md`](../../src/skills/_shared/integrated-overlay-build/SKILL.md) — `/integrated-overlay-build` skill
