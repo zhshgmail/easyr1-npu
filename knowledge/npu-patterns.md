@@ -631,11 +631,62 @@ Note the three `/etc/ascend_*.info`/`.conf` files: missing any of them leads to 
 
 ---
 
+### NPU-OPS-012 — `ASCEND_RT_VISIBLE_DEVICES` semantics: in-container chip index, not host phy-id
+
+**Symptom**: After picking a free host chip (e.g. host `npu-smi info -i 1` shows phy-id 2,3 idle), launching the container with `-e ASCEND_RT_VISIBLE_DEVICES=2,3 --device /dev/davinci2 --device /dev/davinci3` results in `torch.npu.device_count() == 0` inside the container. EasyR1 / vllm runs fail with `RuntimeError: NPU device 0 not available`.
+
+**Root cause**: On the integrated overlay images (`easyr1-npu-vllm0200:*`, `easyr1-npu:integrated-*`), `ASCEND_RT_VISIBLE_DEVICES` expects **in-container chip indices** (0,1,...) — i.e. the indices visible from inside the container after `--device /dev/davinciN` has been mapped. The docker `--device` flag puts the device into the container's namespace, where it's renumbered starting at 0 in the order the flags appear. Confusing the two indices is the most common smoke-fail signal during overlay bring-up.
+
+**Fix**:
+
+```bash
+# CORRECT — chip values are the IN-CONTAINER index after device mapping:
+docker run \
+  --device /dev/davinci2 \
+  --device /dev/davinci3 \
+  -e ASCEND_RT_VISIBLE_DEVICES=0,1 \   # 0,1 inside container (NOT 2,3)
+  ...
+```
+
+The `repo/scripts/run-npu-container.sh --chips 2,3` argument already does the right mapping (sees the host phy-ids, emits the proper flags). Use the helper, don't hand-roll.
+
+**Commit ref**: 5d5d756 (T22.7 V1.4 e2e — discovered by sub-agent during integrated overlay smoke 2026-04-27).
+
+**Generalizable rule**: when `device_count() == 0` inside a container that grep-confirms the right davinci device nodes are mounted, suspect `ASCEND_RT_VISIBLE_DEVICES` index-space mismatch BEFORE driver issues.
+
+---
+
+### NPU-OPS-013 — ssh-as-root + `run-npu-container.sh` requires `NPU_USER=<workspace-owner>` env
+
+**Symptom**: Inside the container, tokenizer load fails with `HFValidationError: ... 'Qwen/Qwen2-0.5B-Instruct' is not a valid model identifier` even though the model is cached in `/data/<owner>/models/Qwen2-0.5B-Instruct`. Or any other path that lives in `/home/<owner>` / `/data/<owner>` / `/tmp/<owner>` is missing.
+
+**Root cause**: `run-npu-container.sh` defaults to `NPU_USER="${NPU_USER:-$USER}"`. When you SSH to A3 as `root` (the only viable login on this host), `$USER` resolves to `root`, so the script bind-mounts `/home/root`, `/data/root`, `/tmp/root` — all empty. The actual workspace lives under `/home/z00637938` (or whoever owns the repo on A3). Inside the container, paths like `/data/z00637938/models/...` don't exist.
+
+**Fix**:
+
+```bash
+# ALWAYS pass NPU_USER explicitly when SSH-as-root:
+NPU_USER=z00637938 \
+  bash repo/scripts/run-npu-container.sh \
+    --chips 0,1 \
+    --image <image> \
+    --live-source <path> \
+    -- <cmd>
+```
+
+If you forget, the workaround inside the container is futile (the model files aren't visible). Re-launch with the correct env.
+
+**Commit ref**: 5d5d756 (T22.7 V1.4 e2e).
+
+**Generalizable rule**: `$USER` from an SSH session is rarely the right "workspace owner" identity on a multi-user / shared-root host. Pass an explicit `<OWNER>` env var rather than depending on `$USER`. The convention is `WORKSPACE_OWNER` for triton-ascend skill recipes and `NPU_USER` for the container helper — see also `_shared/upstream-day0-workflow.md` §"Path conventions".
+
+---
+
 ## IDs defined (summary)
 
 - Code patterns: `NPU-CP-001` ... `NPU-CP-007` (7 entries)
 - Platform bugs: `NPU-BUG-001` ... `NPU-BUG-004` (4 entries)
 - Environment/config: `NPU-ENV-001` ... `NPU-ENV-004` (4 entries)
-- Operational: `NPU-OPS-001` ... `NPU-OPS-011` (11 entries — adds the NPU container hand-roll anti-pattern NPU-OPS-011)
+- Operational: `NPU-OPS-001` ... `NPU-OPS-013` (13 entries — adds container index semantics NPU-OPS-012 + ssh-as-root NPU_USER NPU-OPS-013)
 
-**Total: 26 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.
+**Total: 28 stable IDs** across 4 categories, each with uniform `Symptom / Root cause / Fix / Commit ref / Generalizable rule` schema.

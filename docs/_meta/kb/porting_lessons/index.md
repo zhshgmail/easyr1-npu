@@ -16,6 +16,7 @@ when a new failure mode is discovered.
 - [`cross-layer-004-prebuilt-wheel-is-not-port-contribution.md`](cross-layer-004-prebuilt-wheel-is-not-port-contribution.md) — Installing Ascend-prebuilt torch_npu / triton_ascend wheel != contributing a port
 - [`cross-layer-005-no-conclusion-without-investigation.md`](cross-layer-005-no-conclusion-without-investigation.md) — Don't declare "out of scope / blocked / AIL team territory" before investigating dependency graph. OSS deps often place flags in source submodules, not binaries.
 - [`cross-layer-006-compiler-build-time-budgeting.md`](cross-layer-006-compiler-build-time-budgeting.md) — Stop saying "30 minutes" for LLVM/MLIR/bishengir builds. Default unit is hours plural. Don't predict; report ninja [X/Y] milestones.
+- [`cross-layer-007-walk-through-is-not-real-run.md`](cross-layer-007-walk-through-is-not-real-run.md) — Agent walk-through reports validate the plan, not the artifact. Always require on-A3 import + operational smoke before claiming end-to-end PASS.
 
 ### triton-ascend
 
@@ -25,3 +26,4 @@ when a new failure mode is discovered.
 
 - [`vllm-ascend-001-torch-version-built-for-unverified.md`](vllm-ascend-001-torch-version-built-for-unverified.md) — `_TORCH_VERSION_BUILT_FOR` constant only read in Python; C++ side never set it; guard silently returned `False` for 14 iters
 - [`vllm-ascend-002-fix-c-image-name-is-not-proof.md`](vllm-ascend-002-fix-c-image-name-is-not-proof.md) — Image tagged `fixc` does not prove the `.so` was rebuilt against the new torch ABI. Only `ldd` + symbol inspection + first native op call do.
+- [`vllm-ascend-003-shim-plugin-init-order.md`](vllm-ascend-003-shim-plugin-init-order.md) — Shims targeting `vllm.v1.sample.*` / `vllm.v1.spec_decode.*` must use `find_spec` + lazy `__getattr__` to survive vllm-ascend's plugin-init phase.
