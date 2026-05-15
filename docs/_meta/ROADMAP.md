@@ -39,6 +39,13 @@
 | **P0c** | T29.3 `src/skills/_shared/references/ANTI_PRESSURE_PROTOCOLS.md` | a5_ops P1..P8 模式 + 决策点 cite 要求 | 待启动 |
 | **P0d** | T29.4 `docs/_meta/handovers/SESSION_HANDOVER_TEMPLATE.md` | 当前 handover 都归档，新 session 无衔接模板 | 待启动 |
 | **P0e** | T29.5 workflow state machine YAML + critic（最重活，回报最大） | a5_ops `workflow_critic.py` 模式；day-0 P0..P7 phase 转换的机械 critic | 待启动（先完成 P0a-d） |
+| **P0f** | T30.D 测试网+安全网+反馈环设计文档（design first，再实现） | a5_ops 三件套借鉴（test net / safety net / feedback loop）；2026-05-15 user direction："设计 → codex review → 实现" | **进行中**（2026-05-15）|
+| **P0g** | T30.R codex-review T30 设计稿 | 用户要求外部独立 review 设计闭合性、over-engineering 风险、依赖正确性 | 待启动（依赖 P0f）|
+| **P0h** | T30.1 sanity suite skeleton + 首批测试 | a5_ops `scripts/run_sanity_suite.sh` 模式；pytest 入口；首测 OL catalog 完整性 + ROADMAP §6 DEBT-N 格式 | 待启动（依赖 P0g 通过）|
+| **P0i** | T30.2 mechanical scanner — outcome claim provenance | a5_ops `scan_delegation_cheating.py` 模式；扫 PR_MATERIAL / KB_INDEX 里的 "PASS / outcome A" 是否带 OL-09 evidence | 待启动（依赖 P0h）|
+| **P0j** | T30.3 GateID + finalize_day0_check.py | a5_ops `finalize_pipeline.py` GateID 枚举；day-0 done 前 5+ 个独立 gate 验证不同 invariant | 待启动（依赖 P0i）|
+| **P0k** | T30.4 regression snapshot YAML | 每条 fork branch 当前 SHA + outcome 入 baseline；下次 cold-drive diff 验证 | 待启动（依赖 P0j）|
+| **P0l** | T30.5 postmortem 模板 + T25.5 范例 | a5_ops `docs/postmortem/` 模式；T25.5 helper bug 作首篇范例 | 待启动（依赖 P0k）|
 
 ---
 
