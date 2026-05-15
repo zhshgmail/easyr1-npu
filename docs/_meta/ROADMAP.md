@@ -39,13 +39,14 @@
 | **P0c** | T29.3 `src/skills/_shared/references/ANTI_PRESSURE_PROTOCOLS.md` | a5_ops P1..P8 模式 + 决策点 cite 要求 | 待启动 |
 | **P0d** | T29.4 `docs/_meta/handovers/SESSION_HANDOVER_TEMPLATE.md` | 当前 handover 都归档，新 session 无衔接模板 | 待启动 |
 | **P0e** | T29.5 workflow state machine YAML + critic（最重活，回报最大） | a5_ops `workflow_critic.py` 模式；day-0 P0..P7 phase 转换的机械 critic | 待启动（先完成 P0a-d） |
-| **P0f** | T30.D 测试网+安全网+反馈环设计文档（design first，再实现） | a5_ops 三件套借鉴（test net / safety net / feedback loop）；2026-05-15 user direction："设计 → codex review → 实现" | **进行中**（2026-05-15）|
-| **P0g** | T30.R codex-review T30 设计稿 | 用户要求外部独立 review 设计闭合性、over-engineering 风险、依赖正确性 | 待启动（依赖 P0f）|
-| **P0h** | T30.1 sanity suite skeleton + 首批测试 | a5_ops `scripts/run_sanity_suite.sh` 模式；pytest 入口；首测 OL catalog 完整性 + ROADMAP §6 DEBT-N 格式 | 待启动（依赖 P0g 通过）|
-| **P0i** | T30.2 mechanical scanner — outcome claim provenance | a5_ops `scan_delegation_cheating.py` 模式；扫 PR_MATERIAL / KB_INDEX 里的 "PASS / outcome A" 是否带 OL-09 evidence | 待启动（依赖 P0h）|
-| **P0j** | T30.3 GateID + finalize_day0_check.py | a5_ops `finalize_pipeline.py` GateID 枚举；day-0 done 前 5+ 个独立 gate 验证不同 invariant | 待启动（依赖 P0i）|
-| **P0k** | T30.4 regression snapshot YAML | 每条 fork branch 当前 SHA + outcome 入 baseline；下次 cold-drive diff 验证 | 待启动（依赖 P0j）|
-| **P0l** | T30.5 postmortem 模板 + T25.5 范例 | a5_ops `docs/postmortem/` 模式；T25.5 helper bug 作首篇范例 | 待启动（依赖 P0k）|
+| **P0f** | T30.D 测试网+安全网+反馈环设计文档（v2 post-codex-review）| a5_ops 三件套借鉴；2026-05-15 user direction："设计 → codex review → 实现" | **完成**（v2，commit 待 land）|
+| **P0g** | T30.R codex-review T30 设计稿 | 外部独立 review；6 项 recommendation 已 incorporate 进 v2 | **完成**（2026-05-15）|
+| **P0h.0** | claim_manifest.yaml schema + validate_claim_manifest.py | v2 codex R1 推荐：结构化 claim 替代 markdown regex；scanner+gate 共享单一 schema | 待启动（schema first，所有后续 task 依赖此）|
+| **P0h.1** | sanity suite + claim_manifest tests + 5 doc tests | a5_ops `run_sanity_suite.sh` 模式；< 2s；包括 claim_manifest schema roundtrip + good/bad fixtures | 待启动（依赖 P0h.0）|
+| **P0i** | scan_outcome_claims.py（schema-level validation）| 校验 manifest 字段、mode/artifact 组合、self_challenge 状态 | 可与 P0j / P0l 并行（依赖 P0h.0 schema）|
+| **P0j** | finalize_day0_check.py + 4 mode-derived gates | `CLAIM_EVIDENCE_PRESENT / REQUIRED_ARTIFACTS_PRESENT / EXTERNAL_PUBLICATION_VERIFIED / VALIDATION_ARTIFACT_VERIFIED`；codex R3 cut from 6→4 | 可与 P0i / P0l 并行（依赖 P0h.0）|
+| **P0l** | postmortem 模板 + T25.5 范例 + v1-mode-coupling 自反思范例 | a5_ops `docs/postmortem/` 模式；eat own dog food 写本设计 v1 自己的 mode-coupling postmortem | 可与 P0i / P0j 并行 |
+| **P0k** | regression snapshot YAML + diff_snapshot.py | 共享 claim_manifest 部分字段；mode-aware；触发 next session cold-drive 时 diff | 待启动（依赖 P0i+P0j 落地，schema 稳定）|
 
 ---
 
@@ -102,6 +103,7 @@
 | **DEBT-2** | 每条 day-0 SKILL.md 都重复了 NPU 容器 bind set 的描述（NPU-OPS-009/011/012/013/014），有漂移风险 | 抽出 `src/skills/_shared/npu-container-runner/SKILL.md` 作 single source，所有 day-0 SKILL 改为引用 | 任一 NPU-OPS-XXX 更新时 | 1 h |
 | **DEBT-3** | install-skills.sh 没做 hooks 版本管理（不像 a5_ops 的 `_owner` + manifest_sha256 stamp），他人安装时可能 silently conflict | 加 `.claude/.easyr1_hooks_version` 含 manifest_sha256；preflight 检查 mismatch 时 backup+overwrite | 任一 hook 配置变更时 | 1 h |
 | **DEBT-4** | day-0 SKILL.md 和 _shared/upstream-day0-workflow.md 的 P0..P7 描述目前是 prose-only，没有 machine-readable spec；workflow critic 无法执行 | T29.5：建 `docs/_meta/workflow/day0_state_machine.yaml` + Python critic | T29.4 完成后 | 4-6 h |
+| **DEBT-5** | T30 设计 v2 接受 known gap：bypass-control 不完全闭合（agent 在 P8 压力下 nohup / raw docker 绕开 scanner+gate）；只靠 3 重 enforcement，完全防需 P0e workflow critic PreToolUse hook | P0e (T29.5) 上线后，把 scanner+gate 调用作 PreToolUse Bash hook 强制拦截 | P0e 完成时 | 2-3 h |
 
 ---
 
