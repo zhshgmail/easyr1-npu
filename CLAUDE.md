@@ -77,6 +77,10 @@ CANN source is **not** in `upstream/` — it lives at `gitcode.com/cann`. Pull o
 
 ## Working preferences
 
+- **ROADMAP is single source of truth for open work**: any "next step / TODO / pending / 技术债 / DEBT-N / P0xxx" request → **first action is Read [`docs/_meta/ROADMAP.md`](docs/_meta/ROADMAP.md)**. Don't search handovers / SKILL.md / TaskList first. Ad-hoc backlog files (TODO.md / BACKLOG.md / FOLLOW_UPS.md) are forbidden; collapse them into ROADMAP §6.
+- **Anti-pressure protocols**: every day-0 / port skill loads [`src/skills/_shared/references/ANTI_PRESSURE_PROTOCOLS.md`](src/skills/_shared/references/ANTI_PRESSURE_PROTOCOLS.md) at Phase A; cite P1..P8 at high-leverage decision points (spawn agent / emit outcome / skip verify / nohup / inline workaround).
+- **Cross-skill OL catalog**: [`src/skills/_shared/references/OPERATIONAL_KNOWLEDGE.md`](src/skills/_shared/references/OPERATIONAL_KNOWLEDGE.md) is the grep-keyword index for OL-01..OL-27. Search this file first, then load the detail file.
+- **Session handover**: every session ends with a `docs/_meta/handovers/SESSION_HANDOVER_<date>_<slug>.md` filled from [`SESSION_HANDOVER_TEMPLATE.md`](docs/_meta/handovers/SESSION_HANDOVER_TEMPLATE.md); next agent reads it before anything else.
 - **Docs organization** is governed by [`docs/_meta/DOCS-CONVENTION.md`](docs/_meta/DOCS-CONVENTION.md). Every kind of information has a single authoritative file. README is index only, never content sink.
 - **Customer-facing docs must not contain stale or internal info.** When writing for customers (README / ONBOARDING / PORT-GUIDE / SKILLS-USAGE / PORTING-GUIDE), drop session tags (T22.x), worklog phrasing, and dated dev process artifacts. Move that to KB or archive.
 - **Mirror milestones to Discord.** User is primarily on Discord, not terminal. `mcp__plugin_discord_discord__reply` with chat_id `1494825170399924366`.

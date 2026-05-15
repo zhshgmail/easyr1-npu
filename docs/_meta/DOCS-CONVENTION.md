@@ -25,6 +25,10 @@
 | 整体架构 + 流程（mermaid） | [`docs/_meta/ARCHITECTURE.md`](ARCHITECTURE.md) |
 | 4 fork + EasyR1 fork 的权威分支表 | [`docs/_meta/UPSTREAM_FORKS.md`](UPSTREAM_FORKS.md) |
 | 下一波 NPU 适配 gap（档 B / 档 C 软件） | [`docs/_meta/NPU_ADAPTATION_GAP.md`](NPU_ADAPTATION_GAP.md) |
+| **唯一 backlog**（open work / strategic / P0 / DEBT） | [`docs/_meta/ROADMAP.md`](ROADMAP.md) |
+| Session 间交接模板 | [`docs/_meta/handovers/SESSION_HANDOVER_TEMPLATE.md`](handovers/SESSION_HANDOVER_TEMPLATE.md) |
+| 跨 skill OL-XX 总索引 | [`src/skills/_shared/references/OPERATIONAL_KNOWLEDGE.md`](../../src/skills/_shared/references/OPERATIONAL_KNOWLEDGE.md) |
+| LLM 压力失效模式 P1..P8 | [`src/skills/_shared/references/ANTI_PRESSURE_PROTOCOLS.md`](../../src/skills/_shared/references/ANTI_PRESSURE_PROTOCOLS.md) |
 | Slash command 使用 | [`docs/_meta/SKILLS-USAGE.md`](SKILLS-USAGE.md) |
 | 术语表 | [`docs/_meta/GLOSSARY.md`](GLOSSARY.md) |
 | 上游维护者面 PORT GUIDE | `docs/{vllm-ascend,torch-npu}/PORTING-GUIDE.md` |
@@ -112,12 +116,16 @@
 按顺序：
 
 1. 读 [`README.md`](../../README.md)
-2. 读 [`docs/_meta/ARCHITECTURE.md`](ARCHITECTURE.md)（含 mermaid）
-3. 读本文件（DOCS-CONVENTION）
-4. 读 [`docs/_meta/UPSTREAM_FORKS.md`](UPSTREAM_FORKS.md)
-5. 按任务需要查对应权威文档
-6. 开工前 TaskCreate；完成一步即 TaskUpdate + 更新对应权威文档
-7. Milestone / 等输入 → Discord 同步（chat_id `1494825170399924366`）
+2. **读 [`docs/_meta/ROADMAP.md`](ROADMAP.md)** — 唯一 backlog，任何"下一步 / TODO / 技术债"问题第一站
+3. 读 [`docs/_meta/handovers/`](handovers/) 里最新的 `SESSION_HANDOVER_<date>_*.md`（如有）
+4. 读 [`docs/_meta/ARCHITECTURE.md`](ARCHITECTURE.md)（含 mermaid）
+5. 读本文件（DOCS-CONVENTION）
+6. 读 [`docs/_meta/UPSTREAM_FORKS.md`](UPSTREAM_FORKS.md)
+7. 第一次涉及 day-0 / port skill 工作时，读 [`OPERATIONAL_KNOWLEDGE.md`](../../src/skills/_shared/references/OPERATIONAL_KNOWLEDGE.md) + [`ANTI_PRESSURE_PROTOCOLS.md`](../../src/skills/_shared/references/ANTI_PRESSURE_PROTOCOLS.md)
+8. 按任务需要查对应权威文档
+9. 开工前 TaskCreate；完成一步即 TaskUpdate + 更新对应权威文档
+10. Milestone / 等输入 → Discord 同步（chat_id `1494825170399924366`）
+11. Session 末尾：复制 [`SESSION_HANDOVER_TEMPLATE.md`](handovers/SESSION_HANDOVER_TEMPLATE.md) → 填好 → commit
 
 ---
 

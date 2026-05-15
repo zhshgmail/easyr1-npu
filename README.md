@@ -40,6 +40,8 @@
 | 想用 slash command 触发版本升级工具链 | [`docs/_meta/SKILLS-USAGE.md`](docs/_meta/SKILLS-USAGE.md) |
 | 想看每条工具链当前在哪个 fork / 分支 | [`docs/_meta/UPSTREAM_FORKS.md`](docs/_meta/UPSTREAM_FORKS.md) |
 | 想看下一波 NPU 适配候选清单（镜像里还没 NPU 适配的主要软件） | [`docs/_meta/NPU_ADAPTATION_GAP.md`](docs/_meta/NPU_ADAPTATION_GAP.md) |
+| 想看 open work / 技术债 / 下一步做什么 | [`docs/_meta/ROADMAP.md`](docs/_meta/ROADMAP.md)（**唯一权威 backlog**） |
+| 想接手项目（continuing agent / 新 session） | [`docs/_meta/handovers/`](docs/_meta/handovers/) + [`ROADMAP.md`](docs/_meta/ROADMAP.md) + [`ARCHITECTURE.md`](docs/_meta/ARCHITECTURE.md) |
 | 想查 NPU 操作模式与已知 bug（29 stable IDs） | [`knowledge/npu-patterns.md`](knowledge/npu-patterns.md) |
 | 想查跨层移植教训（lessons learned） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/) |
 | 你是 vllm-ascend 维护者，想看升级流程详解 | [`docs/vllm-ascend/PORTING-GUIDE.md`](docs/vllm-ascend/PORTING-GUIDE.md) |
