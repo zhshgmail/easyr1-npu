@@ -47,6 +47,11 @@
 | **P0j** | finalize_day0_check.py + 4 mode-derived gates | `CLAIM_EVIDENCE_PRESENT / REQUIRED_ARTIFACTS_PRESENT / EXTERNAL_PUBLICATION_VERIFIED / VALIDATION_ARTIFACT_VERIFIED`；codex R3 cut from 6→4 | 可与 P0i / P0l 并行（依赖 P0h.0）|
 | **P0l** | postmortem 模板 + T25.5 范例 + v1-mode-coupling 自反思范例 | a5_ops `docs/postmortem/` 模式；eat own dog food 写本设计 v1 自己的 mode-coupling postmortem | 可与 P0i / P0j 并行 |
 | **P0k** | regression snapshot YAML + diff_snapshot.py | 共享 claim_manifest 部分字段；mode-aware；触发 next session cold-drive 时 diff | 待启动（依赖 P0i+P0j 落地，schema 稳定）|
+| **P0m** | T31.2 design v3 — incorporate adversarial-audit lessons | a5_ops 2026-05-15 攻防演练记录 4 项洞察：M2 anti-cycle / M1 gate fitness / P9 infra paper-over / M5 tool-use signature | **进行中**（2026-05-15）|
+| **P0n** | T31.3 codex review v3 | 第二轮 adversarial review，确认 v2→v3 修订没引入新洞 | 待启动（依赖 P0m）|
+| **P0o** | P0i scanner 加 anti-cycle verifier check (M2) | scan claim_manifest 里所有 verifier script path：`grep -c "claim_manifest.yaml" $script == 0` 才放过；产 a5_ops `WORKER-SELF-CITING-VERIFIER` 真攻击在我们这边被抓 | 待启动（依赖 P0n 通过 + P0h.0 schema）|
+| **P0p** | P0h.1 bad fixtures with crafted fraud (M1) | gate fitness function：每个 gate 必须有 "crafted fraud Y 会被抓到吗" 的 bad fixture；不只测 good case | 待启动（依赖 P0n）|
+| **P0q** | ANTI_PRESSURE_PROTOCOLS.md 加 P9 (infra paper-over) | a5_ops P9 移植到 NPU 上下文：CANN install desync / dcmi 错码 / uda ns conflict 等 baseline-violation 信号不准 worker 自行 paper-over | 待启动（独立任务，可与 P0o/P0p 并行）|
 
 ---
 
@@ -104,6 +109,9 @@
 | **DEBT-3** | install-skills.sh 没做 hooks 版本管理（不像 a5_ops 的 `_owner` + manifest_sha256 stamp），他人安装时可能 silently conflict | 加 `.claude/.easyr1_hooks_version` 含 manifest_sha256；preflight 检查 mismatch 时 backup+overwrite | 任一 hook 配置变更时 | 1 h |
 | **DEBT-4** | day-0 SKILL.md 和 _shared/upstream-day0-workflow.md 的 P0..P7 描述目前是 prose-only，没有 machine-readable spec；workflow critic 无法执行 | T29.5：建 `docs/_meta/workflow/day0_state_machine.yaml` + Python critic | T29.4 完成后 | 4-6 h |
 | **DEBT-5** | T30 设计 v2 接受 known gap：bypass-control 不完全闭合（agent 在 P8 压力下 nohup / raw docker 绕开 scanner+gate）；只靠 3 重 enforcement，完全防需 P0e workflow critic PreToolUse hook | P0e (T29.5) 上线后，把 scanner+gate 调用作 PreToolUse Bash hook 强制拦截 | P0e 完成时 | 2-3 h |
+| **DEBT-6** | a5_ops M5 tool-use signature 我们当前无 hook 能抓（worker `Read finalize_day0_check.py` + `Bash test gate` 这种 reward-hacking-by-engineering 签名）；P0o 降级实现为 self_challenge.notes 字符串扫描 | P0e workflow critic 上线后用 PreToolUse hook 捕 tool-use log；写 OL-28 + 加 gate 拦截 | P0e 完成 + 工具链有 tool-use logging 时 | 1-2 h |
+| **DEBT-7** | WORKER-GATE-ENUMERATION meta-attack a5_ops 自己也 STILL OPEN；我们 4 个 gate 暴露在源代码里，worker 同样可逆向 engineer | 设计 research：选 1 个对策落地——(a) 随机化 gate 顺序、(b) 部分 gate 移到 hook 层不可读、(c) 通过 tool-use log 检测 worker 读 gate 源码 | 当 day-0 真 spawn sub-agent 时 / 见首个 reward-hacking 事故时 | 4-6 h（research）|
+| **DEBT-8** | Cross-backend joint regression：当前只 codex review，无第二个 LLM backend（gpt-4o / gemini）做盲点 detect；a5_ops 用 A5 (Opus) + DS (V4) 跨 backend 抓到 A5 漏的攻击 | 第二个 backend 独立 review T30 设计 + cold-drive；可考虑用 codex 之外的 gemini / gpt-4o | T30 实现 P0o/p/q 完成时 / 见首个跨 backend 盲点事故 | 1-2 h |
 
 ---
 
