@@ -1,0 +1,57 @@
+# Good fixture: integrated_overlay mode, A outcome.
+# Models: T22.7 / T25.5 integrated image V1.4 GRPO PASS run.
+
+claim_manifest_version: 1
+schema_version: "1.0"
+_manifest_relative_to_repo_root: workspace/integrated-overlay-build/claim_manifest.yaml
+repo_root_anchor: README.md
+
+generated_at: "2026-05-16T04:00:00Z"
+generated_by: /integrated-overlay-build
+
+skill: integrated-overlay-build
+mode: integrated_overlay
+outcome: A
+validation_level: 5   # L5 V1.4 GRPO end-to-end PASS
+
+evidence:
+  - type: smoke_log
+    path: tmp/easyr1-logs/T25.5_chips23_fix_20260428_121944.log
+    sha256: feedfacecafebabe0123456789abcdef0123456789abcdef0123456789abcdef
+    grep_assertion: "reward_score: 0.013"
+
+  - type: commit_ref
+    repo: github.com/zhshgmail/EasyR1
+    branch: ascend-port-integrated-20260427
+    sha: 8f5494e
+
+  - type: image_sha
+    image_tag: easyr1-npu:integrated-20260427
+    sha256: 044ba0b76183
+
+artifacts:
+  - role: image_tag
+    path: image-manifest.json
+    image_tag: easyr1-npu:integrated-20260427
+
+  - role: smoke_log
+    paths:
+      - tmp/easyr1-logs/T25.5_chips23_fix_20260428_121944.log
+
+  - role: checkpoint_path
+    path: tmp/easyr1_smoke_ckpt/global_step_2/actor
+
+external_refs: []
+
+self_challenge:
+  ran_at: "2026-05-16T03:55:00Z"
+  patterns_checked: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  patterns_passed: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  notes: |
+    Re-validated T22.7 baseline; reward_score=0.013 within ±10% of
+    0.0126. Two independent runs (chips 0,1 and chips 2,3).
+
+verifier_scripts:
+  - role: v14_smoke_replay
+    path: src/scripts/smoke/replay_v14_grpo.sh
+    purpose: "Re-run V1.4 GRPO 2 steps on integrated image; emit reward_score independently"

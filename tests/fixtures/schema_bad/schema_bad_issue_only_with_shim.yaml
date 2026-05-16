@@ -1,0 +1,40 @@
+# Bad: mode=issue_only but artifacts include shim_module (fork-class).
+# Expected reject: mode-artifact-mismatch
+# (issue_only forbids shim_module + pr_material; only workaround_doc allowed.)
+
+claim_manifest_version: 1
+schema_version: "1.0"
+_manifest_relative_to_repo_root: workspace/test/claim_manifest.yaml
+repo_root_anchor: README.md
+generated_at: "2026-05-16T04:00:00Z"
+generated_by: /test
+
+skill: test-skill
+mode: issue_only
+outcome: C_REPORT
+validation_level: 3
+
+evidence:
+  - type: github_issue
+    url: https://example.com/issues/1
+    relevance: confirmed
+
+artifacts:
+  - role: shim_module   # ← FRAUD: issue_only must not have shim
+    paths: [bogus.py]
+    branch: nonexistent
+  - role: workaround_doc
+    path: workaround.md
+
+external_refs:
+  - kind: github_issue
+    url: https://example.com/issues/1
+    relevance: confirmed
+
+self_challenge:
+  ran_at: "2026-05-16T03:55:00Z"
+  patterns_checked: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  patterns_passed: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  notes: "should not pass"
+
+verifier_scripts: []

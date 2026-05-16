@@ -1,0 +1,65 @@
+# Good fixture: fork_patch mode, C_PATCH outcome.
+# Models: a vllm-ascend day-0 session that wrote 3 compat shims +
+# PR_MATERIAL.md on ascend-port/vllm-main fork branch.
+
+claim_manifest_version: 1
+schema_version: "1.0"
+_manifest_relative_to_repo_root: workspace/vllm-ascend-day0/claim_manifest.yaml
+repo_root_anchor: README.md
+
+generated_at: "2026-05-16T04:00:00Z"
+generated_by: /vllm-ascend-day0
+
+skill: vllm-ascend-day0
+mode: fork_patch
+outcome: C_PATCH
+validation_level: 4   # L4 on-A3 import smoke 3/3 PASS
+
+evidence:
+  - type: smoke_log
+    path: tmp/smoke-logs/vllm_ascend_import_smoke_20260427.log
+    sha256: deadbeefcafebabe1234567890abcdef1234567890abcdef1234567890abcdef
+    grep_assertion: "shim 1 OK"
+
+  - type: commit_ref
+    repo: github.com/zhshgmail/vllm-ascend
+    branch: ascend-port/vllm-main
+    sha: 6bac1f5e
+
+  - type: numeric_metric
+    name: import_pass_count
+    value: 3
+    baseline: 3
+    tolerance: 0
+    source_log: tmp/smoke-logs/vllm_ascend_import_smoke_20260427.log
+
+artifacts:
+  - role: shim_module
+    paths:
+      - vllm_ascend/compat/shared_fused_moe.py
+      - vllm_ascend/compat/default_moe_runner.py
+      - vllm_ascend/compat/spec_decode_base_proposer.py
+    branch: ascend-port/vllm-main
+    must_be_pushed: true
+
+  - role: pr_material
+    path: PR_MATERIAL.md
+    required_sections:
+      - "## Outcome"
+      - "## Reproducer"
+      - "## Validation"
+
+external_refs: []
+
+self_challenge:
+  ran_at: "2026-05-16T03:55:00Z"
+  patterns_checked: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  patterns_passed: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  notes: |
+    All 11 patterns passed first try. shim 3 uses find_spec + lazy
+    __getattr__ to avoid plugin-init order (vllm-ascend-003).
+
+verifier_scripts:
+  - role: import_smoke
+    path: src/scripts/smoke/vllm_ascend_imports.sh
+    purpose: "On-A3 import test for 3 compat shim modules"

@@ -1,0 +1,45 @@
+# Good fixture: issue_only mode, C_REPORT outcome.
+# Models: sglang T28 cold-drive that hit triton driver init regression
+# and filed it upstream rather than forking.
+
+claim_manifest_version: 1
+schema_version: "1.0"
+_manifest_relative_to_repo_root: workspace/sglang-day0/claim_manifest.yaml
+repo_root_anchor: README.md
+
+generated_at: "2026-05-16T04:00:00Z"
+generated_by: /sglang-npu-day0
+
+skill: sglang-npu-day0
+mode: issue_only
+outcome: C_REPORT
+validation_level: 3
+
+evidence:
+  - type: github_issue
+    url: https://github.com/sgl-project/sglang/issues/13648
+    relevance: same-class-failure
+
+artifacts:
+  - role: workaround_doc
+    path: docs/sglang/customer_workaround_2026-04-28.md
+    required_sections:
+      - "## Symptom"
+      - "## Workaround"
+
+external_refs:
+  - kind: github_issue
+    url: https://github.com/sgl-project/sglang/issues/13648
+    relevance: confirmed-upstream
+
+self_challenge:
+  ran_at: "2026-05-16T03:55:00Z"
+  patterns_checked: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  patterns_passed: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  notes: |
+    No fork branch produced; outcome C_REPORT correctly classified.
+
+verifier_scripts:
+  - role: import_smoke
+    path: src/scripts/smoke/sglang_imports.sh
+    purpose: "Verify is_npu() and Engine class import on sglang main image"

@@ -1,0 +1,38 @@
+# Bad: no self_challenge block.
+# Expected reject: self-challenge-required
+
+claim_manifest_version: 1
+schema_version: "1.0"
+_manifest_relative_to_repo_root: workspace/test/claim_manifest.yaml
+repo_root_anchor: README.md
+generated_at: "2026-05-16T04:00:00Z"
+generated_by: /test
+
+skill: test-skill
+mode: fork_patch
+outcome: A
+validation_level: 4
+
+evidence:
+  - type: smoke_log
+    path: tmp/test.log
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+    grep_assertion: "ok"
+  - type: commit_ref
+    repo: example.com/repo
+    branch: test
+    sha: abc1234
+
+artifacts:
+  - role: shim_module
+    paths: [test.py]
+    branch: test
+  - role: pr_material
+    path: PR_MATERIAL.md
+    required_sections: ["## Outcome"]
+
+external_refs: []
+
+# self_challenge: MISSING — must be rejected
+
+verifier_scripts: []
