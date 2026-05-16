@@ -53,7 +53,7 @@
 | **P0j** | finalize_day0_check + 4 gates | 已落地（commit `685de73`）；6 finalize tests PASS（含 coverage 门）| **完成** |
 | **P0p** | gate_bad fixtures with crafted fraud (M1) | 已落地（commit `685de73`）；4 fixtures，每 GateID 至少 1 | **完成** |
 | **P0q** | ANTI_PRESSURE_PROTOCOLS.md 加 P9 (infra paper-over) + mechanical classifier table | 已落地（commit `685de73`）| **完成** |
-| **P0r** | M3 scope to `/npu-port` orchestrator | v4：standalone day-0 skill 不适用；`/npu-port` 真启用 sub-skill spawn 时落 aggregate-X cap 设计；现在写 design doc 占位 | 待启动（独立 design 任务，可与 P0o/P0p/P0q 并行）|
+| **P0r** | M3 scope to `/npu-port` orchestrator | design doc 已落地：`docs/_meta/design/NPU_PORT_M3_AGGREGATE_CAP_DESIGN.md`；含 aggregate cap 表 / state.json schema / 5 enforcement point / user-gate / 实现顺序。**code 实现** deferred 到 /npu-port 真启用 sub-skill spawn 时 | **design done**（code deferred）|
 
 ---
 
