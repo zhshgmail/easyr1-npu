@@ -41,7 +41,7 @@
 | **P0e** | T29.5 workflow state machine YAML + critic（最重活，回报最大） | a5_ops `workflow_critic.py` 模式；day-0 P0..P7 phase 转换的机械 critic | 待启动（先完成 P0a-d） |
 | **P0f** | T30.D 测试网+安全网+反馈环设计文档（v2 post-codex-review）| a5_ops 三件套借鉴；2026-05-15 user direction："设计 → codex review → 实现" | **完成**（v2，commit 待 land）|
 | **P0g** | T30.R codex-review T30 设计稿 | 外部独立 review；6 项 recommendation 已 incorporate 进 v2 | **完成**（2026-05-15）|
-| **P0h.0** | claim_manifest.yaml schema + validate_claim_manifest.py | v2 codex R1 推荐：结构化 claim 替代 markdown regex；scanner+gate 共享单一 schema | 待启动（schema first，所有后续 task 依赖此）|
+| **P0h.0** | claim_manifest.yaml schema + validate_claim_manifest.py | v2 codex R1 推荐：结构化 claim 替代 markdown regex；scanner+gate 共享单一 schema | **完成**（commit `7f68880`，16/16 tests PASS）|
 | **P0h.1** | sanity suite + claim_manifest tests + 5 doc tests | a5_ops `run_sanity_suite.sh` 模式；< 2s；包括 claim_manifest schema roundtrip + good/bad fixtures | 待启动（依赖 P0h.0）|
 | **P0i** | scan_outcome_claims.py（schema-level validation）| 校验 manifest 字段、mode/artifact 组合、self_challenge 状态 | 可与 P0j / P0l 并行（依赖 P0h.0 schema）|
 | **P0j** | finalize_day0_check.py + 4 mode-derived gates | `CLAIM_EVIDENCE_PRESENT / REQUIRED_ARTIFACTS_PRESENT / EXTERNAL_PUBLICATION_VERIFIED / VALIDATION_ARTIFACT_VERIFIED`；codex R3 cut from 6→4 | 可与 P0i / P0l 并行（依赖 P0h.0）|
