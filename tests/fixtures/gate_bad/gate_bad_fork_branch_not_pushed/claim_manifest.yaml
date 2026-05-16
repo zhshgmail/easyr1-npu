@@ -1,0 +1,49 @@
+# Gate-bad: claim points to a branch + sha that don't exist upstream.
+# Expected gate: EXTERNAL_PUBLICATION_VERIFIED
+# Expected reason substring: branch-not-found
+
+claim_manifest_version: 1
+schema_version: "1.0"
+_manifest_relative_to_repo_root: tests/fixtures/gate_bad/gate_bad_fork_branch_not_pushed/claim_manifest.yaml
+repo_root_anchor: README.md
+generated_at: "2026-05-16T04:00:00Z"
+generated_by: /test-fraud
+
+skill: test-fraud
+mode: fork_patch
+outcome: C_PATCH
+validation_level: 4
+
+evidence:
+  - type: smoke_log
+    path: tests/fixtures/gate_bad/gate_bad_fork_branch_not_pushed/smoke.log
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+    grep_assertion: "ok"
+  - type: commit_ref
+    repo: github.com/zhshgmail/easyr1-npu-DOES-NOT-EXIST
+    branch: ascend-port/never-pushed-branch-xyz123
+    sha: ffffffff
+  - type: numeric_metric
+    name: reward
+    value: 0.5
+
+artifacts:
+  - role: shim_module
+    paths: [shim.py]
+    branch: ascend-port/never-pushed-branch-xyz123
+  - role: pr_material
+    path: tests/fixtures/gate_bad/gate_bad_fork_branch_not_pushed/PR_MATERIAL.md
+    required_sections:
+      - "## Outcome"
+      - "## Reproducer"
+      - "## Validation"
+
+external_refs: []
+
+self_challenge:
+  ran_at: "2026-05-16T03:55:00Z"
+  patterns_checked: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  patterns_passed: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  notes: "branch points at nothing"
+
+verifier_scripts: []

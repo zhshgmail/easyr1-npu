@@ -1,0 +1,48 @@
+# Gate-bad: verifier reads claim_manifest paths (M2 anti-cycle violation).
+# Expected gate: CLAIM_EVIDENCE_PRESENT
+# Expected reason substring: anti-cycle
+
+claim_manifest_version: 1
+schema_version: "1.0"
+_manifest_relative_to_repo_root: tests/fixtures/gate_bad/gate_bad_self_citing_verifier/claim_manifest.yaml
+repo_root_anchor: README.md
+generated_at: "2026-05-16T04:00:00Z"
+generated_by: /test-fraud
+
+skill: test-fraud
+mode: fork_patch
+outcome: C_PATCH
+validation_level: 4
+
+evidence:
+  - type: smoke_log
+    path: tests/fixtures/gate_bad/gate_bad_self_citing_verifier/workspace/smoke.log
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+    grep_assertion: "ok"
+  - type: commit_ref
+    repo: example.com/repo
+    branch: test
+    sha: deadbee
+  - type: numeric_metric
+    name: reward
+    value: 0.5
+
+artifacts:
+  - role: shim_module
+    paths: [bogus.py]
+    branch: test
+  - role: pr_material
+    path: PR_MATERIAL.md
+
+external_refs: []
+
+self_challenge:
+  ran_at: "2026-05-16T03:55:00Z"
+  patterns_checked: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  patterns_passed: [01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11]
+  notes: "should not pass"
+
+verifier_scripts:
+  - role: smoke_replay
+    path: tests/fixtures/gate_bad/gate_bad_self_citing_verifier/src/scripts/smoke/bad_verifier.sh
+    purpose: "FRAUD: reads claim_manifest evidence path and echoes it back"

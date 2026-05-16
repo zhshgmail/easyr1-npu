@@ -168,20 +168,74 @@
 
 ---
 
+## P9：Infrastructure-friction paper-over（env 异常 → 自己绕过，不向上托管）
+
+> ⚠ **与 P6 的区别**：P6 是"local 脚本卡住 → 手动绕过而非 fix 脚本" (day-0 域内的 friction)。
+> P9 是 **out-of-domain env 异常**：NPU 驱动错码 / CANN install desync / lib size or symbol 不匹配 / docker exec timeout / SSH hang / proxy 429 / install-tree 路径漂移。这些信号代表**环境基线 (baseline) 违反**，不是 worker 该决策的事——worker 一旦"决定自己继续"，专门的 env-diagnose path 永远收不到信号；真正的问题在多层错误传导后变成大问题。
+
+**Urge**: V1.4 smoke 半数失败 / `aclrtSetDevice` 报 507033 / `libascendcl.so` size 不对 / image pull timeout —— "再试一下"、"换个 NPU"、"replace .so"、"绕开 --pkg"、"backup 然后手动 cp" 都很诱人，因为它们比"停下来上抛 + 让 user/skill 决定"快。但**这正是 vibe-coding 的反例**：harness engineering 项目里，env 异常 = 工程级 signal，必须按基线 (engineering baseline) 处理，不是"看着办"。
+
+**Rule** — 机械分类后双分支处理：
+
+### Mechanical classifier table (借鉴 a5_ops 2026-05-15 攻防演练 + 移植到 NPU 上下文)
+
+| 症状（worker 实际看到的）| 类别 | 处理路径 |
+|---|---|---|
+| `aclrtSetDevice` 偶发 507033（首次出现）/ dcmi -8020 偶发 | **transient** | retry ≤ 3 with exp backoff；retry 计数**在 orchestrator 暴露**（不藏在 worker 内 loop）；用尽 → 上抛终态 `INFRA_TRANSIENT_RETRY_EXHAUSTED` |
+| HuggingFace proxy 短暂 429 / 短暂 connect timeout | **transient** | 同上 |
+| HCCL init fail（独立 process 内首次出现）| **transient** | 同上 |
+| `/etc/ascend_install.info` 不存在 / `which npu-smi` 失败 | **baseline-violated** | **永远不进 phase O1+ work**；必须 graceful exit `INFRA_BASELINE_VIOLATED`；worker **绝对禁止**"探一下 baseline 然后决定怎么绕过" |
+| `npu-smi info` 报 driver != 25.5.x | **baseline-violated** | 同上 |
+| Docker proxy 持续 > 5 min 挂 / pull 长 timeout | **baseline-violated** | 同上 |
+| A3 上 `repo/` 不是 git clone（NPU-OPS-014）| **baseline-violated** | 同上 |
+| `libascendcl.so` size != 已知 baseline | **baseline-violated** | 同上 |
+| Helper script 自己 bug（如 `--chips` 错传，T25.5）| **our-script-bug** | 修 script + commit，**不是** workaround；登记 DEBT |
+| Skill 自己默认参数错（如 T25.5 `ASCEND_RT_VISIBLE_DEVICES`）| **our-script-bug** | 同上 |
+
+### 禁止行为白名单
+
+Worker / probe / 任何 day-0 agent 收到 env-class signal 必须立刻上抛，**不在同一 spawn 内做以下 paper-over**：
+
+- 手动 cp / replace .so / replace lib
+- 重启 NPU 后再试
+- 换个 NPU chip 试到通为止
+- bypass `--pkg` / `--no-verify` / `--force`
+- 在 PROGRESS.md / handover 写 "环境问题，先跳过"
+- 修改 host 上 `/etc/ascend_*` 配置
+- 跳过 `repo/src/scripts/run-npu-container.sh` 直接 docker run（绕开 bind 检查）
+
+**Incident anchor**：
+
+- 2026-04-28 T25.5：`run-npu-container.sh` 默认 `--chips 0,1` 巧合下 happy path 通过 10 个 commit；T25 切 `--chips 4,5` 后 Ray 报 0 GPUs。**正确类别 = our-script-bug**（不是 transient，不是 baseline-violated）。Fix: 修 helper script 自动 derive `IN_CONTAINER_CSV`（commit `a6f3fca`）。当时差点被解读为 "换 chip 试试看" → P6 路径，那会进一步掩盖根本问题。
+- 2026-04-28 T25.5：A3 上 `repo/` 是 stale v0 layout，path `repo/src/scripts/run-npu-container.sh` 不存在。**正确类别 = baseline-violated**（NPU-OPS-014）。差点被解读为 "在 A3 上 mkdir + cp 文件就行" → P6 inline workaround，会让下一次 cold-drive 再撞同一个坑。
+
+**Detection signal**：
+
+- 我开始写 `mv /etc/ascend_install.info.bak /etc/ascend_install.info`
+- 我在试第 4 次 retry 而 retry_count 没上报
+- 我写 `# 临时改一下 .so，先跑通`
+- 我决定 "换 NPU 7 试试" 而 NPU 0-6 状态没明确
+
+**Fix**：cite OL-04 / OL-13 / OL-14 / OL-15 + 按 classifier table 分类后选 transient retry / baseline-exit / script-fix 路径之一；**禁止 freestyle**。
+
+---
+
 ## 决策点 cite 映射
 
 | 决策动作 | 必 cite |
 |---|---|
 | spawn agent / sub-skill | P3 + P8 |
-| emit outcome A | P1 + P7 |
-| emit outcome A-with-note | P4 + P5 |
-| emit outcome B | P5 + P7 |
-| emit outcome C-patch | P5 + P7 |
-| emit outcome C-report | P5（最重要——确认不是 P5 把真 bug 包装成 expected limitation） |
+| emit outcome `A` | P1 + P7 |
+| emit outcome `A_WITH_NOTE` | P4 + P5 |
+| emit outcome `B` | P5 + P7 |
+| emit outcome `C_PATCH` | P5 + P7 |
+| emit outcome `C_REPORT` | P5（最重要——确认不是 P5 把真 bug 包装成 expected limitation） |
 | skip cold-drive replay | P1 |
 | nohup / & / 直接 Agent | P8 |
 | inline workaround 替代修 script | P6 |
 | "expected failure" / "limitation" 措辞 | P5 |
+| env-class 异常（NPU 错码 / CANN install desync / .so 不匹配 / proxy timeout）| **P9**（先 mechanical classifier 表分类，再选 retry / baseline-exit / script-fix 路径） |
+| 准备 manual cp / replace .so / bypass --pkg / 改 host 配置 | P9（这些都是 baseline-violated 类的 paper-over，禁止） |
 
 ---
 

@@ -39,7 +39,4 @@ self_challenge:
   notes: |
     No fork branch produced; outcome C_REPORT correctly classified.
 
-verifier_scripts:
-  - role: import_smoke
-    path: src/scripts/smoke/sglang_imports.sh
-    purpose: "Verify is_npu() and Engine class import on sglang main image"
+verifier_scripts: []

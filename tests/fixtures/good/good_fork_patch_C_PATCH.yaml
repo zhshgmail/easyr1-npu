@@ -59,7 +59,7 @@ self_challenge:
     All 11 patterns passed first try. shim 3 uses find_spec + lazy
     __getattr__ to avoid plugin-init order (vllm-ascend-003).
 
-verifier_scripts:
-  - role: import_smoke
-    path: src/scripts/smoke/vllm_ascend_imports.sh
-    purpose: "On-A3 import test for 3 compat shim modules"
+# verifier_scripts intentionally empty for this fixture; a real day-0
+# session would emit a script under src/scripts/smoke/ and reference
+# it here. Schema allows empty list.
+verifier_scripts: []

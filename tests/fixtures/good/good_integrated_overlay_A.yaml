@@ -51,7 +51,4 @@ self_challenge:
     Re-validated T22.7 baseline; reward_score=0.013 within ±10% of
     0.0126. Two independent runs (chips 0,1 and chips 2,3).
 
-verifier_scripts:
-  - role: v14_smoke_replay
-    path: src/scripts/smoke/replay_v14_grpo.sh
-    purpose: "Re-run V1.4 GRPO 2 steps on integrated image; emit reward_score independently"
+verifier_scripts: []
