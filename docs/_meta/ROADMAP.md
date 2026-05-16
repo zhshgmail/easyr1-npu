@@ -49,9 +49,10 @@
 | **P0k** | regression snapshot YAML + diff_snapshot.py | 共享 claim_manifest 部分字段；mode-aware；触发 next session cold-drive 时 diff | 待启动（依赖 P0i+P0j 落地，schema 稳定）|
 | **P0m** | T31.2 design v3 — incorporate adversarial-audit lessons | a5_ops 2026-05-15 攻防演练记录 4 项洞察：M2 anti-cycle / M1 gate fitness / P9 infra paper-over / M5 tool-use signature | **进行中**（2026-05-15）|
 | **P0n** | T31.3 codex review v3 | 第二轮 adversarial review，确认 v2→v3 修订没引入新洞 | 待启动（依赖 P0m）|
-| **P0o** | P0i scanner 加 anti-cycle verifier check (M2 only, NOT M5) | v4：dynamic forbidden-path set（按当前 manifest evidence[].paths derive，不 hardcode）；repo-root 路径解析显式；exec-bit check | 待启动（依赖 P0h.0 schema） |
-| **P0p** | P0h.1 bad fixtures with crafted fraud (M1) | v4：拆 `schema_bad/` + `gate_bad/` 双层；4 个 gate 各至少 1 fixture；coverage 门 sanity-suite-time enforced | 待启动（依赖 P0h.0） |
-| **P0q** | ANTI_PRESSURE_PROTOCOLS.md 加 P9 (infra paper-over) + mechanical classifier table | v4：classifier table（症状 → 类别），3 类（transient / baseline-violated / our-script-bug）；禁止行为白名单 | 待启动（独立任务，可与 P0o/P0p 并行）|
+| **P0i** | scanner with M2 anti-cycle | 已落地（commit `685de73`）；3 scanner tests PASS | **完成** |
+| **P0j** | finalize_day0_check + 4 gates | 已落地（commit `685de73`）；6 finalize tests PASS（含 coverage 门）| **完成** |
+| **P0p** | gate_bad fixtures with crafted fraud (M1) | 已落地（commit `685de73`）；4 fixtures，每 GateID 至少 1 | **完成** |
+| **P0q** | ANTI_PRESSURE_PROTOCOLS.md 加 P9 (infra paper-over) + mechanical classifier table | 已落地（commit `685de73`）| **完成** |
 | **P0r** | M3 scope to `/npu-port` orchestrator | v4：standalone day-0 skill 不适用；`/npu-port` 真启用 sub-skill spawn 时落 aggregate-X cap 设计；现在写 design doc 占位 | 待启动（独立 design 任务，可与 P0o/P0p/P0q 并行）|
 
 ---
