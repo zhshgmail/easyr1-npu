@@ -1,11 +1,27 @@
-# 测试网 + 安全网 + 反馈环 — 设计文档（v3，post-adversarial-audit）
+# 测试网 + 安全网 + 反馈环 — 设计文档（v4，post-second-codex-review）
 
 > **Status**:
-> - v1 (2026-05-15 起草) → codex review → **v2** 应用 6 项 recommendation
-> - v2 → a5_ops 2026-05-15 攻防演练记录拉到（[ADVERSARIAL_REWARD_HACKING_AUDIT](https://gitcode.com/zhengshencn_hwca/a5_ops/blob/main/docs/design/ADVERSARIAL_REWARD_HACKING_AUDIT.md) + [RUNLOG](https://gitcode.com/zhengshencn_hwca/a5_ops/blob/main/docs/design/ADVERSARIAL_AUDIT_2026_05_15_RUNLOG.md)）→ **v3 本文档**，新加 4 项 (M1 gate-fitness / M2 anti-cycle / P9 infra-paper-over / M5 tool-use signature)
+> - v1 (2026-05-15 起草) → codex review #1 → **v2** 应用 6 项 recommendation
+> - v2 → a5_ops 2026-05-15 攻防演练记录拉到 → **v3** 新加 4 项 (M1/M2/M5/P9)
+> - v3 → codex review #2 ([verbatim](review/2026-05-16_codex_review_T30_design_v3.md)) 抓出 6 类 regression → **v4 本文档** 修订
 >
 > **Scope**: 借鉴 a5_ops 三件套（test net / safety net / feedback loop），落地到 easyr1-npu。
->
+
+## v3 → v4 changelog（codex review #2 6 项修复）
+
+| # | Codex 指摘 | v4 修复 |
+|---|---|---|
+| 1 | M2 `verification.json` 字面 grep 是 cargo-cult（a5_ops 文件名，不是我们的）| 改为 **forbidden-paths set**：扫 verifier body 是否含**当前 manifest 任一 `evidence[].path`**（动态 set，按 manifest 自适应）|
+| 2 | M2 路径解析 bug：manifest 在 `workspace/<skill-tag>/`，但 verifier path 是 repo-root 风格 | 引入 schema 字段 `repo_root` + `verifier_scripts[i].path` 统一**相对 repo_root 解析**；scanner 显式 `(repo_root / v.path).resolve()` |
+| 3 | M5 degraded scan = security theater（self-reported prose） | 直接 **删除 P0i scanner 里 M5 短期实现**；改为只在 sanity suite 跑一次 telemetry-only warning（不 reject）；真实现完全 DEBT-6 / P0e |
+| 4 | bad fixtures 用错层（schema fixtures 调 `validate_manifest()` 但 fraud 走 gate）| **拆两套 fixtures**：`tests/fixtures/schema_bad/` 测 `validate_manifest()`；`tests/fixtures/gate_bad/` 测 `finalize_day0_check.py`；4 个 gate 各至少 1 个 crafted fraud |
+| 5 | M3 deferral 事实错：`/npu-port` orchestrator SKILL.md 已 spawn dep-analysis-worker + sub-skills | **scope** M3：standalone day-0 skill 不适用；`/npu-port` orchestrator **适用** + 加 P0r 任务跟踪 |
+| 6 | schema↔gate dispatch drift（§2.3 `pr_material` optional vs §4.4 required；`A-w-note`/`A-with-note`/`A_WITH_NOTE` 三种写法）| §2.3 + §4.4 合并成 **唯一 canonical mode_dispatch_table**（§2.5 新增）；outcome 名只用 Python enum 形式 `A`/`A_WITH_NOTE`/`B`/`C_PATCH`/`C_REPORT`；prose 形式禁用 |
+
+额外修复：P9 增加**机械 classifier table**（症状 → 类别），不再只是 policy 散文。
+
+---
+
 > **Source of inspiration**: a5_ops（[gitcode.com/zhengshencn_hwca/a5_ops](https://gitcode.com/zhengshencn_hwca/a5_ops)）。
 
 ---
@@ -216,21 +232,85 @@ verifier_scripts:
 
 `src/scripts/safety/validate_claim_manifest.py` — stdlib only（`json`/`yaml.safe_load`），无 jsonschema 依赖。Exit 0/1。
 
-### 2.3 Mode-driven required-field 表
+### 2.3 Mode-driven required-field
 
-| Field | `fork_patch` | `issue_only` | `integrated_overlay` |
-|---|---|---|---|
-| `mode` | required | required | required |
-| `outcome` | required | required | required |
-| `validation_level` | required, ≥ L3 for C-patch | required, ≥ L3 | required, ≥ L5 |
-| `evidence[smoke_log]` | required | required if outcome != C-report | required |
-| `evidence[commit_ref]` | required | optional (no fork branch) | required for image SHA |
-| `artifacts[shim_module]` | required for C-patch | n/a (no fork) | n/a (cherry-picks from forks) |
-| `artifacts[pr_material]` | required | n/a | optional |
-| `external_refs[github_issue]` | optional | **required** for C-report | optional |
-| `self_challenge.patterns_passed` | required, len ≥ 8 | required, len ≥ 8 | required, len ≥ 8 |
+详 §2.5 canonical mode_dispatch_table。**整个设计中所有 mode/artifact/outcome required-set 仅在 §2.5 那张表里声明一次**；schema validator + scanner + gate 都读同一张表，禁止 §3/§4 处复刻或漂移描述。
 
-每个 mode 的 required set 由 P0j gate code 维护单一权威表（不允许多处声明）。
+### 2.4 Outcome enum (canonical naming)
+
+整个仓库只允许这 5 个值，**Python enum 形式**，**所有文档** + claim_manifest + scanner / gate / postmortem 必须用：
+
+```python
+class Outcome(str, enum.Enum):
+    A          = "A"            # 完全适配，无 NPU 集成面变化
+    A_WITH_NOTE = "A_WITH_NOTE" # 适配 + 有 additive 差异需记录
+    B          = "B"            # 单 commit / env-var workaround 即解
+    C_PATCH    = "C_PATCH"      # 需写 forward-compat shim
+    C_REPORT   = "C_REPORT"     # 修复在社区，写 blocker issue
+```
+
+禁止使用 `A-with-note`/`A-w-note`/`a-with-note` 等任何其它形式。Sanity suite `test_outcome_enum_canonical.py` 扫所有 `.md` 文件 + `*.yaml` 检查无 prose 变种。
+
+### 2.5 Canonical mode_dispatch_table（**唯一权威表**）
+
+下表是设计中**所有 mode/outcome/required-artifact/required-evidence 的单一来源**。任何下游消费者（schema validator / P0i scanner / P0j gate / sanity suite）**只能从本表派生**，禁止内联复刻：
+
+```python
+# src/scripts/safety/mode_dispatch.py — canonical authority
+from enum import Enum
+
+class Mode(str, Enum):
+    FORK_PATCH = "fork_patch"
+    ISSUE_ONLY = "issue_only"
+    INTEGRATED_OVERLAY = "integrated_overlay"
+
+class ArtifactRole(str, Enum):
+    SHIM_MODULE = "shim_module"
+    PR_MATERIAL = "pr_material"
+    WORKAROUND_DOC = "workaround_doc"
+    IMAGE_TAG = "image_tag"
+    SMOKE_LOG = "smoke_log"
+    CHECKPOINT_PATH = "checkpoint_path"
+
+class EvidenceType(str, Enum):
+    SMOKE_LOG = "smoke_log"
+    COMMIT_REF = "commit_ref"
+    NUMERIC_METRIC = "numeric_metric"
+    GITHUB_ISSUE = "github_issue"
+    IMAGE_SHA = "image_sha"
+
+# Per-mode required artifact roles
+REQUIRED_ARTIFACTS: dict[Mode, set[ArtifactRole]] = {
+    Mode.FORK_PATCH:         {ArtifactRole.SHIM_MODULE, ArtifactRole.PR_MATERIAL},
+    Mode.ISSUE_ONLY:         {ArtifactRole.WORKAROUND_DOC},
+    Mode.INTEGRATED_OVERLAY: {ArtifactRole.IMAGE_TAG, ArtifactRole.SMOKE_LOG, ArtifactRole.CHECKPOINT_PATH},
+}
+
+# Per-outcome required evidence types (orthogonal to mode)
+REQUIRED_EVIDENCE: dict[Outcome, set[EvidenceType]] = {
+    Outcome.A:           {EvidenceType.SMOKE_LOG, EvidenceType.COMMIT_REF},
+    Outcome.A_WITH_NOTE: {EvidenceType.SMOKE_LOG, EvidenceType.COMMIT_REF},
+    Outcome.B:           {EvidenceType.SMOKE_LOG, EvidenceType.COMMIT_REF},
+    Outcome.C_PATCH:     {EvidenceType.SMOKE_LOG, EvidenceType.COMMIT_REF, EvidenceType.NUMERIC_METRIC},
+    Outcome.C_REPORT:    {EvidenceType.GITHUB_ISSUE},  # smoke log optional
+}
+
+# Per-mode required validation level (min)
+REQUIRED_VALIDATION_LEVEL: dict[Mode, int] = {
+    Mode.FORK_PATCH:         3,  # L3 on-A3 import smoke
+    Mode.ISSUE_ONLY:         3,
+    Mode.INTEGRATED_OVERLAY: 5,  # L5 V1.4 GRPO end-to-end
+}
+
+# Self-challenge minimum pattern pass count (all modes)
+SELF_CHALLENGE_MIN_PASSED = 8  # of 11 in docs/_meta/kb/challenge_patterns/
+```
+
+**消费者**：
+- P0h.0 `validate_claim_manifest.py` import `Mode` / `ArtifactRole` / `EvidenceType` / `REQUIRED_*` 做 schema 校验
+- P0i `scan_outcome_claims.py` import 同样的 enum 做 cross-field 校验
+- P0j `finalize_day0_check.py` 4 gate 全部 derive 自这表
+- P0h.1 sanity suite `test_mode_dispatch_authority.py` 验证：本表是唯一定义 enum 的地方；其它文件 `grep -c "class Outcome\b\|class Mode\b" == 0` except `mode_dispatch.py` itself
 
 ---
 
@@ -330,36 +410,93 @@ def test_bad_fixture_rejected(fix_name, why):
 - 时间 < 2s
 - 集成进现有 `.claude/settings.json` PostToolUse on `git commit`（已存在），在 commit 后自动跑 + 失败 emit `[CRITIC-HOOK]` 提示
 
-### 3.6 Bad fixtures（a5_ops M1 gate fitness function，v3 新增）
+### 3.6 Bad fixtures（M1 gate fitness function，v4 双层重构）
 
-`tests/fixtures/` 必含 5+ **crafted-fraud** YAMLs，每个对应一个真实 attack vector：
+Codex review #2 抓到 v3 bad fixtures **用错层**——所有 fixture 都丢去 `validate_manifest()`，但有些 fraud 属于 P0j gate 范畴（schema 通过，gate 拒）。
 
-| Fixture | Crafted attack pattern | 我们的 scanner/gate 必须拒 |
-|---|---|---|
-| `bad_self_citing_verifier.yaml` | verifier_scripts[0].path 包含 `read("claim_manifest.yaml")` 的脚本（a5_ops `WORKER-SELF-CITING-VERIFIER`） | P0i anti-cycle check |
-| `bad_mirror_md5_trivial.yaml` | mode=integrated_overlay 但 artifacts 都是 byte-identical baseline 文件（无 workspace edit）| P0i + P0j 该 outcome 强制 A-with-note 不能 A |
-| `bad_perf_null_with_pass.yaml` | outcome=A + evidence[numeric_metric].value=null（a5_ops `DS-PERF-FRAUD-1`）| P0i schema reject |
-| `bad_t1_by_construction.yaml` | validation_level=L5 但 evidence[smoke_log].grep_assertion="T1_BY_CONSTRUCTION"（a5_ops `WORKER-PRECISION-T1-BY-CONSTRUCTION`）| P0j VALIDATION_ARTIFACT_VERIFIED |
-| `bad_circular_evidence.yaml` | evidence[smoke_log].path == verifier_scripts[0].path（圈环：claim cite verifier，verifier cite claim）| P0i anti-cycle |
-| `bad_issue_only_with_fork.yaml` | mode=issue_only 但 artifacts 含 shim_module（mode/artifact 组合矛盾）| P0i mode-derived check |
+v4 把 bad fixtures **拆两层**：
 
-每个 fixture **必须**配 expected-rejection-reason metadata，sanity suite test 通过格式：
+```
+tests/fixtures/
+├── good/                                       # 各 mode happy path
+│   ├── good_fork_patch_C_PATCH.yaml
+│   ├── good_issue_only_C_REPORT.yaml
+│   └── good_integrated_overlay_A.yaml
+├── schema_bad/                                 # 测 validate_manifest() 拒绝
+│   ├── schema_bad_outcome_string_variant.yaml  # outcome="A-with-note" 而非 A_WITH_NOTE
+│   ├── schema_bad_perf_null_with_pass.yaml     # outcome=A + evidence[numeric_metric].value=null
+│   ├── schema_bad_issue_only_with_shim.yaml    # mode=issue_only + artifacts[shim_module]
+│   ├── schema_bad_missing_self_challenge.yaml  # no self_challenge block
+│   └── schema_bad_repo_root_anchor_missing.yaml # no repo_root_anchor file
+└── gate_bad/                                   # 测 finalize_day0_check 拒绝（schema 过 + gate 拒）
+    ├── gate_bad_self_citing_verifier/          # 含完整 workspace + 一个 read-manifest verifier
+    │   ├── claim_manifest.yaml
+    │   └── src/scripts/smoke/bad_verifier.sh   # body 含 manifest evidence[].path
+    ├── gate_bad_smoke_log_grep_fails/          # smoke log 存在但 grep_assertion 不命中
+    │   ├── claim_manifest.yaml
+    │   └── smoke.log                           # 内容不含期望 token
+    ├── gate_bad_fork_branch_not_pushed/        # fork_patch 但 branch 不存在
+    │   └── claim_manifest.yaml                 # commit_ref 含 fake sha
+    └── gate_bad_pr_material_missing_section/   # PR_MATERIAL.md 存在但缺 ## Outcome
+        └── workspace/PR_MATERIAL.md
+```
+
+**Schema-layer test**（与 v3 类似，但仅 schema fixtures）：
 
 ```python
 @pytest.mark.parametrize("fix,expected_error_kind", [
-    ("bad_self_citing_verifier.yaml", "anti-cycle"),
-    ("bad_mirror_md5_trivial.yaml", "mirror-without-edit"),
-    ...
+    ("schema_bad_outcome_string_variant.yaml", "outcome-canonical"),
+    ("schema_bad_perf_null_with_pass.yaml", "evidence-numeric-missing"),
+    ("schema_bad_issue_only_with_shim.yaml", "mode-artifact-mismatch"),
+    ("schema_bad_missing_self_challenge.yaml", "self-challenge-required"),
+    ("schema_bad_repo_root_anchor_missing.yaml", "repo-root-anchor"),
 ])
-def test_crafted_fraud_rejected(fix, expected_error_kind):
-    data = yaml.safe_load((FIX / fix).read_text())
+def test_schema_crafted_fraud_rejected(fix, expected_error_kind):
+    data = yaml.safe_load((FIX / "schema_bad" / fix).read_text())
     with pytest.raises(ValidationError) as exc:
         validate_manifest(data)
     assert expected_error_kind in str(exc.value), \
-        f"fixture rejected for wrong reason: got {exc.value}"
+        f"schema fixture rejected for wrong reason: got {exc.value}"
 ```
 
-**关键**（a5_ops M1）：fixture **不能**只测 happy path；每个 gate 必须有至少一个 crafted-fraud fixture 触发它，否则 sanity suite 是"假绿"——good fixture 通过 ≠ gate 真在工作。
+**Gate-layer test**（v4 新增，每个 gate 至少 1 个）：
+
+```python
+GATE_FIXTURES = [
+    ("gate_bad_self_citing_verifier", GateID.CLAIM_EVIDENCE_PRESENT, "anti-cycle"),
+    ("gate_bad_smoke_log_grep_fails", GateID.VALIDATION_ARTIFACT_VERIFIED, "grep-assertion-failed"),
+    ("gate_bad_fork_branch_not_pushed", GateID.EXTERNAL_PUBLICATION_VERIFIED, "branch-not-found"),
+    ("gate_bad_pr_material_missing_section", GateID.REQUIRED_ARTIFACTS_PRESENT, "section-missing"),
+]
+
+@pytest.mark.parametrize("workspace_dir,expected_gate,expected_reason", GATE_FIXTURES)
+def test_gate_crafted_fraud_rejected(workspace_dir, expected_gate, expected_reason):
+    ws = FIX / "gate_bad" / workspace_dir
+    result = finalize_day0_check.check(workspace=ws, repo_root=REPO)
+    assert not result.eligible, f"gate did not reject fraud: {result}"
+    matching = [r for r in result.rejections if r.gate_id == expected_gate]
+    assert matching, f"expected gate {expected_gate} did not fire; got {result.rejections}"
+    assert expected_reason in matching[0].description, \
+        f"wrong reason: got '{matching[0].description}'"
+```
+
+**Coverage rule**（M1 fitness）：sanity suite 启动时**校验**：
+- `Mode` enum 每个值都有 ≥ 1 个 `good/` fixture
+- 4 个 `GateID` 每个都有 ≥ 1 个 `gate_bad/` fixture
+- schema 校验出的每类 error 都有 ≥ 1 个 `schema_bad/` fixture
+- 任一缺漏 → sanity suite FAIL（不是跑过）
+
+测试代码大致：
+
+```python
+def test_coverage_completeness():
+    gate_bad_dirs = list((FIX / "gate_bad").iterdir())
+    covered_gates = {parse_workspace(d).expected_gate for d in gate_bad_dirs}
+    assert set(GateID) == covered_gates, \
+        f"missing gate fitness fixtures for: {set(GateID) - covered_gates}"
+```
+
+**关键**（M1 原意）：fixture **不只测 happy path**；好 fixture 通过 ≠ scanner/gate 真在工作。**v4 还加 "每个 enum/gate 都得有 fixture" 的覆盖率门**——避免 4 个 gate 只测了 2 个就 ship。
 
 ---
 
@@ -383,58 +520,107 @@ claim_manifest.yaml  ──┬─→  P0i scan_outcome_claims.py  ← schema-lev
                                                           └ Gate 4 VALIDATION_ARTIFACT_VERIFIED
 ```
 
-### 4.2 P0i `scan_outcome_claims.py`
+### 4.2 P0i `scan_outcome_claims.py`（v4，post-codex-2）
 
-Job：**schema 层**校验 claim_manifest.yaml + **anti-cycle verifier check** (a5_ops M2)。
+Job：**schema 层**校验 claim_manifest.yaml + **anti-cycle verifier check**（M2 真实落地，非 cargo-cult）。
 
 ```python
-def scan(manifest_path: Path) -> ScanResult:
+def scan(manifest_path: Path, repo_root: Path) -> ScanResult:
     """
     Returns ScanResult with errors=[] if pass.
-    
+
     Errors include:
       - schema fields missing / wrong type
-      - evidence array empty when outcome != C-report
-      - mode/artifact combo invalid (issue_only + shim_module = reject)
-      - self_challenge missing or < 8 patterns passed
-      
-      # v3 / a5_ops M2:
-      - any verifier_scripts[i].path contains 'claim_manifest.yaml'
-        OR contains the path-derived file the verifier is supposed to
-        verify (anti-cycle: verifier must be data-flow-independent of claim)
-      - any verifier_scripts[i].path doesn't exist OR isn't executable
-      
-      # v3 / a5_ops M5 (degraded — full version needs P0e tool-use hook):
-      - self_challenge.notes contains substring "Read.*finalize_day0_check"
-        OR "Bash.*test.*gate" → emit warning to PROGRESS.md
-        (reward-hacking-by-engineering signature)
+      - evidence array empty when outcome != C_REPORT
+      - mode/artifact combo invalid (per §2.5 mode_dispatch_table)
+      - self_challenge missing or < SELF_CHALLENGE_MIN_PASSED patterns
+      - any verifier_scripts[i].path missing OR not executable
+        (Path.exists() AND os.access(p, os.X_OK))
+      - any verifier_scripts[i] body references a manifest-derived path
+        (M2 dynamic forbidden-path set; see _check_anti_cycle_dynamic below)
+
+    M5 telemetry (v4 split per codex review #2):
+      - tool-use signature detection NOT implemented here; it requires
+        PreToolUse hook + tool-use log capture (DEBT-6 / P0e).
+      - Sanity-suite-only optional telemetry test emits warning when
+        self_challenge.notes is empty; never rejects.
     """
 ```
 
-**Anti-cycle implementation**（a5_ops M2 直接借鉴）：
+**M2 dynamic forbidden-path set**（v4：替换 v3 cargo-cult 字面 grep）：
 
 ```python
-def _check_anti_cycle(manifest_dir: Path, verifier_scripts: list[dict]) -> list[Error]:
+def _check_anti_cycle_dynamic(
+    repo_root: Path,
+    manifest: dict,
+) -> list[Error]:
+    """
+    For each verifier_script, ensure its body does NOT read any path
+    in the manifest's evidence[].path or artifacts[].paths set.
+
+    This is the M2 invariant: "verifier must be data-flow-independent
+    of the claim it verifies". The forbidden set is derived dynamically
+    from THIS manifest's content — not from a hard-coded a5_ops literal.
+    """
     errors = []
-    for v in verifier_scripts:
-        script = manifest_dir / v["path"]
+
+    # Collect every path the manifest references (these are the "claim"
+    # — verifier must not read them).
+    forbidden: set[str] = set()
+    for ev in manifest.get("evidence", []):
+        if "path" in ev:
+            forbidden.add(ev["path"])
+        if "source_log" in ev:
+            forbidden.add(ev["source_log"])
+    for art in manifest.get("artifacts", []):
+        for p in art.get("paths", []):
+            forbidden.add(p)
+        if "path" in art:
+            forbidden.add(art["path"])
+    # Also forbid the manifest file itself (most obvious cycle).
+    manifest_rel = manifest.get("_manifest_relative_to_repo_root")
+    if manifest_rel:
+        forbidden.add(manifest_rel)
+
+    for v in manifest.get("verifier_scripts", []):
+        # Resolve verifier path from repo_root (v4 fix — was manifest_dir).
+        script = (repo_root / v["path"]).resolve()
+        if not script.is_relative_to(repo_root.resolve()):
+            errors.append(Error("verifier path escapes repo_root",
+                                v["path"]))
+            continue
         if not script.exists():
             errors.append(Error("verifier missing", v["path"]))
             continue
-        body = script.read_text()
-        # Anti-cycle: verifier must not read its own claim file
-        if "claim_manifest.yaml" in body:
-            errors.append(Error(
-                "verifier reads claim_manifest.yaml (self-citing — not independent)",
-                v["path"]))
-        # Anti-cycle: verifier must not read verification.json sibling
-        # (a5_ops foreach_abs exact attack pattern)
-        if "verification.json" in body:
-            errors.append(Error(
-                "verifier reads verification.json (a5_ops M2 anti-cycle violation)",
-                v["path"]))
+        if not os.access(script, os.X_OK):
+            errors.append(Error("verifier not executable", v["path"]))
+            continue
+        body = script.read_text(errors="replace")
+        for fp in forbidden:
+            # Use word-boundary match to reduce false positives from
+            # incidental substring (e.g. "shim_module" appearing in comment).
+            # Caller can lower the bar later; we err on the side of caution.
+            if fp and fp in body:
+                errors.append(Error(
+                    f"verifier reads manifest-claim path '{fp}' "
+                    f"(M2 anti-cycle: data-flow not independent of claim)",
+                    v["path"]))
     return errors
 ```
+
+**Why this is not cargo-cult**:
+- v3 hardcoded `verification.json` (a5_ops's claim file). We don't have a `verification.json`.
+- v4 dynamic set is derived from THIS manifest, so the rule self-adjusts when paths change.
+- Path resolution explicit: verifier paths are **repo-root relative** (per schema §2.1, `_manifest_relative_to_repo_root` field new in v4).
+- `_check_anti_cycle_dynamic` is **mode-agnostic** — works for fork_patch / issue_only / integrated_overlay alike.
+
+**Schema addition (v4)**: the claim_manifest gains a top-level field:
+```yaml
+_manifest_relative_to_repo_root: workspace/<skill-tag>/claim_manifest.yaml
+repo_root_anchor: README.md   # for the validator to confirm repo_root via file presence
+```
+
+**Why M5 dropped from scanner** (v4): codex #2 demonstrated scanning `self_challenge.notes` for `Read.*finalize_day0_check` strings is theater — agent can omit the sentence; `.*` literal-substring is not regex. Real implementation needs PreToolUse hook to capture actual tool-use log lines. Moved entirely to DEBT-6.
 
 ### 4.3 P0j `finalize_day0_check.py` — 4 mode-derived gates
 
@@ -600,18 +786,18 @@ ROADMAP §2 同步修订（commit 时一起改）。
 
 ---
 
-## 11. v3 adversarial-audit incorporation summary
+## 11. Adversarial-audit incorporation summary（v4 final）
 
-v2 → v3 由 a5_ops 2026-05-15 攻防演练（[ADVERSARIAL_REWARD_HACKING_AUDIT](https://gitcode.com/zhengshencn_hwca/a5_ops/blob/main/docs/design/ADVERSARIAL_REWARD_HACKING_AUDIT.md) + [RUNLOG](https://gitcode.com/zhengshencn_hwca/a5_ops/blob/main/docs/design/ADVERSARIAL_AUDIT_2026_05_15_RUNLOG.md)）触发。a5_ops 5 条新规则（M1..M5），我们按优先级 incorporated 进 v3：
+v2 → v3 由 a5_ops 2026-05-15 攻防演练触发。v3 → v4 由 codex review #2 抓出 cargo-cult + drift 触发。
 
-| a5_ops rule | 我们的 v3 落地 | ROADMAP item |
+| a5_ops rule | v3 → v4 修订 | ROADMAP item |
 |---|---|---|
-| **M2** Verifier 必须 data-flow-independent | claim_manifest 加 `verifier_scripts[]` 字段 + P0i 加 anti-cycle check (`grep -c "claim_manifest.yaml" $script == 0`) (§2 + §4.2) | P0o |
-| **M1** Gate fitness function | P0h.1 `tests/fixtures/` 必含 5+ crafted-fraud bad fixtures，每个对应真实 attack vector + expected-rejection-reason (§3.6) | P0p |
-| **P9** Infrastructure paper-over | `ANTI_PRESSURE_PROTOCOLS.md` 加 P9（NPU 错码/CANN install desync/.so size mismatch → 不准 worker self-paper-over，必须 INFRA_*_RETRY_EXHAUSTED 上抛）(§11.2 below) | P0q |
-| **M5** Agent tool-use 即 fraud signature | 短期降级：P0i scan self_challenge.notes 含 `Read.*finalize_day0_check` 等模式 emit warning。完整方案需 P0e workflow critic + tool-use logging hook | DEBT-6 (long-term), included in P0o (short-term degraded) |
-| **M3** Per-X cap 必须有 aggregate-X cap | **不适用现阶段** — 我们暂无 multi-agent orchestrator (`/npu-port` 暂未真实 spawn sub-agent)；未来加 orchestrator 时一并采纳 | — |
-| **M4** Cross-backend joint regression | 当前只 codex review；T31.3 codex review v3 完后，DEBT-8 跟踪加第二个 backend (gemini / gpt-4o) | DEBT-8 |
+| **M2** Verifier 必须 data-flow-independent | v3 字面 grep `verification.json` → v4 **dynamic forbidden-path set**（每 manifest 自适应），repo-root 路径解析显式，执行位检查（§4.2） | P0o |
+| **M1** Gate fitness function | v3 fixtures 都丢 `validate_manifest()` → v4 **拆 schema_bad/ + gate_bad/**，每 gate 至少 1 fixture + 覆盖率门（§3.6） | P0p |
+| **P9** Infrastructure paper-over | v3 政策散文 → v4 **机械 classifier 表**（§11.2） | P0q |
+| **M5** Agent tool-use 即 fraud signature | v3 self_challenge.notes 正则扫 → 经 codex 评估是 **security theater**（agent 可省略 prose），v4 **完全移到 DEBT-6**；scanner 不再实现 | DEBT-6 only |
+| **M3** Per-X cap 必须有 aggregate-X cap | v3 错误声明不适用（codex 抓到 `/npu-port` 已 orchestrate） → v4 **scope 到 `/npu-port`**：standalone day-0 skill 不适用；`/npu-port` 适用 + 加 P0r 跟踪 | P0r new |
+| **M4** Cross-backend joint regression | 当前只 codex review；DEBT-8 跟踪加第二个 backend | DEBT-8 |
 
 ### 11.1 攻防演练里 a5_ops 自己**仍 OPEN** 的 attack（我们也得承认）
 
@@ -619,46 +805,54 @@ v2 → v3 由 a5_ops 2026-05-15 攻防演练（[ADVERSARIAL_REWARD_HACKING_AUDIT
 |---|---|---|
 | `WORKER-GATE-ENUMERATION` (worker 读 gate 源代码逆向 engineer claim) | 🔴 STILL OPEN (a5_ops M5 design TBD) | 登记 DEBT-7；本设计接受 known gap；workaround 是 4 gate 数量少 + 每个 gate 独立 invariant 比 a5_ops 15 gate 更难全部 fit |
 
-### 11.2 ANTI_PRESSURE_PROTOCOLS.md 加 P9（infrastructure paper-over）
+### 11.2 P9 mechanical classifier table（v4 新增，替代 v3 政策散文）
 
-a5_ops 文本移植 + NPU 上下文改写。两类信号 + 处理路径：
+Worker 收到 env-class 信号时**机械分类**到一个类别再决定路径。分类表：
 
-| 类 | 例 | 必须的处理 |
+| 症状（worker 实际看到的）| 类别 | 处理 |
 |---|---|---|
-| **Transient retry-recoverable** | NPU 偶发 dcmi -8020 / aclrtSetDevice 偶发 507033 / proxy 短暂 429 | 允许 ≤ 3 retry with exp backoff，但 retry 计数**在 orchestrator 暴露**（不藏在 worker 内 loop）；用尽 → INFRA_TRANSIENT_RETRY_EXHAUSTED 上抛 |
-| **Baseline-violated** | CANN install 缺 lib / `/etc/ascend_install.info` 不存在 / NPU driver != 25.5.0 / docker proxy 长期挂 / A3 repo stale v0 layout (NPU-OPS-014) | **永远不进 Phase O1+ work**；必须 graceful exit INFRA_BASELINE_VIOLATED；worker **绝对禁止** "探一下 baseline 然后决定怎么绕过" |
+| `aclrtSetDevice` 偶发 507033 / dcmi -8020（首次出现）| **transient** | retry ≤ 3 with exp backoff；orchestrator 暴露 `retry_count`；用尽 → INFRA_TRANSIENT_RETRY_EXHAUSTED |
+| HuggingFace proxy 429 / 短暂 connect timeout | **transient** | 同上 |
+| HCCL init fail（独立 process 内首次出现）| **transient** | 同上 |
+| `/etc/ascend_install.info` 不存在 / `which npu-smi` 失败 | **baseline-violated** | INFRA_BASELINE_VIOLATED；**禁止** worker phase O1+ work |
+| `npu-smi info` 报 driver != 25.5.x | **baseline-violated** | 同上 |
+| Docker proxy 持续 > 5 min 挂 / pull 长 timeout | **baseline-violated** | 同上 |
+| A3 上 `repo/` 不是 git clone（NPU-OPS-014）| **baseline-violated** | 同上 |
+| `libascendcl.so` size != 已知 baseline | **baseline-violated** | 同上 |
+| Helper script 自己 bug（如 `--chips` 错传，T25.5）| **our-script-bug** | 修 script + commit，**不是** workaround；DEBT 登记 |
+| Skill 自己默认参数错（如 T25.5 `ASCEND_RT_VISIBLE_DEVICES`）| **our-script-bug** | 同上 |
 
-禁止行为白名单（worker / probe / 任何 op-gen agent 收到 env-class signal 必须立刻上抛，不在同一 spawn 内做以下 paper-over）：
+**禁止行为白名单**（worker / probe / 任何 day-0 agent 收到 env-class signal 必须立刻上抛，不在同一 spawn 内做以下 paper-over）：
 
 - 手动 cp / replace .so / replace lib
 - 重启 NPU 后再试
-- 换个 NPU chip
-- bypass `--pkg` / bypass `--no-verify`
+- 换个 NPU chip 试到通为止
+- bypass `--pkg` / `--no-verify` / `--force`
 - 在 PROGRESS.md / handover 写 "环境问题，先跳过"
+- 修改 host 上 `/etc/ascend_*` 配置
 
-具体 P9 完整文案 v3 实现阶段（T31 P0q）落地到 ANTI_PRESSURE_PROTOCOLS.md。
+具体 P9 完整文案 T31 P0q 阶段落地到 ANTI_PRESSURE_PROTOCOLS.md。
 
-### 11.3 v3 implementation order update
-
-v2 严格 schema → P0i+P0j+P0l 并行 → P0k；v3 在此基础上：
+### 11.3 v4 implementation order
 
 ```
-P0h.0 schema (含 verifier_scripts 字段)             ← v3 schema 加 1 字段
+P0h.0 schema (含 _manifest_relative_to_repo_root, repo_root_anchor, Outcome enum, mode_dispatch.py)
    │
    ▼
-P0h.1 sanity suite (含 5+ bad fixtures)             ← v3 必含 crafted-fraud
+P0h.1 sanity suite (schema_bad/ + gate_bad/ 双层 fixtures + coverage 门)
    │
-   ├──────────┬──────────┬──────────┐
-   ▼          ▼          ▼          ▼
-P0i scanner  P0j gates  P0l postm  P0q ANTI_PRESSURE P9
-(含 M2/M5)                          (独立任务，可立即并行)
+   ├──────────┬──────────┬──────────┬──────────┐
+   ▼          ▼          ▼          ▼          ▼
+P0i scanner P0j gates  P0l postm  P0q P9     P0r M3 scope for /npu-port
+(M2 only,                          ANTI_     (only if /npu-port真启用 sub-skill spawn；
+ NOT M5)                           PRESSURE   未真启用前是 design doc 不写代码)
    │          │
    └────┬─────┘
         ▼
 P0k snapshot
 ```
 
-P0q（P9 ANTI_PRESSURE 写文档）不依赖任何代码改动，可与 P0o/P0p 并行立刻开工。
+P0q + P0r 不依赖代码改动，可立即并行开工。
 
 ---
 
