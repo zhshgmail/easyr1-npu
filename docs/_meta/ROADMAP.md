@@ -46,7 +46,7 @@
 | **P0i** | scan_outcome_claims.py（schema-level validation）| 校验 manifest 字段、mode/artifact 组合、self_challenge 状态 | 可与 P0j / P0l 并行（依赖 P0h.0 schema）|
 | **P0j** | finalize_day0_check.py + 4 mode-derived gates | `CLAIM_EVIDENCE_PRESENT / REQUIRED_ARTIFACTS_PRESENT / EXTERNAL_PUBLICATION_VERIFIED / VALIDATION_ARTIFACT_VERIFIED`；codex R3 cut from 6→4 | 可与 P0i / P0l 并行（依赖 P0h.0）|
 | **P0l** | postmortem 模板 + T25.5 范例 + v1-mode-coupling 自反思范例 | 已落地（commit pending）：`docs/_meta/postmortem/POSTMORTEM_TEMPLATE.md` + T25.5 helper bug + T30 design v1→v4 mode-coupling 自反思 | **完成** |
-| **P0k** | regression snapshot YAML + diff_snapshot.py | 共享 claim_manifest 部分字段；mode-aware；触发 next session cold-drive 时 diff | 待启动（依赖 P0i+P0j 落地，schema 稳定）|
+| **P0k** | regression snapshot YAML + diff_snapshot.py | 已落地（commit pending）：snapshot_current.py 派生 UPSTREAM_FORKS.md ledger → YAML baseline；diff_snapshot.py 检测 skill 消失 / branch 改名 / image_sha256 变 / 正面 marker 丢失 / 负面 marker 出现；5 个 round-trip + regression detection tests | **完成** |
 | **P0m** | T31.2 design v3 — incorporate adversarial-audit lessons | a5_ops 2026-05-15 攻防演练记录 4 项洞察：M2 anti-cycle / M1 gate fitness / P9 infra paper-over / M5 tool-use signature | **进行中**（2026-05-15）|
 | **P0n** | T31.3 codex review v3 | 第二轮 adversarial review，确认 v2→v3 修订没引入新洞 | 待启动（依赖 P0m）|
 | **P0i** | scanner with M2 anti-cycle | 已落地（commit `685de73`）；3 scanner tests PASS | **完成** |
