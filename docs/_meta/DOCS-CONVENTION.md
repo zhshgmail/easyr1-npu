@@ -27,6 +27,7 @@
 | 下一波 NPU 适配 gap（档 B / 档 C 软件） | [`docs/_meta/NPU_ADAPTATION_GAP.md`](NPU_ADAPTATION_GAP.md) |
 | **唯一 backlog**（open work / strategic / P0 / DEBT） | [`docs/_meta/ROADMAP.md`](ROADMAP.md) |
 | Session 间交接模板 | [`docs/_meta/handovers/SESSION_HANDOVER_TEMPLATE.md`](handovers/SESSION_HANDOVER_TEMPLATE.md) |
+| Postmortem 模板 + 历史事故归档 | [`docs/_meta/postmortem/`](postmortem/) |
 | 跨 skill OL-XX 总索引 | [`src/skills/_shared/references/OPERATIONAL_KNOWLEDGE.md`](../../src/skills/_shared/references/OPERATIONAL_KNOWLEDGE.md) |
 | LLM 压力失效模式 P1..P8 | [`src/skills/_shared/references/ANTI_PRESSURE_PROTOCOLS.md`](../../src/skills/_shared/references/ANTI_PRESSURE_PROTOCOLS.md) |
 | Slash command 使用 | [`docs/_meta/SKILLS-USAGE.md`](SKILLS-USAGE.md) |
