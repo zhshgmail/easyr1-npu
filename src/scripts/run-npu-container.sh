@@ -59,6 +59,36 @@ for d in "/home/${NPU_USER}" "/data/${NPU_USER}" "/tmp/${NPU_USER}"; do
   fi
 done
 
+# --- Stale-repo guard (NPU-OPS-014, DEBT-1) --------------------------------
+# A3 host's repo/ might be a hand-copied snapshot from an earlier layout
+# (predates the `src/` reorg). When this script's caller cites
+# `repo/src/scripts/run-npu-container.sh` against such a tree, the path
+# doesn't exist and we never run. To catch the case where this script
+# DOES exist but the repo is git-stale, also check git state.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if ! git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  echo "⚠ NPU-OPS-014: $REPO_ROOT is NOT a git working tree." >&2
+  echo "  This is the early v0 layout (hand-copied snapshot). Please:" >&2
+  echo "    mv $REPO_ROOT ${REPO_ROOT}.bak-\$(date +%s)" >&2
+  echo "    git clone https://github.com/zhshgmail/easyr1-npu.git $REPO_ROOT" >&2
+  echo "  Proceeding anyway (script may emit downstream path errors)." >&2
+elif [[ "${EASYR1_SKIP_STALE_CHECK:-0}" -ne 1 ]]; then
+  # Only warn if HEAD diverges from origin/main by > 50 commits OR if
+  # the working tree has uncommitted changes that look like stale leftovers.
+  if HEAD_SHA=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null); then
+    if git -C "$REPO_ROOT" remote get-url origin >/dev/null 2>&1; then
+      # Don't fetch (avoid network); just compare to last-known origin/main.
+      if BEHIND=$(git -C "$REPO_ROOT" rev-list --count HEAD..origin/main 2>/dev/null); then
+        if [[ "$BEHIND" -gt 50 ]]; then
+          echo "⚠ NPU-OPS-014: A3 repo is $BEHIND commits behind last-fetched origin/main." >&2
+          echo "  Consider: git -C $REPO_ROOT fetch origin && git pull" >&2
+          echo "  Set EASYR1_SKIP_STALE_CHECK=1 to suppress this warning." >&2
+        fi
+      fi
+    fi
+  fi
+fi
+
 IFS=',' read -ra CHIP_ARR <<< "$CHIPS"
 
 # In-container chip indices after `--device /dev/davinci<host_id>` mapping.

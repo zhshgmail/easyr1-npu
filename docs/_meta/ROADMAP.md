@@ -106,7 +106,7 @@
 
 | DEBT-N | Why / Description | What fix | Trigger | Effort |
 |---|---|---|---|---|
-| **DEBT-1** | A3 host 的 `repo/` 之前是早期 v0 layout 的非 git 拷贝（T25.5 发现，NPU-OPS-014）；当前虽已重 clone，但没有自动检测机制防止 future drift | 在 `run-npu-container.sh` 启动时加 `git rev-parse HEAD` 检查 + 对比 origin/main，警告 stale | T29 整理过程中 / 下次出现 A3-side script not found 错误 | 30 min |
+| ~~DEBT-1~~ | ~~A3 host 的 `repo/` 之前是早期 v0 layout 的非 git 拷贝...~~ | ~~在 `run-npu-container.sh` 启动时加 `git rev-parse HEAD` 检查...~~ | ✅ **完成**（commit pending）：run-npu-container.sh 加 NPU-OPS-014 guard；新增 `tests/test_repo_layout_invariants.py` 防回归（3 tests） | ~~30 min~~ |
 | **DEBT-2** | 每条 day-0 SKILL.md 都重复了 NPU 容器 bind set 的描述（NPU-OPS-009/011/012/013/014），有漂移风险 | 抽出 `src/skills/_shared/npu-container-runner/SKILL.md` 作 single source，所有 day-0 SKILL 改为引用 | 任一 NPU-OPS-XXX 更新时 | 1 h |
 | **DEBT-3** | install-skills.sh 没做 hooks 版本管理（不像 a5_ops 的 `_owner` + manifest_sha256 stamp），他人安装时可能 silently conflict | 加 `.claude/.easyr1_hooks_version` 含 manifest_sha256；preflight 检查 mismatch 时 backup+overwrite | 任一 hook 配置变更时 | 1 h |
 | **DEBT-4** | day-0 SKILL.md 和 _shared/upstream-day0-workflow.md 的 P0..P7 描述目前是 prose-only，没有 machine-readable spec；workflow critic 无法执行 | T29.5：建 `docs/_meta/workflow/day0_state_machine.yaml` + Python critic | T29.4 完成后 | 4-6 h |
