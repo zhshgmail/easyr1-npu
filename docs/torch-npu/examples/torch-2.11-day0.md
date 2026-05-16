@@ -1,5 +1,7 @@
 # 在 Ascend NPU 上跑 PyTorch 2.11
 
+> Bind set / device passthrough below is illustrative. Canonical source: [src/skills/_shared/npu-container-runner/SKILL.md](../../../../src/skills/_shared/npu-container-runner/SKILL.md) + NPU-OPS-009 / NPU-OPS-011 / NPU-OPS-012 in [knowledge/npu-patterns.md](../../../../knowledge/npu-patterns.md). Use [src/scripts/run-npu-container.sh](../../../../src/scripts/run-npu-container.sh) — do not hand-roll docker run.
+
 ## 场景
 
 社区刚发布 PyTorch 2.11.0，但 Ascend 官方 NPU 镜像里只打包到 torch 2.9 +

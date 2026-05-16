@@ -1,5 +1,7 @@
 # Domain — vllm-ascend reproducer minimization + call-site location
 
+> Bind set / device passthrough below is illustrative. Canonical source: [src/skills/_shared/npu-container-runner/SKILL.md](../../../../src/skills/_shared/npu-container-runner/SKILL.md) + NPU-OPS-009 / NPU-OPS-011 / NPU-OPS-012 in [knowledge/npu-patterns.md](../../../../knowledge/npu-patterns.md). Use [src/scripts/run-npu-container.sh](../../../../src/scripts/run-npu-container.sh) — do not hand-roll docker run.
+
 ## Phase A: reproducer minimization
 
 Start from a failing V1.3 rollout smoke or a consumer-reported traceback.

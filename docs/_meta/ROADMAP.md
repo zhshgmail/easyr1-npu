@@ -107,7 +107,7 @@
 | DEBT-N | Why / Description | What fix | Trigger | Effort |
 |---|---|---|---|---|
 | ~~DEBT-1~~ | ~~A3 host 的 `repo/` 之前是早期 v0 layout 的非 git 拷贝...~~ | ~~在 `run-npu-container.sh` 启动时加 `git rev-parse HEAD` 检查...~~ | ✅ **完成**（commit pending）：run-npu-container.sh 加 NPU-OPS-014 guard；新增 `tests/test_repo_layout_invariants.py` 防回归（3 tests） | ~~30 min~~ |
-| **DEBT-2** | 每条 day-0 SKILL.md 都重复了 NPU 容器 bind set 的描述（NPU-OPS-009/011/012/013/014），有漂移风险 | 抽出 `src/skills/_shared/npu-container-runner/SKILL.md` 作 single source，所有 day-0 SKILL 改为引用 | 任一 NPU-OPS-XXX 更新时 | 1 h |
+| ~~DEBT-2~~ | ~~每条 day-0 SKILL.md 都重复了 NPU 容器 bind set 的描述~~ | ~~抽出 `_shared/npu-container-runner/SKILL.md` 作 single source~~ | ✅ **完成**（commit pending）：npu-container-runner/SKILL.md 加 CANONICAL 段；`tests/test_bind_set_single_source.py` 强制非豁免文件 cite NPU-OPS-009/011/012/013/014 或 npu-container-runner；7 个旧文件加 citation；OL-32 登记 | ~~1 h~~ |
 | **DEBT-3** | install-skills.sh 没做 hooks 版本管理（不像 a5_ops 的 `_owner` + manifest_sha256 stamp），他人安装时可能 silently conflict | 加 `.claude/.easyr1_hooks_version` 含 manifest_sha256；preflight 检查 mismatch 时 backup+overwrite | 任一 hook 配置变更时 | 1 h |
 | **DEBT-4** | day-0 SKILL.md 和 _shared/upstream-day0-workflow.md 的 P0..P7 描述目前是 prose-only，没有 machine-readable spec；workflow critic 无法执行 | T29.5：建 `docs/_meta/workflow/day0_state_machine.yaml` + Python critic | T29.4 完成后 | 4-6 h |
 | **DEBT-5** | T30 设计 v2 接受 known gap：bypass-control 不完全闭合（agent 在 P8 压力下 nohup / raw docker 绕开 scanner+gate）；只靠 3 重 enforcement，完全防需 P0e workflow critic PreToolUse hook | P0e (T29.5) 上线后，把 scanner+gate 调用作 PreToolUse Bash hook 强制拦截 | P0e 完成时 | 2-3 h |

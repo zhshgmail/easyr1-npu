@@ -41,6 +41,7 @@
 | **OL-16** | Outcome 分类不可越级声明 | A / A-with-note / B / C-patch / C-report, outcome ladder, PR_MATERIAL | 任何 day-0 完成声明 |
 | **OL-17** | fork-branch 命名约定 `ascend-port/<target-version-slug>` | ascend-port, target version slug, lowercase hyphen, branch convention | 推送任何 fork branch |
 | **OL-18** | walk-through PASS ≠ 真证据 | cross-layer-007, agent walk-through, plan vs artifact, on-A3 import smoke | 任何 outcome 声明前 |
+| **OL-32** | NPU 容器 bind set 单一权威源 | bind set canonical source, npu-container-runner SKILL.md, /dev/devmm_svm, /dev/hisi_hdc, /dev/davinci_manager, NPU-OPS-009/011/012/013/014, DEBT-2 | 写任何 docker run / bind path 时；其他 doc 必须 cite npu-container-runner |
 
 ---
 

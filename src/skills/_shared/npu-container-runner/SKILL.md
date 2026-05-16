@@ -5,6 +5,19 @@ description: Launch a docker container on an Ascend NPU host with the correct de
 
 # npu-container-runner
 
+> **CANONICAL BIND-SET SOURCE** (DEBT-2 / OL-32, 2026-05-15):
+>
+> Any doc, SKILL.md, or script that **mentions specific NPU bind paths**
+> (`/dev/davinci_manager` / `/dev/devmm_svm` / `/dev/hisi_hdc` / `/usr/local/Ascend/driver` /
+> `/etc/hccn.conf` / `/etc/ascend_install.info` / etc.) **MUST**:
+>
+> 1. Either use the full canonical example from this file's §"The script" section,
+> 2. OR show a partial / illustrative bind set and **explicitly reference NPU-OPS-009 / NPU-OPS-011** + this SKILL.md as the authoritative source.
+>
+> The sanity-suite test `tests/test_bind_set_single_source.py` enforces this — failing if any new file inlines bind paths without citing NPU-OPS-009/011/012/013/014.
+>
+> Why: a5_ops `SAFETY_NET_NAME_COUPLING` proved that scattering specific filenames / paths across multiple sources is structurally fragile. One canonical source = no drift.
+
 ## When to use
 
 Any of:

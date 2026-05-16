@@ -24,6 +24,8 @@ hooks:
           timeout: 5
 ---
 
+> Bind set / device passthrough below is illustrative. Canonical source: [src/skills/_shared/npu-container-runner/SKILL.md](../../../../src/skills/_shared/npu-container-runner/SKILL.md) + NPU-OPS-009 / NPU-OPS-011 / NPU-OPS-012 in [knowledge/npu-patterns.md](../../../../knowledge/npu-patterns.md). Use [src/scripts/run-npu-container.sh](../../../../src/scripts/run-npu-container.sh) — do not hand-roll docker run.
+
 # torch-day0-worker
 
 Day-0 PyTorch probe. Spawned by `/torch-day0`.

@@ -1,5 +1,7 @@
 # 在 Ascend NPU 上跑 transformers 5.6.0
 
+> Bind set / device passthrough below is illustrative. Canonical source: [src/skills/_shared/npu-container-runner/SKILL.md](../../../../src/skills/_shared/npu-container-runner/SKILL.md) + NPU-OPS-009 / NPU-OPS-011 / NPU-OPS-012 in [knowledge/npu-patterns.md](../../../../knowledge/npu-patterns.md). Use [src/scripts/run-npu-container.sh](../../../../src/scripts/run-npu-container.sh) — do not hand-roll docker run.
+
 ## 场景
 
 HuggingFace 刚发布 `transformers==5.6.0`（2026-04-22），但 Ascend 官方
