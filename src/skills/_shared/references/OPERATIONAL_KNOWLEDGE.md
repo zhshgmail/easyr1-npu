@@ -42,6 +42,7 @@
 | **OL-17** | fork-branch 命名约定 `ascend-port/<target-version-slug>` | ascend-port, target version slug, lowercase hyphen, branch convention | 推送任何 fork branch |
 | **OL-18** | walk-through PASS ≠ 真证据 | cross-layer-007, agent walk-through, plan vs artifact, on-A3 import smoke | 任何 outcome 声明前 |
 | **OL-32** | NPU 容器 bind set 单一权威源 | bind set canonical source, npu-container-runner SKILL.md, /dev/devmm_svm, /dev/hisi_hdc, /dev/davinci_manager, NPU-OPS-009/011/012/013/014, DEBT-2 | 写任何 docker run / bind path 时；其他 doc 必须 cite npu-container-runner |
+| **OL-33** | install-skills.sh 写 manifest_sha256 stamp | install-skills version stamp, .easyr1_skills_version, _owner: easyr1-npu, manifest_sha256, DEBT-3, sibling project agent coordination | 任何安装 / 升级 skill 集时；他人或 a5_ops 检查 install 一致性时 |
 
 ---
 

@@ -99,6 +99,42 @@ done < <(find "${SKILLS_SRC}" -name SKILL.md -print0)
 echo
 echo "deployed ${count} skill(s) to ${SKILLS_DIR}"
 echo "manifest: ${MANIFEST}"
+
+# --- Version stamp (DEBT-3, OL-33) -----------------------------------------
+# Capture a fingerprint of WHICH SKILL.md files + .claude/settings.json
+# we deployed so future contributors / sibling-project agents know what
+# version of this install is active. The stamp lives in $REPO_ROOT/.claude/
+# and is checked into git so the live and committed state can be compared.
+STAMP_DIR="${REPO_ROOT}/.claude"
+STAMP_FILE="${STAMP_DIR}/.easyr1_skills_version"
+mkdir -p "${STAMP_DIR}"
+
+# Compute manifest_sha256: hash of (sorted-skill-paths) + (settings.json content)
+MANIFEST_HASH=$(
+  {
+    find "${SKILLS_SRC}" -name SKILL.md -print | sort
+    if [[ -f "${STAMP_DIR}/settings.json" ]]; then
+      cat "${STAMP_DIR}/settings.json"
+    fi
+  } | sha256sum | awk '{print $1}'
+)
+
+cat > "${STAMP_FILE}" <<EOF
+# easyr1-npu install-skills.sh version stamp (DEBT-3 / OL-33).
+# Regenerated each time install-skills.sh runs successfully.
+# Read by sanity-suite test_install_skills_stamp.py and by other agents
+# (e.g. a5_ops sibling project) to confirm we agree on which skill set
+# is live.
+_owner: easyr1-npu
+manifest_sha256: ${MANIFEST_HASH}
+deployed_count: ${count}
+deployed_at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+skills_dir: ${SKILLS_DIR}
+EOF
+
+echo
+echo "wrote version stamp: ${STAMP_FILE}"
+echo "manifest_sha256:     ${MANIFEST_HASH}"
 echo
 echo "verify with: ls ${SKILLS_DIR}"
 echo "undeploy:    ${BASH_SOURCE[0]} --undeploy"
