@@ -125,5 +125,6 @@
 - **T26.5**（2026-04-28，commit `2cb0cf2`）：NPU_ADAPTATION_GAP.md codify
 - **T27+T28**（2026-04-28，commit `0c86e0e`）：`/sglang-npu-day0` skill + 3-axis 版本验证 + 官方 image cold-drive 发现 sglang main↔kernel-npu 配对 bug（C-report）
 - **T25**（2026-04-27/28，commits `c8cde08` + `a6f3fca`）：端到端冷启动重演 6 sub-task + helper-script ASCEND_RT_VISIBLE_DEVICES bug fix + NPU-OPS-014 新增
+- **T32**（2026-05-18，commits `8779009`…`e2b4acf`）：tilelang-mlir-ascend MLIR backend 冷驱重演 — 9 轮 chain-fix 修 13 个 codegen patch（3 文件）+ act_quant/fp8_indexer/atomic_add 修 9 个 example/test bug；examples 36/36 + testing/npuir 284/284 + 6 unittest tests PASS（unittest 63 stale-snapshot 非真 bug）；KB §1-13 沉淀（taxonomy + R-CG/LV/KA/TS 规则 + 7-check checklist）；上游 PR #48-#51 提交（pending review）；`/tilelang-fix` skill 拆成单一入口 + 5 个原子子 skill（mirror a5_ops/ascendc-op-gen 结构）
 
 完整审计：`git log --oneline --since=2026-04-15`。
