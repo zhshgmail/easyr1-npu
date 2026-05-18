@@ -7,10 +7,10 @@
 
 ## Metadata
 
-- **Date**: 2026-05-18
+- **Date**: 2026-05-18 (live, updated multiple times during session)
 - **Session tag**: T33
-- **Outgoing context**: P1.5 lighting_indexer_fwd 写完待 compile；P1.4 sparse_mla_bwd 有 2 个已知 bug 暂搁置
-- **Incoming agent role**: 继续推 P1.5 编译 + 数值，然后 P1.6 lighting_indexer_bwd，最后回头修 P1.4 的两个 bug
+- **Outgoing context**: P1.3 + P1.5 fwd kernels DONE; P1.4 bwd compile_ok / numerics WIP; P1.6 bwd scaffold written but verifier-failing
+- **Incoming agent role**: bisect P1.6 verifier error, then P1.6 numerics, then P1.4 numerics, then move to P2 (MindSpeed)
 
 ---
 
@@ -22,8 +22,8 @@ T33 目标：把 miles (radixark/miles, fork from THUDM/slime) 用的 4 个 tile
 |---|---|
 | sparse_mla_fwd | ✅ DONE — 5e-4 err vs CPU fp32 ref, commit `6e6e30b` on fork branch `t33-sparse-mla-fwd-port-and-tdynamic` |
 | sparse_mla_bwd | ⚠️ COMPILE_OK but 数值 WIP — 3 sub-kernel 都 compile+run，但 dQ 全零（task #250），topk=16 触发 bisheng 资源限 (task #251)。Commit `2171b7e` |
-| lighting_indexer_fwd | ⏳ 写完 145 行 `examples/deepseek_v4/example_lighting_indexer_fwd_kernel.py`，待 rsync+compile |
-| lighting_indexer_bwd | ⏳ 未开始 |
+| **lighting_indexer_fwd** | ✅ **DONE — max abs err 0.000000** vs CPU fp32 ref @ SEQ=8, SKV=16, H=8, D=32. Commit `9972194` on same branch. Discovered R-KA-7 (no per-scalar GM stores) + R-KA-8 (explicit slice ranges) the hard way. |
+| **lighting_indexer_bwd** | ⏳ **scaffold WIP** — 244 lines in `examples/deepseek_v4/example_lighting_indexer_bwd_kernel.py`, fails MLIR verifier with "expected `tensor<8x32xf32>` or rank-reduced version (size mismatch)". Suspect culprits: `T.alloc_shared` inside inner loop (need to hoist), a dangling broken `T.copy(gated, k_shared)`. Commit `bdedefd` on same branch. |
 
 下一步 (next agent 第一件事)：rsync `example_lighting_indexer_fwd_kernel.py` 到 A3 + compile + run smoke。看是否第一次通过。
 
