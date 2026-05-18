@@ -880,6 +880,48 @@ Cast op round_mode (§9b).
 Apply order: v1 → v2 → v3 → v4 → v5 → F1 → v6 → v9 (the last 3 are the
 actual bug fix; v1-v5 patches up surrounding dynamic-shape issues).
 
+### 10.3.6 P1.5 lighting_indexer_fwd port — runtime MTE error from per-scalar GM stores (row 46, 2026-05-18)
+
+**Symptom:** kernel compiles cleanly (both MLIR verifier and bishengir-compile pass), but at NPU launch traps with `aicore exception: MPU address access is invalid` (`cube_error=0`, `mte_error` non-zero). The MTE (memory transfer engine) is the load/store unit between UB and GM.
+
+**Code that crashed:**
+```python
+# inside an inner for-loop:
+for bn_i in T.serial(BN):
+    for bq_idx in T.serial(BQ):
+        Logits[seq_i + bq_idx, k * BN + bn_i] = logits_shared[bn_i, bq_idx]
+```
+
+**Code that works:**
+```python
+# transpose to a fragment first
+for bq_idx in T.serial(BQ):
+    for bn_i in T.serial(BN):
+        logits_local_T[bq_idx, bn_i] = logits_local[bn_i, bq_idx]
+T.copy(logits_local_T, logits_shared_T)
+# single tile-level T.copy to GM
+T.copy(logits_shared_T, Logits[seq_i : seq_i + BQ, k * BN : (k + 1) * BN])
+```
+
+**Diagnosis:** mlir-ascend's HIVM lowering emits a per-scalar `memref.store` for each `Logits[i,j] = ...` inside inner loops. The MTE engine doesn't have a scalar-fanout path for global memory writes — only tile-level moves. The clang stage compiles the IR, but the NPU runtime fails when the kernel is scheduled. Lesson codified as R-KA-7 (§12.3).
+
+Also encountered the slice-rank gotcha (R-KA-8): single-index forms like `T.copy(IndexQ[seq_i * H, 0], shared)` work on upstream CUDA tilelang via shape inference but fail mlir-ascend's verifier with "expected `tensor<MxN>` or rank-reduced version (size mismatch)". Always write the full `[start:end]` on every dim.
+
+### 10.3.7 P1.4 / P1.6 bwd kernels — bishengir-compile resource-budget overflow (rows 45 + new, 2026-05-18)
+
+**Symptom (P1.6 lighting_indexer_bwd):** MLIR codegen passes (valid hivm.hir IR is emitted), but `bishengir-compile` exits 1. The MLIR module contains ~10 fragment-sized 16xPADDED_H fp32 tensors plus 3 active gemms plus an `atomic_addx4` scatter. Resource analysis pass rejects the kernel.
+
+**Symptom (P1.4 sparse_mla_bwd at topk=16, NS=2):** bishengir-compile passes; **the downstream clang stage** `/usr/local/Ascend/cann-8.5.2/bin/bisheng` exits 70 with "Failed to compile HIVM IR" for the dav-c220-cube AICore target. Same kernel at topk=8 (NS=1) compiles cleanly.
+
+**Two-binary architecture (see memory: `ascendnpu_ir_compile_chain.md`):**
+- `bishengir-compile` is open-source (`Ascend/AscendNPU-IR` on gitcode, `bishengir/tools/`) → rebuildable. P1.6 blocker likely fixable here.
+- `bisheng` clang AICore backend (`cann-8.5.2/bin/bisheng`) is NOT open-source. P1.4 NS=2 blocker requires upstream report OR kernel-side serialization of fragments to reduce live state.
+
+**Path forward:**
+1. Rebuild `bishengir-compile` from upstream `master` HEAD (`a3929ce7`, 3 months newer than the deployed `e4e2ba9`) — verify P1.6 compiles with the fresh binary. Build script: `./build-tools/build.sh -o ./build-fresh --build-type Release --apply-patches`, ~30-60 min.
+2. If P1.6 still fails on the fresh `bishengir-compile`, patch the resource-budget heuristic in `bishengir/lib/`. The relevant pass is the HIVM AICore allocator — read the bishengir source to find which file rejects.
+3. For P1.4 NS=2 (clang-stage error), restructure the kernel: split `acc_dkv` and `acc_dkv_tail` into smaller fragments computed serially across pipeline iterations, so the simultaneously-live fragment count drops below the dav-c220 register budget.
+
 ### 10.4 Pattern catalog (extracted from confirmed-working examples)
 
 #### Vision: KB is the substrate for tilelang auto-port automation
