@@ -975,6 +975,19 @@ doing `scalar_buf[i] = vector_buf[i, k] * loop_invariant_scalar_load`,
 look at §10.3.5 — the 3-patch combo (F1.1 + F1.2 + v6 + v9) is the
 fix family.
 
+### 11.2.1 API/DEV codegen asymmetry (T32.15 regression discovery)
+
+| Symptom | Bug pattern | Likely site |
+|---------|-------------|-------------|
+| `NpuirOperand::FromExpr cannot handle the expr with type of "tir.BufferLoad"` FATAL at `src/op/ascend.cc:40` | Patched `codegen_npuir_dev.cc::processImm` to accept new PrimExpr type, but didn't update the API mode's equivalent | both `src/op/ascend.cc::NpuirOperand::FromExpr` AND `src/target/codegen_npuir_dev.cc::processImm` must accept the same set of Scalar-like PrimExpr types |
+| Op PASSes in Developer mode but FATAL in Expert mode (or vice-versa) | Mode-specific codegen has stale acceptance list | grep both `processImm` (DEV) and `FromExpr` (API) for the relevant `.as<XXNode>()` checks |
+
+**Triage shortcut**: if you modified ANY pass in `npu_loop_vectorize.cc`
+that changes what PrimExpr types reach the codegen — verify BOTH codegens
+(`codegen_npuir_dev.cc` for Developer mode AND `src/op/ascend.cc` +
+`codegen_npuir.cc` for Expert/API mode) accept the new types. The two
+have separate operand-resolution paths.
+
 ### 11.3 Cast op rounding-mode mismatches
 
 | Symptom | Bug pattern | Likely site |
@@ -1013,6 +1026,7 @@ captures a bug class we already burned hours debugging.
 | **R-CG-3: when codegen produces a `tensor::CollapseShapeOp` / `ExpandShapeOp` result type from a source with dynamic dims, the result type MUST honor those dynamic propagations through the reassociation map** | §10.3.5 stack 2 was the verifier catching static-result-from-dynamic-input | helper: `computeReassocAwareResultType(srcType, reassoc, targetRank)` |
 | **R-CG-4: when `processImm` (or any BinaryOp lowering) detects `is_scalar_load=true`, BOTH operand branches MUST extract the scalar (`VisitExpr_(buffer_node)`) — never return the buffer as a whole tensor** | §10.3.5 final root cause: arg_id==0 returned whole buffer asymmetrically | code review: if you see `if (arg_id == 0)` ... `else` asymmetry in operand-handling code, that's suspicious — make both branches do the same scalar/tensor decision |
 | **R-CG-5: any `vmul/vadd/vsub/...` codegen that uses `srcTensorTy = src.getType().cast<TensorType>()` MUST first check if src is actually a tensor or could be a scalar/memref; provide a scalar-arith fallback path** | §10.3.5 v9 fix — when both srcs are scalars (post-F1+v6), emit arith.mulf + insert instead of vmul | helper: `tryEmitScalarBinary(op, src0, src1, ...)` returning success/fallback |
+| **R-CG-6: keep `codegen_npuir_dev.cc::processImm` Scalar acceptance list IDENTICAL to `src/op/ascend.cc::NpuirOperand::FromExpr` Scalar branch — both must accept the same `expr.as<XXNode>()` types** | T32.15 regression: F1.2 patched DEV only; engram_bwd_exp broke in API mode | static check: both files' Scalar branches should grep-match the same list of `as<TypeNode>` |
 
 ### 12.2 Loop-vectorize-side rules (npu_loop_vectorize.cc contributors)
 
@@ -1070,3 +1084,26 @@ Before claiming an op is fixed:
 - [ ] Discord milestone update with concrete results, not summary slogans
 
 If any of the above is unchecked, the fix is not done.
+
+### 13.2 Critical: BOTH-mode regression rule
+
+When patching ANY shared TIR-level pass (especially
+`npu_loop_vectorize.cc` or `src/transform/ascend_*.cc`), the regression
+suite MUST cover BOTH `TILELANG_ASCEND_MODE=Expert` (default → API
+codegen) AND `TILELANG_ASCEND_MODE=Developer` modes. Some ops default
+to Expert (most examples), some explicitly set Developer
+(`os.environ['TILELANG_ASCEND_MODE'] = 'Developer'` in script).
+
+Lesson from T32.15: F1 step 1 modified `npu_loop_vectorize.cc` (shared).
+Step 2 patched the DEV codegen but missed the API codegen. `engram_bwd_exp`
+uses Expert mode (default) so it broke; ops that explicitly set
+Developer mode were unaffected.
+
+**Mitigation in regression suite**: ensure at least 5 Expert-mode ops
+AND 5 Developer-mode ops are in the regression list. Currently:
+- Expert mode (default): vec_add_1d, vec_add_2d, exp2, log2, gemm,
+  matmul, flash_attn, layer_norm, sparse_mla_fwd, engram_*
+- Developer mode (explicit env): act_quant, fp8_gemm, flash_attn_dev,
+  atomic_add_dev, fp8_lighting_indexer (some)
+
+The `final_verification_v2.sh` script covers both modes.
