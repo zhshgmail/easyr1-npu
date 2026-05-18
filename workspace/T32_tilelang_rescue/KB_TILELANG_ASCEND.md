@@ -336,6 +336,8 @@ Run with PYTHONPATH set per §6.7, inside `tlrescue` container on A3.
 | 38 | Engram bwd | `examples/engram/engram_bwd.py` | default | PASS | |
 | 39 | Engram bwd exp | `examples/engram/engram_bwd_exp.py` | default | PASS | |
 | 40 | Engram decode | `examples/engram/engram_decode.py` | default | PASS | |
+| 41 | T.dynamic smoke (P1.2) | `_smoke_T_dynamic.py` | Developer | PASS (batch=4 AND batch=17 same kernel) | T33: dynamic-shape DSL surface working end-to-end on Ascend |
+| 42 | sparse_mla_fwd (P1.3) | `examples/deepseek_v4/example_sparse_mla_fwd_kernel.py` | Developer | PASS — max err 5e-4 vs CPU fp32 ref @ B=1,S=8,SKV=16,H=16,D=64,DT=16,topk=8 | T33: NPU port of upstream `examples/deepseek_v32/sparse_mla_fwd.py`. Adaptations: 3-axis grid → 1-axis; NPU vector intrinsics; Lse [B,S,H,1] for rank parity |
 
 ### 8.2 To-try queue (next session)
 
@@ -1043,6 +1045,8 @@ captures a bug class we already burned hours debugging.
 | **R-KA-2: host-side `x.new_empty(...)` MUST use shape axes that match the kernel's intended output rank/shape; test with M ≠ N to catch typos** | T32.15: act_quant `s = x.new_empty(N, 1)` was wrong (should be M); only caught at M=64/N=32 | review checklist: when allocating kernel output buffers host-side, write the shape using semantic axis names (`x.size(0)` not `M`/`N` constants) |
 | **R-KA-3: `assert_close(rtol/atol)` tolerance choice should match the kernel's intermediate precision floor; for kernels with fp16 intermediate stores, use atol/rtol >= 2e-2** | T32.15: fp8_lighting_indexer used 1e-2 — too tight for fp16 intermediate | review: when kernel has any `T.alloc_*([...], "float16")` storing intermediate, test atol >= 2e-2 unless empirically verified |
 | **R-KA-4: `assert torch.all(y == y_ref)` (strict ==) MUST only be used when the output dtype is exact (integer or known-deterministic float). For quantized int outputs, ALSO verify the round_mode in kernel matches torch.round** | T32.15: act_quant used strict == correctly (int8 output IS exact), but the rounding-mode bug made values 1-off | code review pattern: if you see `torch.all(y == y_ref)` followed by int output, immediately check `round_mode` in kernel |
+| **R-KA-5: `T.vbrc(value, buf)` requires `value` to be a `tir.Var` (bound local variable), NOT a raw Python int/float literal** | T33.P1.3: `T.vbrc(0, acc_o)` fails with "input vector and output vector must have same rank"; `value_zero = 0; T.vbrc(value_zero, acc_o)` works. Root cause: `_get_extent` in `customize_npuir.py` returns `[]` for non-Buffer types, and `npuir_brc`'s rank assertion only short-circuits on `isinstance(src, tir.PrimExpr)` — raw `0` is `int` (not PrimExpr); the bound let-var is a `tir.Var` (PrimExpr subclass) | lint: in `examples/*.py`, grep `T\.vbrc\(\s*-?\d` — flag any literal-arg call; require local-variable binding |
+| **R-KA-6: Lse / scalar-row outputs ([B,S,H]) MUST be allocated with rank parity to the in-kernel fragment ([block_M, 1]); use shape `[B,S,H,1]` and slice `Lse[b,s,0:BM,0:1]`** | T33.P1.3: `lse_shape=[B,S,H]` + `T.copy(buf_BMx1, Lse[b,s,0:BM])` failed MLIR verifier with "expected `memref<1x1xBM xf32>` or rank-reduced version" — codegen produced `memref<BMx1>` instead. Trailing-1 keeps rank consistent | review: when allocating multi-batch output that targets a [BM,1] fragment, add trailing `1` to the host-side tensor and slice with `:1` |
 
 ### 12.4 Test-design rules (test author / reviewer)
 
