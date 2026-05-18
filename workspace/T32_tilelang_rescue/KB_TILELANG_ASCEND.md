@@ -338,6 +338,9 @@ Run with PYTHONPATH set per §6.7, inside `tlrescue` container on A3.
 | 40 | Engram decode | `examples/engram/engram_decode.py` | default | PASS | |
 | 41 | T.dynamic smoke (P1.2) | `_smoke_T_dynamic.py` | Developer | PASS (batch=4 AND batch=17 same kernel) | T33: dynamic-shape DSL surface working end-to-end on Ascend |
 | 42 | sparse_mla_fwd (P1.3) | `examples/deepseek_v4/example_sparse_mla_fwd_kernel.py` | Developer | PASS — max err 5e-4 vs CPU fp32 ref @ B=1,S=8,SKV=16,H=16,D=64,DT=16,topk=8 | T33: NPU port of upstream `examples/deepseek_v32/sparse_mla_fwd.py`. Adaptations: 3-axis grid → 1-axis; NPU vector intrinsics; Lse [B,S,H,1] for rank parity |
+| 43 | sparse_mla_bwd preprocess (P1.4) | `examples/deepseek_v4/example_sparse_mla_bwd_kernel.py::preprocess` | Developer | PASS (compile + run, shape (1,8,16,1)) | T33: Delta = sum_d O*dO; 1-axis NPU grid encodes (b,h,s_block) |
+| 44 | sparse_mla_bwd postprocess (P1.4) | `examples/deepseek_v4/example_sparse_mla_bwd_kernel.py::postprocess` | Developer | PASS (compile + run, shape (1,16,1,80) fp16) | T33: fp32 dKV accumulator → fp16 cast |
+| 45 | sparse_mla_bwd main (P1.4 WIP) | `examples/deepseek_v4/example_sparse_mla_bwd_kernel.py::main` | Developer | COMPILE_OK + RUN_OK shape (1,8,16,80) but dQ values all-zero (numerics WIP); topk=16 fails bisheng AICore-resource limit | T33: 7-GEMM bwd kernel with atomic_addx4 dKV path. Next: bisect why pipelined accumulation into acc_dq doesn't visibly land; investigate resource limits at NS≥2 |
 
 ### 8.2 To-try queue (next session)
 
