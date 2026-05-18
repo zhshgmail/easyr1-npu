@@ -9,8 +9,8 @@
 
 - **Date**: 2026-05-18 (live, updated multiple times during session)
 - **Session tag**: T33
-- **Outgoing context**: P1.3 + P1.5 fwd kernels DONE; P1.4 bwd compile_ok / numerics WIP; P1.6 bwd scaffold written but verifier-failing
-- **Incoming agent role**: bisect P1.6 verifier error, then P1.6 numerics, then P1.4 numerics, then move to P2 (MindSpeed)
+- **Outgoing context**: P1.3 + P1.5 fwd kernels PASS; P1.6 bwd dQ+dW match autograd (5e-5, 0 err), dKV has half-nan; P1.4 bwd compile+run with multi-buffer-off + atomic-size-fix, dQ still all-zero (different root cause from P1.6)
+- **Incoming agent role**: (1) bisect P1.4 dQ all-zero via per-stage diagnostic dumps; (2) bisect P1.6 dKV nan-half — likely fp16 cast or atomic-scatter accumulator issue; (3) ship the production NPU-ported kernels back into miles' wrappers; (4) move to P2 MindSpeed
 
 ---
 
@@ -20,19 +20,21 @@ T33 目标：把 miles (radixark/miles, fork from THUDM/slime) 用的 4 个 tile
 
 | Kernel | Status |
 |---|---|
-| sparse_mla_fwd | ✅ DONE — 5e-4 err vs CPU fp32 ref, commit `6e6e30b` on fork branch `t33-sparse-mla-fwd-port-and-tdynamic` |
-| sparse_mla_bwd | ⚠️ COMPILE_OK but 数值 WIP — 3 sub-kernel 都 compile+run，但 dQ 全零（task #250），topk=16 触发 bisheng 资源限 (task #251)。Commit `2171b7e` |
-| **lighting_indexer_fwd** | ✅ **DONE — max abs err 0.000000** vs CPU fp32 ref @ SEQ=8, SKV=16, H=8, D=32. Commit `9972194` on same branch. Discovered R-KA-7 (no per-scalar GM stores) + R-KA-8 (explicit slice ranges) the hard way. |
-| **lighting_indexer_bwd** | ⚠️ **MLIR codegen passes, bisheng resource fail** — 240 lines, MLIR verifier accepts the generated hivm.hir IR after hoisting allocs + removing dangling `T.copy(gated, k_shared)`; bisheng compile fails with AICore resource budget overflow (same class as P1.4 task #251 at topk=16). New task #252 tracks this. Commit `c081aaa`. |
+| sparse_mla_fwd | ✅ **DONE** — 5e-4 err vs CPU fp32 ref, commit `6e6e30b` |
+| sparse_mla_bwd | ⚠️ compile+run OK (after `enable_auto_multi_buffer=False`); dKV scatter correct after `atomic_addx4 size=[4]` fix; **dQ still all-zero** (task #250); commit `9d20b78` |
+| **lighting_indexer_fwd** | ✅ **DONE** — max abs err 0.000000 @ SEQ=8, SKV=16, H=8, D=32. Commit `9972194` |
+| **lighting_indexer_bwd** | ✅ **dQ + dW match autograd to 5e-5 and 0**; dKV has half-nan; commit `31588d6` |
 
-### Pragmatic plan for P1 → P2 transition
+### Key infrastructure wins this session
 
-Two bwd kernels (sparse_mla + indexer) hit the **same bisheng AICore-resource bottleneck**. Fixing it is open-ended (1-2 days of GEMM-splitting / fragment-budget analysis). Alternative: **PyTorch autograd fallback** — miles' wrappers (`indexer.py` / `sparse_mla.py`) already use `torch.autograd.Function`; replace the `backward()` with pure-torch ops. Slower (20-50x for these kernels) but numerically correct, and unblocks the rest of the stack:
-- P2 MindSpeed DSv4 pretrain smoke
-- P3 sglang-miles rollout
-- P4 miles GRPO 1-iter
+* **Hot-swapped fresh `bishengir-compile`** built from AscendNPU-IR master HEAD `31f690369d` (May 18) over the CANN-deployed `e4e2ba9` (Feb 13). Build instructions: `./build-tools/build.sh -o ./build-fresh --build-type Release --apply-patches`, ~5 min on A3. Backup at `/usr/local/Ascend/cann-8.5.1/tools/bishengir/bin/bishengir-compile.cann_orig`. Fresh compiler is **regression-free** (P1.3 still PASS with identical output) and gives **dramatically better error diagnostics** than the deployed binary.
+* **KB R-KA-9/10/11/12 added** (§12.3) — 4 prevention rules that will save days on future bwd ports.
 
-We can revisit the bwd NPU kernels as a perf optimization later. Recommended P1 status: **partial close** (2/4 fwd PASS, 2/4 bwd will use autograd fallback) and move to P2.
+### Pragmatic next steps
+
+P1.6 lighting_indexer_bwd is the most-complete bwd port; it's the one to start from when generalizing to autograd-wrapper integration. P1.4 sparse_mla_bwd needs the same per-stage diagnostic treatment that fixed P1.6's dQ (autograd ref compare + bisect each gemm stage).
+
+Once both bwd dQ paths are correct, we ship the production code back into miles wrappers (`miles_plugins/models/deepseek_v4/ops/kernel/`) and proceed to P2 MindSpeed integration.
 
 下一步 (next agent 第一件事)：rsync `example_lighting_indexer_fwd_kernel.py` 到 A3 + compile + run smoke。看是否第一次通过。
 
