@@ -939,3 +939,134 @@ checking.
 Both backends use this for GM→UB DMA. Backend handles the actual DMA
 emission (PTO via `copy_gm_to_ub` template, MLIR via dialect lowering).
 On PTO this is where #996 lives; on MLIR it's safe.
+
+---
+
+## 11. Bug-class taxonomy (T32.14+15 mined patterns)
+
+Each row = a distilled "if you see X, look at Y" diagnostic shortcut.
+Save next session 5-10 hours of bisecting.
+
+### 11.1 MLIR dynamic-shape verifier reject family
+
+| Symptom | Bug pattern | Likely site |
+|---------|-------------|-------------|
+| `'tensor.empty' op incorrect number of dynamic sizes, has 0, expected N` | codegen used `EmptyOp::build(loc, shape, type)` overload when shape has `kDynamic` slots | grep `tensor::EmptyOp::build` in `codegen_npuir*.cc` — pass `dynamicSizes` collected via `tensor::DimOp(src,i)` for tensors or `memref::DimOp` for memref-typed src |
+| `'tensor.dim' op operand must be tensor, got memref` | wrong DimOp type for src | `tensor::DimOp` for `TensorType`, `memref::DimOp` for `MemRefType` — type-dispatch required |
+| `'tensor.collapse_shape' op expected dim N of collapsed type to be dynamic since one or more of the expanded dims is dynamic` | result `RankedTensorType` built from all-static `dstShapeStatic` even though src has dynamic dims | recompute output shape: for each result dim's reassociation group, if any input dim is `kDynamic` → mark output dim `kDynamic`. See `ReshapeTensorImpl` patch v5 |
+| `'tensor.collapse_shape' op expected dim N of collapsed type to be static value of K` | inverse — output type dynamic when verifier wants static | check if the reassociation group's input dims are actually fully static and adjust |
+| `tensor.insert_slice` rank/size mismatch after fix above | downstream consumer of collapse_shape uses literal-static `static_sizes` array | the fix at collapse_shape may need to propagate to insert_slice — check both at once |
+
+**Triage shortcut**: if any kernel uses `T.symbolic("X")` OR `T.Pipelined`
+loop-carried memref AND fails with MLIR verifier error containing
+"tensor.empty" or "collapse_shape" or "tensor.dim" — go directly to the
+patches in §10.3 (v1-v5).
+
+### 11.2 Scalar-load vs vector-load classification (T32.14 v6+F1+v9)
+
+| Symptom | Bug pattern | Likely site |
+|---------|-------------|-------------|
+| IR shows `vmul(memref<full_buffer>, scalar, tensor<full_buffer>)` instead of scalar arith | `is_scalar_load=true` AND `arg_id==0` path returns whole buffer via `GetVarValue(region_node)` (asymmetric with arg_id==1's correct `VisitExpr_(buffer_node)`) | `codegen_npuir_dev.cc::processImm` — fix both branches to use `VisitExpr_(buffer_node)` when is_scalar_load |
+| Subsequent `cast<TensorType>` assertion in vmul codegen | post-fix above, src is now scalar f32 not tensor — downstream `srcTensorTy = src0.getType().cast<mlir::TensorType>()` asserts | wrap entry of `CreateHIVMBinaryVectorOp` with scalar-scalar fast path: emit `arith.{mulf,addf,...}` + `tensor.insert`/`memref.store` and return |
+| Test outputs FULL buffer values even though kernel claims to write only 1 element per iter | loop-invariant BufferLoad got broadcast-to-tmp-buffer instead of staying as PrimExpr scalar | `npu_loop_vectorize.cc::HandleBinaryExpression` — add `loop_invariant_BufferLoad` to the "keep as PrimExpr" branch (alongside IntImm/FloatImm/VarNode) |
+
+**Triage shortcut**: if test fails on a kernel with `T.Parallel(N)` body
+doing `scalar_buf[i] = vector_buf[i, k] * loop_invariant_scalar_load`,
+look at §10.3.5 — the 3-patch combo (F1.1 + F1.2 + v6 + v9) is the
+fix family.
+
+### 11.3 Cast op rounding-mode mismatches
+
+| Symptom | Bug pattern | Likely site |
+|---------|-------------|-------------|
+| `assert torch.all(y == y_ref)` fails on quantized int8/uint8 output, **values visually identical to several decimal places** | NPU `T.vcast(..., round_mode="round")` uses tie-away-from-zero; torch.round uses tie-to-even (banker's). At exactly 0.5 values they disagree → int8 differs by 1 | kernel source: change `round_mode="round"` → `round_mode="rint"`. Available modes: RINT (tie-to-even, torch default), ROUND (tie-away-from-zero, C `round`), FLOOR, CEIL, TRUNC, ODD |
+| `assert_close(rtol=1e-2, atol=1e-2)` fails on N/M ratio < 0.001% (1 in 10k or rarer) with diff in 0.01-0.02 range on small-magnitude values | fp16 cross-implementation ULP noise — NPU's intermediate fp32-store-to-fp16-workspace path vs torch's fp16 matmul path round differently at small accumulated values. Both valid, neither wrong | this is NOT a kernel bug. Bump tolerance to fp16-realistic level (rtol=3e-2 atol=2e-2). Confirm by inspecting bit-patterns — should differ in 2-3 mantissa LSBs |
+
+**Triage shortcut**: any failure containing "Mismatched elements: K / TOTAL (0.0%)" — read the 5-10 mismatched element values:
+- If integer/quantized output and **bit-exact mismatch** → §11.3.1 round_mode
+- If float output and **diff ≈ ULP at small magnitude** → §11.3.2 cross-impl noise, bump tolerance
+
+### 11.4 Host-side allocation shape errors
+
+| Symptom | Bug pattern | Likely site |
+|---------|-------------|-------------|
+| `shape mismatch: torch.Size([N, 1]) != torch.Size([M, 1])` between kernel output and reference | host-side `x.new_empty(N, 1, ...)` uses wrong dim name. Bug latent when M==N | grep kernel host functions for `x.new_empty(<dim>, ...)` and verify dim matches semantic axis. Reference impl is the source of truth for shape |
+
+**Triage shortcut**: shape mismatches between kernel and ref are almost
+always host-side allocation typos. Compare `x.new_empty(...)` /
+`torch.empty(...)` shapes in kernel's wrapper function vs the same
+dims in the reference. Run with M ≠ N test shape to expose latent bugs.
+
+---
+
+## 12. Preventive rules / lint patterns
+
+Rules to apply BEFORE adding new code or accepting new kernels. Each
+captures a bug class we already burned hours debugging.
+
+### 12.1 Codegen-side rules (tilelang-mlir-ascend contributors)
+
+| Rule | Why | Enforce |
+|------|-----|---------|
+| **R-CG-1: when calling `tensor::EmptyOp::build(loc, shape, ...)`, if any `shape[i]` could be `kDynamic`, MUST pass `dynamicSizes` operand** | §10.3 chain of bugs all stemmed from missing dynamic-size operands at multiple call sites | lint script: grep `EmptyOp>(` in `codegen_npuir*.cc`, flag any without 4-arg overload; manual review of sites that pass a `shape` derived from `op->extents` |
+| **R-CG-2: when calling `tensor::DimOp` / `memref::DimOp`, MUST type-dispatch on `src.getType().isa<TensorType>()` vs `isa<MemRefType>()`** | tensor::DimOp rejects memref operand; reverse also true | helper function `emitDimOp(builder, src, i)` that dispatches and asserts on unsupported types |
+| **R-CG-3: when codegen produces a `tensor::CollapseShapeOp` / `ExpandShapeOp` result type from a source with dynamic dims, the result type MUST honor those dynamic propagations through the reassociation map** | §10.3.5 stack 2 was the verifier catching static-result-from-dynamic-input | helper: `computeReassocAwareResultType(srcType, reassoc, targetRank)` |
+| **R-CG-4: when `processImm` (or any BinaryOp lowering) detects `is_scalar_load=true`, BOTH operand branches MUST extract the scalar (`VisitExpr_(buffer_node)`) — never return the buffer as a whole tensor** | §10.3.5 final root cause: arg_id==0 returned whole buffer asymmetrically | code review: if you see `if (arg_id == 0)` ... `else` asymmetry in operand-handling code, that's suspicious — make both branches do the same scalar/tensor decision |
+| **R-CG-5: any `vmul/vadd/vsub/...` codegen that uses `srcTensorTy = src.getType().cast<TensorType>()` MUST first check if src is actually a tensor or could be a scalar/memref; provide a scalar-arith fallback path** | §10.3.5 v9 fix — when both srcs are scalars (post-F1+v6), emit arith.mulf + insert instead of vmul | helper: `tryEmitScalarBinary(op, src0, src1, ...)` returning success/fallback |
+
+### 12.2 Loop-vectorize-side rules (npu_loop_vectorize.cc contributors)
+
+| Rule | Why | Enforce |
+|------|-----|---------|
+| **R-LV-1: when broadcasting a loop-invariant operand into a tmp buffer for binop vectorization, the tmp buffer shape MUST come from the LOOP iteration extent, not the buffer's full shape** | `CreateTempBuffer` blindly used `ref_buf->shape` (full 128x2) — over-allocated | rewrite `CreateTempBuffer` to take an explicit shape param derived from `output_ref` (the per-iter access shape) |
+| **R-LV-2: `IsScalar(expr)` test should accept loop-invariant BufferLoad (when explicitly checked against `loop_vars`)** | runtime scalar BufferLoads should route through "keep as PrimExpr" not "broadcast to tmp buffer" — see F1.1 | new helper `IsLoopInvariantScalarLikeExpr(expr, loop_vars)` already exists at line 678; expand usage to BufferLoad case |
+
+### 12.3 Kernel-author-side rules (people writing `examples/*.py`)
+
+| Rule | Why | Enforce |
+|------|-----|---------|
+| **R-KA-1: use `round_mode="rint"` (tie-to-even) for any `T.vcast` whose output is checked against `torch.round` reference** | T32.15: act_quant used `round_mode="round"` — silent 1-bit diff at .5 values | lint: `grep round_mode= examples/` — flag any `round_mode="round"` for review |
+| **R-KA-2: host-side `x.new_empty(...)` MUST use shape axes that match the kernel's intended output rank/shape; test with M ≠ N to catch typos** | T32.15: act_quant `s = x.new_empty(N, 1)` was wrong (should be M); only caught at M=64/N=32 | review checklist: when allocating kernel output buffers host-side, write the shape using semantic axis names (`x.size(0)` not `M`/`N` constants) |
+| **R-KA-3: `assert_close(rtol/atol)` tolerance choice should match the kernel's intermediate precision floor; for kernels with fp16 intermediate stores, use atol/rtol >= 2e-2** | T32.15: fp8_lighting_indexer used 1e-2 — too tight for fp16 intermediate | review: when kernel has any `T.alloc_*([...], "float16")` storing intermediate, test atol >= 2e-2 unless empirically verified |
+| **R-KA-4: `assert torch.all(y == y_ref)` (strict ==) MUST only be used when the output dtype is exact (integer or known-deterministic float). For quantized int outputs, ALSO verify the round_mode in kernel matches torch.round** | T32.15: act_quant used strict == correctly (int8 output IS exact), but the rounding-mode bug made values 1-off | code review pattern: if you see `torch.all(y == y_ref)` followed by int output, immediately check `round_mode` in kernel |
+
+### 12.4 Test-design rules (test author / reviewer)
+
+| Rule | Why | Enforce |
+|------|-----|---------|
+| **R-TS-1: test with M ≠ N shapes (and other non-square axes) at least once per kernel** | T32.15 act_quant's `s = x.new_empty(N, 1)` typo was latent at M==N | test fixture: include one shape with `M ≠ N` per kernel test (e.g. M=64 N=32 in addition to M=N=64) |
+| **R-TS-2: kernel outputs that go through fp32→fp16→fp32 round-trip MUST be tested at atol >= 2x the fp16 ULP at the max output magnitude expected** | T32.15 fp8_lighting_indexer — 1e-2 too tight | math: fp16 ULP at magnitude V is roughly V/1024; for kernels with max output magnitude ~40, ULP is ~0.04, so atol ≥ 0.04 is reasonable, atol = 0.01 is too tight |
+
+---
+
+## 13. KB-as-runbook: future debugging workflow
+
+When a new tilelang-mlir-ascend op fails:
+
+1. **Sweep §8.1**: is the op already verified PASS? If yes, did something
+   regress? Run regression suite from `regression_v9_wide.sh`.
+2. **Classify the error signature** against §11 taxonomy:
+   - MLIR verifier error → §11.1 (dynamic-shape) or §11.2 (scalar-vector classification)
+   - Numerical assert mismatch → §11.3 (rounding/precision) or §11.4 (shape)
+3. **Match a Bug pattern row → jump to the §10.3 patch script** to verify
+   the fix applies cleanly (most are idempotent — checking marker present).
+4. If symptom doesn't match any §11 row → **add a new row before fixing**
+   (KB-first discipline). Run the bug fix, then update §11 row and §10.X
+   with the new pattern.
+5. **Always run regression_v9_wide.sh** after applying any fix.
+6. **Always commit + push** before moving to next op (don't lose work
+   to ssh drops or container deaths).
+
+### 13.1 Checklist for "fix" claims
+
+Before claiming an op is fixed:
+- [ ] Run the specific op — PASS observed
+- [ ] Run `regression_v9_wide.sh` — no previously-passing op breaks
+- [ ] Patch script added to workspace (so it's reproducible)
+- [ ] §8.1 table updated with row showing PASS + cite the patch script
+- [ ] §11 taxonomy updated if new bug pattern discovered
+- [ ] §12 preventive rules updated if a new "should-never-recur" rule applies
+- [ ] git commit + push (off-site backup)
+- [ ] Discord milestone update with concrete results, not summary slogans
+
+If any of the above is unchecked, the fix is not done.
