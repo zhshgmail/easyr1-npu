@@ -23,7 +23,16 @@ T33 目标：把 miles (radixark/miles, fork from THUDM/slime) 用的 4 个 tile
 | sparse_mla_fwd | ✅ DONE — 5e-4 err vs CPU fp32 ref, commit `6e6e30b` on fork branch `t33-sparse-mla-fwd-port-and-tdynamic` |
 | sparse_mla_bwd | ⚠️ COMPILE_OK but 数值 WIP — 3 sub-kernel 都 compile+run，但 dQ 全零（task #250），topk=16 触发 bisheng 资源限 (task #251)。Commit `2171b7e` |
 | **lighting_indexer_fwd** | ✅ **DONE — max abs err 0.000000** vs CPU fp32 ref @ SEQ=8, SKV=16, H=8, D=32. Commit `9972194` on same branch. Discovered R-KA-7 (no per-scalar GM stores) + R-KA-8 (explicit slice ranges) the hard way. |
-| **lighting_indexer_bwd** | ⏳ **scaffold WIP** — 244 lines in `examples/deepseek_v4/example_lighting_indexer_bwd_kernel.py`, fails MLIR verifier with "expected `tensor<8x32xf32>` or rank-reduced version (size mismatch)". Suspect culprits: `T.alloc_shared` inside inner loop (need to hoist), a dangling broken `T.copy(gated, k_shared)`. Commit `bdedefd` on same branch. |
+| **lighting_indexer_bwd** | ⚠️ **MLIR codegen passes, bisheng resource fail** — 240 lines, MLIR verifier accepts the generated hivm.hir IR after hoisting allocs + removing dangling `T.copy(gated, k_shared)`; bisheng compile fails with AICore resource budget overflow (same class as P1.4 task #251 at topk=16). New task #252 tracks this. Commit `c081aaa`. |
+
+### Pragmatic plan for P1 → P2 transition
+
+Two bwd kernels (sparse_mla + indexer) hit the **same bisheng AICore-resource bottleneck**. Fixing it is open-ended (1-2 days of GEMM-splitting / fragment-budget analysis). Alternative: **PyTorch autograd fallback** — miles' wrappers (`indexer.py` / `sparse_mla.py`) already use `torch.autograd.Function`; replace the `backward()` with pure-torch ops. Slower (20-50x for these kernels) but numerically correct, and unblocks the rest of the stack:
+- P2 MindSpeed DSv4 pretrain smoke
+- P3 sglang-miles rollout
+- P4 miles GRPO 1-iter
+
+We can revisit the bwd NPU kernels as a perf optimization later. Recommended P1 status: **partial close** (2/4 fwd PASS, 2/4 bwd will use autograd fallback) and move to P2.
 
 下一步 (next agent 第一件事)：rsync `example_lighting_indexer_fwd_kernel.py` 到 A3 + compile + run smoke。看是否第一次通过。
 
