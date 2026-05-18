@@ -659,11 +659,220 @@ fix should cover all 3 sites.
 - ❌ collapse_shape codegen not yet fixed — needs another iteration
 - ❌ unknown: how many more codegen sites would surface with deeper iteration
 
-**Decision**: stop fix loop after v4. The full chain-fix is ~5-10
-iterations of progressively deeper codegen audit; better invested as a
-single upstream issue with the minimal repro + the patch sequence we
-have so far. Mark as **partial fix shipped to KB, full fix deferred to
-upstream collaboration**.
+**Initial decision** (after v4): defer to upstream — but user direction
+2026-05-18 04:38 was to keep digging. v5+ rounds below.
+
+### 10.3.2 Continuing the chain (rounds v5-v7, 2026-05-18 04:30+)
+
+**v5** — `tensor.collapse_shape` static result from dynamic input. Patched
+`ReshapeTensorImpl` srcRank > dstRank branch to build `adjustedDstShape`
+that propagates source dynamic dims into corresponding dst groups.
+Rebuilt OK; fp8_gemm hits next stack (`insert_slice` static size
+mismatches new dynamic collapse output).
+
+**Insight after v5** — hardcoded `M = 128` (no symbolic) in fp8_gemm
+kernel and re-ran: **STILL fails with same family of bug**:
+
+```mlir
+%75 = tensor.empty() : tensor<128x2xf32>     ; FULL scales_a buffer shape
+%76 = vmul(memref<128x2xf32>, f32, %75)     ; whole buffer × scalar
+%77 = collapse_shape(%76) ... -> tensor<1xf32>  ; collapse 256→1: nonsense
+```
+
+**This is NOT a symbolic-shape bug. It's a deeper codegen issue**:
+`Scale_C_shared[i] = scales_a[by*32+i, k] * scale_b` should be a
+**scalar load + scalar mul + scalar store**, but the codegen emits a
+**full-tensor vmul + collapse_shape to 1 element**.
+
+**Root cause located** (T32.14 v6 dig):
+
+In `CreateHIVMBinaryVectorOp::processImm` (line ~2742), the
+`is_scalar_load` check correctly identifies that ALL region dims are
+size 1 (i.e. it's a per-element access inside a vectorized loop).
+BUT the `arg_id == 0` branch returns the **whole buffer** value:
+
+```cpp
+if (is_scalar_load) {
+  if (arg_id == 0) {
+    src = GetVarValue(region_node);  // ← returns WHOLE buffer
+    ...
+  } else {
+    src = VisitExpr_(buffer_node);  // ← correctly extracts scalar
+  }
+}
+```
+
+`GetVarValue(CallNode*)` returns the buffer's underlying MLIR value —
+the whole memref/tensor. Downstream vmul treats this as a tensor input.
+
+**v6 attempted fix** — make `arg_id == 0` also use `VisitExpr_(buffer_node)`
+so it extracts a scalar. Result: scalar makes it to vmul, but
+**downstream code paths assume tensor-typed src**:
+
+```cpp
+auto srcTensorTy = src0.getType().cast<mlir::TensorType>();  // ← asserts
+```
+
+So v6 reverted. The actual fix requires either:
+
+1. **Restructure CreateHIVMBinaryVectorOp** to detect "all operands are
+   scalar" and emit `arith.mulf` / `memref.store` instead of vmul. This
+   is ~50-100 lines of new codegen + threading through the vectorize
+   pass. ~3-5h work.
+
+2. **Fix the npu_loop_vectorize pass** to NOT vectorize a scalar*scalar
+   multiply when one operand is loop-invariant scalar — let it stay as
+   per-iteration arith.mulf. Smaller fix in `HandleBinaryExpression`
+   but requires understanding the resolve_a/resolve_b classification.
+
+3. **Keep is_scalar_load==true behavior but also wrap GM scalar
+   loads in `memref.load` to extract**: more conservative, but the
+   downstream srcTensorTy.cast fails — would need to add per-type
+   handling everywhere.
+
+**Why same-pattern ops PASS** (e.g. `rms_norm`'s `A_shared[i, j] *=
+A_pow_sum[i, 0]`): the second operand `A_pow_sum[i, 0]` is a
+**fragment-local tensor** (UB-allocated), not a GM memref. The
+`GetVarValue` returns a tensor type which the downstream cast accepts.
+fp8_gemm's `scale_b = scales_b[bx * block_N // group_size, k]` is a
+direct GM load — different value-type path.
+
+### 10.3.3 What "继续深挖" honestly means at this point
+
+We've spent 7 patch iterations and ~3 hours on this single bug chain.
+What's been verified:
+- bug is **NOT fp8 dtype** (A3 has limited fp8 support but this kernel
+  uses fp16 carriers internally — confirmed §9b probe)
+- bug is **NOT symbolic shape** (hardcoded M=128 reproduces same chain)
+- bug is **NOT MLIR verifier strictness** (v1-v5 progressively satisfied
+  the verifier; deeper bugs remain)
+- bug **IS** in tilelang-mlir-ascend `processImm` asymmetric scalar/
+  tensor handling when one vmul operand is a GM scalar load
+
+Honest status: **fix requires ~3-5h of codegen restructure**, larger
+than incremental patching. The 7 patches are partial repairs that make
+the IR pass verifier but don't address the underlying scalar-vs-vector
+classification flaw.
+
+**Recommended next action**: rather than keep iterating on fp8_gemm
+alone, pivot to:
+- Continue verifying more ops to expand failure-pattern data (DS v32
+  patterns, deepseek_v4 remainder, torch_tl_ops)
+- Probe Cast round_mode hypothesis (§10.1, §10.2)
+- Build the actual restructure of CreateHIVMBinaryVectorOp in a future
+  session with focused budget
+
+User direction needed if multi-hour codegen restructure is in scope.
+
+### 10.3.4 Precise root cause located (T32.14 v7+ dig, 2026-05-18 04:50)
+
+The bug is **at `npu_loop_vectorize.cc::HandleBinaryExpression`**, not at
+codegen layer. Walkthrough:
+
+For `scales_a[by*32+i, k] * scale_b` inside `for i in T.Parallel(block_M)`:
+
+1. `ResolveOperand(scales_a[by*32+i, k])` → returns BufferLoad
+   (operand[0] has loop var i, resolves successfully) → `resolved_a`
+2. `ResolveOperand(scale_b)` where scale_b = `scales_b[bx//1, k]` (loop-
+   invariant BufferLoad) → returns **`std::nullopt`** at line 678
+   (`IsLoopInvariantScalarLike` returns true)
+3. Hit the `if (!resolved_b)` branch:
+   ```cpp
+   if (IsScalar(operands[1]) || operands[1].as<VarNode>()) {
+     region_b = operands[1];  // ← would be CORRECT for runtime scalar
+   } else {
+     // BufferLoad: broadcast to tmp buffer (line 845)
+     auto scalar_buf = CreateTempBuffer(ref, binary_op_name);
+     stmts->push_back(BuildNpuirCall("Broadcast", {operands[1], ...}));
+     region_b = BuildRegionCall(scalar_buf, 1, 1);
+   }
+   ```
+4. `IsScalar()` only matches IntImm/FloatImm — runtime BufferLoads don't.
+   `as<VarNode>()` doesn't match either (it's a BufferLoad).
+5. **So the broadcast path runs**: `CreateTempBuffer(ref, "Mul")` creates
+   a tmp buffer whose shape is `ref_buf->shape` (line 354) — the FULL
+   `scales_a` buffer shape `(128, 2)` — not the loop iteration shape.
+6. Codegen later emits `vmul(arg18: memref<128x2>, scalar_buf, dst)`
+   where dst is also shape `(128, 2)`. The downstream collapse to
+   1-element produces the verifier-rejecting IR.
+
+**The fix has 3 candidate sites, in order of preference**:
+
+**Option F1** (smallest, ~5 lines): in `HandleBinaryExpression` line ~840
+(`!resolved_b` branch), check if `operands[1]` is a **loop-invariant
+BufferLoad**. If yes, **lift it into a `let`-Var** (or use TVM's
+`Substitute` to inline as a runtime-scalar). Then re-enter the path
+where `region_b = operands[1]` correctly carries the runtime scalar
+through to vmul codegen's `tir::VarNode` arm.
+
+**Option F2** (medium): change `CreateTempBuffer` to use **access-derived
+shape** (size 1 per dim — the per-iter access shape) instead of
+`ref_buf->shape`. Trace the broadcast emission to make sure
+`BuildNpuirCall("Broadcast", ...)` can handle 1×1 tmp buffers.
+
+**Option F3** (largest, deep): change codegen `CreateHIVMBinaryVectorOp`
+to support memref-typed src input by emitting `memref.load` to extract
+scalar before vmul. This is what v6 attempted; downstream cast<TensorType>
+needs follow-up changes.
+
+**Path forward**: implementing F1 is the cleanest. Need to introduce a
+small TIR pass (or augment `npu_loop_vectorize`) that wraps loop-
+invariant BufferLoad operands in a Let-binding. Estimated effort
+~30-60min. Worth one more iteration.
+
+**Regression status** after v6 revert:
+- vec_add_1d, rms_norm, flash_attn, matmul → all PASS (regression-tested)
+- v1-v5 patches still applied (EmptyOp + Dim type-dispatch + collapse_shape)
+- These improvements survive — they're not blocking other ops
+
+### 10.3.5 BREAKTHROUGH — fp8_gemm fully PASSES (T32.14 v9, 2026-05-18 05:05)
+
+After 9 iterations, fp8_gemm finally compiles + runs + matches reference.
+
+**Final fix stack** (4 logical changes spread across 9 patch iterations):
+
+| Patch | File | What it does |
+|-------|------|-----|
+| v1 | `codegen_npuir_dev.cc` line 3771,3783 (AllocateNode) | Add dynamicSizes to tensor.empty when shape is symbolic |
+| v2-v4 | `codegen_npuir_dev.cc::NeedGenInsertSlice` | Same fix at line 2131 with type-dispatch tensor::DimOp vs memref::DimOp |
+| v5 | `codegen_npuir_dev.cc::ReshapeTensorImpl` srcRank>dstRank | Propagate dynamic dims into collapsed output type |
+| **F1 step 1** | `npu_loop_vectorize.cc::HandleBinaryExpression` line 840 | Treat loop-invariant BufferLoad as Scalar (don't broadcast-to-full-buffer) |
+| **F1 step 2** | `codegen_npuir_dev.cc::processImm` Scalar branch | Add `op->args[arg_id].as<BufferLoadNode>()` to Scalar acceptance |
+| **v6 (re-applied)** | `codegen_npuir_dev.cc::processImm` Vector/scalar_load arg_id==0 | Use `VisitExpr_(buffer_node)` instead of `GetVarValue(region_node)` for both arg_id |
+| **v9** | `codegen_npuir_dev.cc::CreateHIVMBinaryVectorOp` entry | When both srcs are scalar (post v6+F1), emit `arith.mulf/addf/subf/divf` + `tensor.insert`/`memref.store` instead of vmul |
+
+**Why all 4 needed**:
+- v1-v5: defense-in-depth for emerging dynamic-shape codegen issues (orthogonal partial fixes)
+- F1+v6: routes runtime scalar BufferLoads through Scalar path, avoiding the full-buffer broadcast
+- v9: gives the codegen a path to handle the scalar-scalar case downstream (without v9, src0/src1 would be f32 scalars but the rest of vmul codegen casts to TensorType and asserts)
+
+**Verification matrix on v9**:
+- `examples/deepseek_v4/example_fp8_gemm_kernel.py`: PASS (m=128/n=256/k=256 fp16 + bf16) — **the previously failing kernel!**
+- Regression suite (10 previously-passing ops): all still PASS
+  - vec_add_1d, vec_add_2d, atomic_add, exp2, log2, gemm, gemv,
+    rms_norm, layer_norm, flash_attn, sparse_mla_fwd, sparse_attn,
+    matmul, engram_fwd — none broken
+- act_quant: still FAIL (strict-`==` rounding, unrelated §10.2)
+- fp8_lighting_indexer: still FAIL (5/16M tolerance, unrelated §10.1)
+
+**Conclusion**: 9 patch iterations, 4 distinct code locations, ~3-4
+hours of work. fp8_gemm bug class fully fixed; the 2 remaining failures
+(precision rounding) are a different bug class requiring HW probe of
+Cast op round_mode (§9b).
+
+**Patches recorded in workspace**:
+- `apply_emptyop_fix.py` (v1)
+- `apply_emptyop_fix_v2.py` (v2)
+- `apply_emptyop_fix_v3.py` (v3)
+- `apply_emptyop_fix_v4.py` (v4)
+- `apply_collapse_shape_fix.py` (v5)
+- `apply_scalar_load_fix.py` (v6)
+- `apply_F1_loop_invariant_scalar.py` (F1)
+- `apply_scalar_binary_dispatch.py` (v9)
+- `revert_scalar_load_fix.py` (intermediate)
+
+Apply order: v1 → v2 → v3 → v4 → v5 → F1 → v6 → v9 (the last 3 are the
+actual bug fix; v1-v5 patches up surrounding dynamic-shape issues).
 
 ### 10.4 Pattern catalog (extracted from confirmed-working examples)
 
