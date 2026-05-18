@@ -1,0 +1,21 @@
+--- a/src/tl_templates/ascend/common.h
++++ b/src/tl_templates/ascend/common.h
+@@ -191,6 +191,17 @@ template <typename T, uint32_t dstN, uint32_t dstM = 1>
+ CATLASS_DEVICE void
+ copy_gm_to_ub(LocalTensor<T> dstTensor, GlobalTensor<T> srcTensor,
+               uint32_t realSrcN = 1, uint32_t maskShapeM = dstM,
+               uint32_t maskShapeN = dstN, T padValue = T(0)) {
++  // Issue #996 guard: DataCopyPad requires each row to be >= 32 bytes when
++  // dstM > 1 (multi-row 2-D copy). At dstN * sizeof(T) < 32, the DMA reads
++  // past the intended source row into adjacent memory, producing wrong
++  // values (~half wrong for small fp32 blocks). Catch this at compile time
++  // so callers get a clear error instead of silent-wrong-output.
++  static_assert(dstM == 1 || dstN * sizeof(T) >= 32,
++      "tilelang-ascend issue #996: 2-D GM->UB copy requires "
++      "dstN * sizeof(T) >= 32 bytes per row (DMA alignment). "
++      "Reshape your kernel to 1-D layout (T.alloc_ub((N,), ...) with "
++      "M*N flattened) or increase block_N so per-row bytes >= 32. "
++      "Example: fp32 needs dstN >= 8, fp16 needs dstN >= 16.");
+
+   bool isPad = true;
+   uint32_t rightPadding = 1;

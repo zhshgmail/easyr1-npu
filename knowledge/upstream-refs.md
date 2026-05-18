@@ -79,6 +79,47 @@ When porting EasyR1 or extending the harness:
 - Bug reports / features on master may already be fixed on the release branch, or vice versa.
 - Memory: always note which ref a finding was made against, so later readers can re-verify.
 
+## tilelang Ascend upstreams (added 2026-05-17, T32; updated 2026-05-18 post cold-drive)
+
+Not paired to a verl-A3 image; tracked as standalone NPU op-development
+tooling. **MLIR backend is replacing PTO, not coexisting**: the
+`tilelang-mlir-ascend` Python frontend dispatches only to `npuir` target
+(`tilelang/engine/lower.py::device_codegen`); the legacy `codegen_ascend.cc`
+(PTO) code is compiled in but unreachable from Python. The release wheel
+v0.1.1.010 on PyPI/Github is the **last PTO-path release** — users hitting
+bugs on that wheel are on a sunsetting code path. See
+`workspace/T32_tilelang_rescue/ARCHITECTURE_EXPLAINED.md` for full picture.
+
+**T32 cold-drive verified** (2026-05-18):
+- PTO path (`tilelang-ascend@ascendc_pto`, wheel 0.1.1.10): #996 reproduces
+  (49.7% wrong output at M=N=32, block_M=block_N=4 fp32). Compile-time
+  guard `static_assert` added in our patched build successfully catches the
+  bug at compile time. See `workspace/T32_tilelang_rescue/OPTION_A_RESULT.md`.
+- MLIR path (`tilelang-mlir-ascend` + bishengir 19.1.7 built from
+  AscendNPU-IR source): **#996 does NOT reproduce** across 4 small-shape
+  configurations (fp16 with per-row=4-8 B, deeper sub-alignment than the
+  failing fp32 PTO case). MLIR codegen / AscendNPU-IR dialect handles
+  sub-32B blocks correctly. **No PR needed on MLIR side for this bug.**
+
+| Repo | URL | What it is | Local clone |
+|------|-----|------------|-------------|
+| `tile-ai/tilelang-ascend` | github.com/tile-ai/tilelang-ascend | Historical / current-release tilelang on Ascend. **`ascendc_pto` branch** = string-codegen → ccec (released as wheel v0.1.1.010 cann900). **`npuir` branch** = MLIR backend (intermediate version of tilelang-mlir-ascend). | A3: `/home/z00637938/workspace/tilelang-ascend` HEAD `b925cbe` (ascendc_pto) |
+| `tile-ai/tilelang-mlir-ascend` | github.com/tile-ai/tilelang-mlir-ascend | **MLIR-mainline tilelang on Ascend**. Future release source. Still ships `codegen_ascend.cc` (PTO) but Python `lower.py::device_codegen` no longer dispatches to it — PTO is dead code awaiting cleanup. | Dev box: `/home/z00637938/workspace/tilelang-mlir-ascend` (rsync'd to A3 same path) |
+| `Ascend/AscendNPU-IR` | gitcode.com/Ascend/ascendnpu-ir | Huawei's MLIR dialect + `bishengir-compile` binary. tilelang-mlir-ascend's actual backend compiler. Built from LLVM 19 + clang. | submodule under tilelang-mlir-ascend at `3rdparty/AscendNPU-IR` |
+
+**Why this matters for porting work**:
+- A bug user reports on the released wheel (v0.1.1.010) is on PTO path.
+  Fix candidates: `tl_templates/ascend/common.h` template, or TIR pass
+  in ascendc_pto's `src/transform/`.
+- A bug a user will see in 6 months will be on MLIR path. Fix candidates:
+  TIR pass in tilelang-mlir-ascend's `src/transform/` (~70% shared with
+  PTO), or `codegen_npuir.cc`, or AscendNPU-IR dialect / bishengir lowering.
+- Don't waste effort on complex changes in `ascendc_pto` — those will be
+  removed. Simple guards (static_assert, etc.) are OK to ship as PRs.
+
+**Sync cadence**: same as a5_ops — explicit `git pull` only. Pinned by
+commit. No auto-pull.
+
 ## Update policy
 
 - Bump this doc each time we change the target image or a new image revision ships.

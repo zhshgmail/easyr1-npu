@@ -1,0 +1,79 @@
+From: T32 cold-drive auto-discovery
+Subject: [tilelang-mlir-ascend] Fix tensor.empty codegen for symbolic-shape allocs
+
+When a kernel uses `T.symbolic("M")` and then allocates a fragment whose
+shape contains the symbolic, the codegen at `VisitStmt_(AllocateNode)`
+calls `tensor::EmptyOp::build(loc, shape, elementType)` — but this
+overload does NOT take dynamic-size operands. The resulting MLIR
+verifier rejects the module with:
+
+    error: 'tensor.empty' op incorrect number of dynamic sizes,
+    has 0, expected 1
+
+Reproducer: `examples/deepseek_v4/example_fp8_gemm_kernel.py` (uses
+`M = T.symbolic("M")` then `T.alloc_fragment((M, ceildiv(K, group_size)),
+...)`).
+
+Fix: when any dimension of `op->extents` is non-constant, gather the
+SSA values (via `MakeValue(extent)`) and pass them as `dynamicSizes` to
+the correct `EmptyOp::build` overload.
+
+--- a/src/target/codegen_npuir_dev.cc
++++ b/src/target/codegen_npuir_dev.cc
+@@ -3760,6 +3760,18 @@ void CodeGenTileLangNPUIRDEV::VisitStmt_(const AllocateNode *op) {
+ /// before:
+ ///      A_VEC = T.decl_buffer((128, 256), "float16", scope="shared")
+ /// after:
+ ///      %A_VEC = tensor.empty() : tensor<128x256xf16>
++///
++/// For symbolic shapes (e.g. M = T.symbolic, A_VEC = (M, 128)), emit
++/// %A_VEC = tensor.empty(%M) : tensor<?x128xf16>
++/// — the SSA value for each dynamic dim must be passed as an operand.
+ void CodeGenTileLangNPUIRDEV::VisitStmt_(const AllocateNode *op) {
++  // Helper: collect dynamic-dim SSA values in the order they appear in
++  // op->extents. For each non-const extent, emit its MLIR value and
++  // cast/index-convert it to mlir::index type as required by EmptyOp.
++  auto collectDynamicSizes = [&](const Array<PrimExpr> &extents) {
++    llvm::SmallVector<mlir::Value, 4> sizes;
++    for (const PrimExpr &e : extents) {
++      if (!as_const_int(e)) {
++        mlir::Value v = this->MakeValue(e);
++        // EmptyOp dynamic sizes must be index type
++        if (v.getType() != builder.getIndexType()) {
++          v = builder.create<mlir::arith::IndexCastOp>(
++              builder.getUnknownLoc(), builder.getIndexType(), v);
++        }
++        sizes.push_back(v);
++      }
++    }
++    return sizes;
++  };
++
+   ICHECK(!is_zero(op->condition));
+   std::string scope = GetPtrStorageScope(op->buffer_var);
+   std::map<std::string, NPU_CORETYPE> scope_coretype_map{
+@@ -3768,15 +3780,19 @@ void CodeGenTileLangNPUIRDEV::VisitStmt_(const AllocateNode *op) {
+       {"wmma.accumulator", NPU_CORETYPE::AIC}};
+   if (scope_coretype_map.count(scope) == 0) {
+     std::vector<long int> shape = GetShape(op->extents);
++    auto dynamicSizes = collectDynamicSizes(op->extents);
+
+     auto tensorEmptyOp = builder.create<mlir::tensor::EmptyOp>(
+-        builder.getUnknownLoc(), shape, DTypetoMLIRType(op->dtype));
++        builder.getUnknownLoc(), shape, DTypetoMLIRType(op->dtype),
++        dynamicSizes);
+
+     // Update var_map_ with the new variable
+     ICHECK(GetVarValue(op->buffer_var.get()) == mlir::Value{});
+     SetVarValue(op->buffer_var.get(), tensorEmptyOp.getResult());
+   } else if (scope_coretype_map[scope] == this->current_coretype) {
+     std::vector<long int> shape = GetShape(op->extents);
++    auto dynamicSizes = collectDynamicSizes(op->extents);
+
+     auto tensorEmptyOp = builder.create<mlir::tensor::EmptyOp>(
+-        builder.getUnknownLoc(), shape, DTypetoMLIRType(op->dtype));
++        builder.getUnknownLoc(), shape, DTypetoMLIRType(op->dtype),
++        dynamicSizes);
+
+     // Update var_map_ with the new variable
+     ICHECK(GetVarValue(op->buffer_var.get()) == mlir::Value{});
