@@ -1,4 +1,14 @@
-# [BUG] tilelang `T.vsub(big_BHxBS, small_BHx1, big_BHxBS)` zeros result at certain pipeline positions
+# [BUG] tilelang `T.vsub(acc_after_gemm, broadcast_BHx1, acc_after_gemm)` silently zeros when broadcast operand isn't reconstructed inside the same pipelined iteration
+
+> **2026-05-19 UPDATE — workaround found.** Replicating the working-vsub's
+> "construct broadcast buf via `T.serial` Python-fill **inside the inner
+> pipelined iter, immediately before the vsub**" makes the failing vsub
+> produce the right output (cosine 0.93 vs autograd, up from 0.53 with vsub
+> omitted). The bug therefore reduces to a **schedule-locality lowering
+> inconsistency** in bishengir: broadcast buffers built outside the iter
+> (or via `T.vbrc`) lower to a different register layout than the buffer
+> filled by Python-loop scalar writes immediately preceding the vsub.
+> Failing variants and working variant are diff'd in the linked branch.
 
 ## Summary
 

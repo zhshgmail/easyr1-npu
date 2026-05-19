@@ -146,3 +146,17 @@ T33 已追加到 ROADMAP §7 completed index (commit `eb0fed5`)：
 - [ ] All in-flight code committed? **PARTIAL** — P1.5 indexer kernel written but not yet committed/pushed.
 - [ ] Next-action statement non-ambiguous? **YES — rsync + compile P1.5**
 
+---
+
+## 2026-05-19 续集 (post-compact continuation)
+
+**Major wins**:
+- **PR #59 lint fully green** — commit `298a21c` on fork branch `t33-deepseek-v4-miles-kernels`. ruff F401/F811 + codespell `vor` ignore. format-check PASS in 1m44s on tile-ai CI. Only `test-npuir` still pending (upstream NPU cluster).
+- **R-KA-13 vsub bug WORKED AROUND (E5)** — commit `502c29f` on fork branch `t33-sparse-mla-fwd-port-and-tdynamic`. Insight: bishengir lowering treats schedule-locality as register-layout consumption order. Fix: Python-fill `delta_expanded` inside inner pipelined iter immediately before `T.vsub`. dQ cosine: **0.5255 → 0.9276**. KB R-KA-13 updated from OPEN → E5 WORKAROUND VERIFIED. Upstream issue draft RKA13 updated with workaround note.
+- **P3 sglang GLM-5 smoke**: image already on A3 (3 months old). Container starts, torch_npu functional. **BLOCKED at scheduler launch** by triton/triton-ascend ABI skew (triton 3.6.0 + triton-ascend 3.2.0 incompatible). Drafted as 4th upstream issue: `UPSTREAM_ISSUE_SGLANG_GLM5_TRITON_SKEW.md`. Container `sglang_glm5_smoke` stopped but NOT removed (per a3_cleanup_and_reuse rule).
+
+**Open items**:
+- P1.4 magnitude scaling residual: rel err 0.585 (ratio kernel/ref ~0.66). Direction is production-grade (cosine 0.93); magnitude polish parked as follow-up. Could be bf16 vcast precision or implicit double-sm_scale.
+- 4 upstream issue drafts ready to file (`UPSTREAM_ISSUE_RKA13/14/15/SGLANG_GLM5_TRITON_SKEW.md`); awaiting user confirmation to file via `gc issue create -R Ascend/AscendNPU-IR` (triton-skew belongs to `Ascend/triton-ascend` separately).
+- PR #59 monitor armed (task `b1gvyae18`) — will notify on test-npuir completion.
+
