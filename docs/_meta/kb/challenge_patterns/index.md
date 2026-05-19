@@ -51,3 +51,7 @@ the user surfaces a new challenge mode.
 ## 11 — "两个 binary 的 LLVM 一致么？" (cross-binary IR pipeline version check)
 
 - [`11-cross-binary-ir-pipeline-version-check.md`](11-cross-binary-ir-pipeline-version-check.md)
+
+## 12 — "在同一个 inner iter 里构造 broadcast buf 了么？" (tilelang vsub schedule-locality)
+
+- [`12-tilelang-vsub-schedule-locality.md`](12-tilelang-vsub-schedule-locality.md)
