@@ -40,6 +40,15 @@ status = PRECISION_FAIL_TOLERANCE
 ├── if mismatch_count / total < 0.001% AND values match to N digits
 │   → KB §11.3.2 → fp16 cross-impl ULP noise
 │   → recipe: relax atol/rtol (apply_fp8_indexer_tol_fix.py pattern)
+├── if values are systematically zero (acc-buffer never accumulated)
+│   → KB §12 R-KA-13 (E5 workaround verified) — broadcast-operand schedule-locality
+│   → recipe: find a working T.vsub elsewhere in the same kernel; check that
+│     its broadcast operand is built via Python `T.serial` scalar-fill INSIDE
+│     the same inner pipelined iter immediately before the vsub. Replicate
+│     that construction for the failing vsub. See challenge_patterns/12.
+├── if cosine ~0.5 vs autograd / kernel direction half-right
+│   → same as above (R-KA-13 family) — vsub silently no-op'd
+│   → recipe: try E5 first; only file upstream after E5 also fails
 ├── else
 │   → real arithmetic bug → bisect lowering pipeline (manual)
 
