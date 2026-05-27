@@ -44,11 +44,33 @@ The harness imports the dispatch wrappers directly (bypassing miles' GPU kernel 
 
 The dispatchers auto-pick power-of-2 block sizes that divide the runtime shapes. For non-trivial miles workloads (large topk, large seq_len_kv), block selection may need tuning — the current auto-pick is "largest power-of-2 dividing N, capped at the kernel's default cap". Adjust in `_npu/indexer.py::_largest_pow2_divisor` and `_npu/sparse_mla.py` if a real glm5 workload selects sub-optimal blocks.
 
+## End-to-end autograd smoke — ALSO PASSES (2026-05-27)
+
+Beyond the per-op contracts above, we drive miles' actual `IndexerFunction.apply()` and `SparseMLA.apply()` from one autograd graph on NPU and check a single `loss.backward()` populates gradients on every input.
+
+* Driver: `miles_plugins/models/glm5/ops/_npu/_e2e_autograd.py`
+* Shapes: miles canonical (D_V=512, D_TAIL=64, DQK=576), H_MLA=16, H_indexer=8
+* Result: ✅ PASS — all 5 input gradients finite + nonzero (`index_q` 6.4e-1, `index_k` 1.9, `weights` 3.1, `q_mla` 2.5e-5, `kv_mla` 4.6e-4)
+
+## Mini RL train-step — ALSO PASSES (2026-05-27)
+
+Smallest end-to-end training loop that exercises all 4 NPU kernels through miles' contract surfaces, with a mock GRPO-surrogate loss + Adam step.
+
+* Driver: `miles_plugins/models/glm5/ops/_npu/_e2e_train_step.py`
+* Module: `GLM5MiniBlock(hidden=128, h_idx=8, d_idx=32, h_mla=16)`, total 2.3 M params
+* One step: forward → backward → optim.step() — result: ✅ PASS
+* Loss = -0.079 (finite), grad norm = 4.93 (sensible), proj_index_q weight delta after step = 1e-3 (Adam lr at 1e-3)
+
+## Outstanding gaps to "full miles.train RL"
+
+These are the remaining barriers between the mini smoke and `python train.py ...` running on NPU:
+
+1. **sglang on NPU is broken** (triton-ascend `extract_slice` / `AttrsDescriptor` ABI mismatch, [triton-ascend#277](https://github.com/triton-lang/triton-ascend/issues/277) overlapping [#234](https://github.com/triton-lang/triton-ascend/issues/234)). Real rollout cannot run until upstream publishes a `release/3.6.x` triton-ascend wheel or the image re-pins to a working pair.
+2. **No Megatron on NPU**: miles defaults to `--training-backend megatron`. On Ascend that needs `Ascend/MindSpeed-LLM` (heavy install). The miles `--training-backend fsdp` path is reachable on NPU without MindSpeed.
+3. **No `Megatron-LM-miles` install in tlrescue**: only the local sources are present at `/home/z00637938/workspace/Megatron-LM-miles`; not pip-installed.
+
 ## What this does NOT validate (yet)
 
-* Full `glm5.GLM5Layer` forward + backward pass on NPU (one layer of the actual model). The op-level contracts match but model-level shape flow has not been driver-tested.
-* `miles.train` end-to-end (blocked by sglang on NPU being non-functional — see triton-ascend #277).
-
-Next step suggestions (in order of value):
-1. Run a single-layer GLM-5 forward + backward on NPU using the dispatch path.
-2. Once that passes, write a 1-iter optimizer-step driver that synthesizes inputs and runs the training-side math without sglang rollout.
+* Full `glm5.GLM5Layer` end-to-end (requires `megatron.core` + `transformer_engine` — CUDA-only).
+* Multi-step training convergence (only single-step weight motion is verified).
+* `miles.train` driver end-to-end (blocked by sglang + Megatron above).
