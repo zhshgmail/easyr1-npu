@@ -1,5 +1,7 @@
 # [BUG] tilelang `T.atomic_addx4` with all-zero src buffer writes 6e37 magic value instead of being a no-op
 
+> **FILED 2026-05-27**: <https://gitcode.com/Ascend/AscendNPU-IR/issues/249>
+
 ## Summary
 
 When `T.atomic_addx4(dst, src, size=[4])` is called with `src` being an all-zero buffer, the destination is updated with the magic floating-point value **60405883577979550923416661670064291840.0** (≈6.04e37) per element, instead of remaining unchanged (which would be the correct no-op behavior since adding 0 to anything should leave it unchanged).

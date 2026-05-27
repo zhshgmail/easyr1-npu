@@ -1,5 +1,7 @@
 # [BUG] sglang glm5-poc Ascend image ships incompatible triton (3.6.0) + triton-ascend (3.2.0) — torch_npu inference path unusable
 
+> **FILED 2026-05-27**: <https://github.com/triton-lang/triton-ascend/issues/277> (overlaps with #234 on root cause)
+
 ## Summary
 
 The published GLM-5 inference image

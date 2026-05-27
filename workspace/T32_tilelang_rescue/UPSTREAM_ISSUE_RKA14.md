@@ -1,5 +1,7 @@
 # [BUG] tilelang multi-block kernel with `T.atomic_addx4` scatter produces NaN at grid block 1+
 
+> **FILED 2026-05-27**: <https://gitcode.com/Ascend/AscendNPU-IR/issues/248>
+
 ## Summary
 
 When invoking a tilelang NPU kernel with `T.Kernel(N, is_npu=True)` for `N≥2` and the kernel includes an `T.atomic_addx4` scatter writing to a global tensor via an indexed lookup pattern, **only grid block 0 produces correct output. Grid blocks 1+ produce NaN values regardless of which destination indices they target.**

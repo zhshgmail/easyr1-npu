@@ -1,5 +1,7 @@
 # [BUG] tilelang `T.vsub(acc_after_gemm, broadcast_BHx1, acc_after_gemm)` silently zeros when broadcast operand isn't reconstructed inside the same pipelined iteration
 
+> **FILED 2026-05-27**: <https://gitcode.com/Ascend/AscendNPU-IR/issues/247>
+
 > **2026-05-19 UPDATE — workaround found.** Replicating the working-vsub's
 > "construct broadcast buf via `T.serial` Python-fill **inside the inner
 > pipelined iter, immediately before the vsub**" makes the failing vsub
