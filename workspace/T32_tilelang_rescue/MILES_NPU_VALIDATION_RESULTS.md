@@ -52,6 +52,15 @@ Beyond the per-op contracts above, we drive miles' actual `IndexerFunction.apply
 * Shapes: miles canonical (D_V=512, D_TAIL=64, DQK=576), H_MLA=16, H_indexer=8
 * Result: ✅ PASS — all 5 input gradients finite + nonzero (`index_q` 6.4e-1, `index_k` 1.9, `weights` 3.1, `q_mla` 2.5e-5, `kv_mla` 4.6e-4)
 
+## FSDP-wrapped train-step — PASSES (2026-05-27)
+
+The same `GLM5MiniBlock` runs through `torch.distributed.fsdp.FullyShardedDataParallel` on NPU's HCCL backend. One full FSDP forward → reduce-scatter backward → `optim.step()`:
+
+* Driver: `miles_plugins/models/glm5/ops/_npu/_e2e_fsdp_step.py`
+* Launch: `torchrun --standalone --nproc_per_node=1 -m ...`
+* Result: ✅ PASS — all params finite, grad norm 44.2, weights move by 1e-3 (Adam lr)
+* Notable: `proj_index_k.weight.grad` exhibits ~10x residual R-KA-15 leakage even with the 1e3-threshold wrapper guard; production training should apply `--gradient-clip-norm` until upstream [AscendNPU-IR#249](https://gitcode.com/Ascend/AscendNPU-IR/issues/249) is fixed
+
 ## Mini RL train-step — ALSO PASSES (2026-05-27)
 
 Smallest end-to-end training loop that exercises all 4 NPU kernels through miles' contract surfaces, with a mock GRPO-surrogate loss + Adam step.
