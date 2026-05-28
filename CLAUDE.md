@@ -159,6 +159,7 @@ Memorize this index — these are the entry points that always live in tree (not
 - `workspace/T32_tilelang_rescue/DSV4_REAL_SHAPE_FULLSTACK_ANALYSIS.md` — DSv4-Flash shape derivation + miles component classification table
 - `workspace/T32_tilelang_rescue/UPSTREAM_ISSUE_RKA16.md` — AscendNPU-IR #251 issue body draft
 - `workspace/T32_tilelang_rescue/A5_OPS_DESIGN_NOTES.md` — a5_ops design extraction report (1-day/1-week/1-month plan in §7)
+- `workspace/T32_tilelang_rescue/UPSTREAM_PATCH_MAP.md` — **THE全景图**: enumerates every upstream project needing changes for miles-DSv4-RL-on-NPU end-to-end. Maintain in lockstep with ROADMAP T12/T13/T14 whenever a new upstream gap surfaces or an existing PR lands
 
 **Prepared-but-unopened upstream PRs (DO NOT lose state on compact)**:
 
