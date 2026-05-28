@@ -83,9 +83,9 @@ Adjacent (not in critical path for compile/training but in deployment):
 |---|---|
 | **Why** | miles glm5 ops on NPU need tilelang implementations; dispatch hook makes them activate when `q.is_npu`. |
 | **What** | miles `_npu/` subpackage with 4 tilelang kernels + dispatcher (commit `d03db2c`, 13 files, 1767 LOC). |
-| **Status** | Audit-clean. T13.B (2026-05-28) confirmed it runs through MindSpeed core_r0.16.0 + 1 small apex shim (see #6). Ready to open against `radixark/miles miles-main`. |
-| **Branch** | `zhshgmail/miles npu-tilelang-ops` |
-| **PR body** | `/tmp/miles_pr_body.md` |
+| **Status** | **PR open**: `radixark/miles#1246` (2026-05-28). MERGEABLE, REVIEW_REQUIRED. |
+| **PR URL** | https://github.com/radixark/miles/pull/1246 |
+| **Branch on fork** | `zhshgmail/miles npu-tilelang-ops` commit `d03db2c` |
 | **te_general_gemm sub-patch (`6f3209b` on `Megatron-LM-miles`)** | **WITHDRAWN as redundant** — T13.A confirmed MindSpeed core_r0.16.0 already binds `te_general_gemm = None` when TE is absent. The 8-line guard is no longer needed; the local branch stays as a fallback for the no-MindSpeed path. |
 
 ### 4. `Ascend/triton-ascend` — packaging conflict with mainline `triton`
@@ -93,8 +93,8 @@ Adjacent (not in critical path for compile/training but in deployment):
 | | |
 |---|---|
 | **Why** | triton-ascend 3.2.0 and mainline triton 3.6.0 share `triton/backends/compiler.py` path but their forks have diverged (mainline has `Language`, triton-ascend has `AttrsDescriptor`). If both are installed, the later one wins and the former's amd/nvidia backends crash with `ImportError: cannot import name 'Language'`. |
-| **What** | Issue at `Ascend/triton-ascend` to: (a) declare `Provides-Dist: triton` so pip treats triton-ascend as the triton implementation, OR (b) declare `Conflicts: triton`, OR (c) document "uninstall triton first". Minimal repro included. |
-| **Status** | NOT yet filed (T13.D candidate). Workaround for our work: `pip uninstall triton + pip install --force-reinstall triton-ascend`. Memory `feedback_triton_vs_triton_ascend_packaging_conflict.md` records the recipe. |
+| **What** | Issue at `Ascend/triton-ascend` with full repro + 4 fix-direction options (Provides-Dist, Conflicts, namespace packaging, install-guide). |
+| **Status** | **Issue body ready at `/tmp/triton_ascend_issue.md`** (matches the repo's `Bug-Report` YAML template's 5 required textareas). **gc CLI + raw API both return 400 Bad Request** even for minimal test issues (likely server-side template-enforcement). Needs to be filed via gitcode web UI. Workaround for our work continues: `pip uninstall triton + pip install --force-reinstall triton-ascend`. Memory `feedback_triton_vs_triton_ascend_packaging_conflict.md` records the recipe. |
 | **Triton 3.6.0 needed?** | **No** for miles training. miles's triton kernels use the stable `@triton.jit / tl.*` DSL that triton-ascend 3.2.0 implements. Mainline triton 3.6 is pulled in only by xgrammar (via vllm) for inference-time grammar paths, dead code in training. |
 
 ### 5. `Ascend/MindSpeed` core_r0.16.0 — `apex.transformer.functional.fused_apply_rotary_pos_emb_thd` shim
@@ -126,12 +126,12 @@ If everything in the picture lands:
 |---|---|---|---|
 | 1 | tile-ai/tilelang-mlir-ascend | Python pass + UT | Reviewer merge (PR #80 open) |
 | 2 | Ascend/AscendNPU-IR | C++ compiler pass | External (Huawei team owns the patch on issue #251) |
-| 3 | radixark/miles | Python: tilelang kernels + dispatch | T13.B validated; open PR against miles-main |
-| 4 | Ascend/triton-ascend | metadata: `Provides-Dist: triton` (or docs) | Author + PR after empirical verification |
-| 5 | Ascend/MindSpeed (core_r0.16.0) | New `MindSpeedFeature` for apex rope shim | Author + PR (T13.C) |
+| 3 | radixark/miles | Python: tilelang kernels + dispatch | **PR #1246 open, MERGEABLE, REVIEW_REQUIRED** |
+| 4 | Ascend/triton-ascend | metadata or docs | Issue body ready; gc CLI + API both return 400; needs gitcode web UI |
+| 5 | Ascend/MindSpeed (core_r0.16.0) | New `MindSpeedFeature` for apex rope shim | **PR #3509 open** |
 | 6 | tlrescue container | image recipe to drop mainline triton | Author + image rebuild test |
 
-**Total**: 5 strictly required upstream changes authored or auth-ready by me, plus 1 (#2) where I own the diagnostic and Huawei owns the patch. **None is blocking us today**; the manual-monkey-patch driver + Triton workaround keep miles compiling and running at real shape. The remaining numerical NaN is gated only on #2.
+**Status as of 2026-05-28 22:30 Beijing**: 5 of 6 in flight (#1 awaits review, #2 with Huawei, #3 PR #1246 open, #5 PR #3509 open, #4 issue blocked on gc CLI). Only #6 not yet started. **None is blocking us today** — manual-monkey-patch driver + triton workaround keep miles compiling and running at real shape. Numerical NaN is gated only on #2.
 
 ---
 
