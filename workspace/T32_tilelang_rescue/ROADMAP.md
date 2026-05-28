@@ -33,24 +33,43 @@
 ## DAG(依赖关系图)
 
 ```
-T1 (R-KA-16 issue) ──┐
-                     ├──> T6 (compiler bisect) ────────────┐
-T2 (PR #80 review) ──┘                                     │
-                                                            ▼
-T3 (lighting_indexer_bwd head-split) ──> T7 (整 4 op 真 shape PASS)
-                                                            │
-T4 (sparse_mla_bwd UB reduce) ──────────────────────────────┤
-                                                            │
-T5 (sparse_mla bwd R-KA-13 完整化) ─────────────────────────┤
-                                                            │
-                                                            ▼
-                                                T8 (miles 真 shape e2e)
-                                                            │
-                                                            ▼
-                                                T9 (4 个上游 PR 提交)
+Track B (并行,2026-05-28 全 DONE)
+  T1 (indexer_bwd head-split) ──┐
+  T3 (sparse_mla_bwd UB)       ─┤
+  T4 (sparse_mla_fwd cleanup)  ─┼─> T10 (4 op compile 全 PASS) ── DONE
+  T2 (PR #80 CI follow-up)     ─┘                                     │
+                                                                       ▼
+Track A (R-KA-16 编译器,2026-05-28 全 DONE / PARKED)                T11 (Megatron e2e 真 shape) ── DONE-pending-R-KA-16
+  T5 (bishengir IR dump)     ─┐                                       │
+  T6 (ExtendedCanonicalizer  ─┼─> T9 (AscendNPU-IR #251 update) ── DONE
+      bisect)                 │     ▲
+  T7 (C++ fix) PARKED ────────┘     │
+  T8 (LIT test) PARKED              │ Huawei 编译器组接手
+                                    ▼
+                              [上游 patch 落地后回测]
+                                    │
+                                    ▼
+Track C (整合 / 上游)
+  T12 (4 个上游 PR 整理)
+    ├─ tile-ai PR #80 ── MERGEABLE awaiting review
+    ├─ AscendNPU-IR #251 issue comment ── DONE
+    ├─ Megatron 独立 PR 撤销 ── bundle 6f3209b 进 miles PR
+    └─ radixark/miles npu-tilelang-ops d03db2c ── audit-clean, awaiting user open command
+
+Track D (MindSpeed 上游,2026-05-28 20:56 用户已确认走这条路)
+  T13 (MindSpeed core_r0.16_compat fast-track) ── TODO-priority
+       │  把 _e2e_megatron_step.py:30-330 的 manual monkey-patch 翻译成
+       │  MindSpeedFeature.register_patches 形式,在 fork 上 push 一个分支
+       ▼
+  T14 (miles PR 改 MindSpeed-aware 版本) ── TODO,gated on T13
+       │  删掉 e2e driver 的 monkey-patch 段,改成 install MindSpeed
+       │  core_r0.16_compat 分支;然后重生成 PR body 后发 radixark/miles
+       ▼
+  [上游正式落地后:T15+ 把 MindSpeed core_r0.16_compat 合到 MindSpeed 上游 0.16
+   分支(若 Huawei 接;否则永久 fork)]
 ```
 
-`T1` `T2` `T3` `T4` 互相独立,可以**并行 subagent** 跑。`T5` 依赖现有 R-KA-13 E5 修法 + bwd kernel(已有,独立)。`T6` 是 R-KA-16 真修(深层 bishengir 工作,串行 + 长)。
+**当前可做的 foreground 工作**:T13(MindSpeed `core_r0.16_compat` fast-track)。其它都在等外部:T2 等 tile-ai reviewer、T9 等 Huawei 编译器组、T12.4/T14 等 T13。
 
 ## Task 列表
 
@@ -92,7 +111,14 @@ T5 (sparse_mla bwd R-KA-13 完整化) ──────────────
 |---|---|---|---|---|
 | **T10** | 4 个算子真 shape 全 PASS | TODO | T1, T3, (T4|T9) | 当 T1 让 indexer_bwd 通过 + T3 让 sparse_mla_bwd 编译通过 + (T4 让 fwd 接受 ~2% NaN 或 T9 上游修了)→ `_real_shape_smoke.py` 4/4 PASS。→ artifact:miles fork commit 上的 smoke 全 ✅ |
 | **T11** | miles `DSAMLASelfAttention` 在 Megatron 里跑真 shape 而不是 H=16 减层 | DONE-pending-R-KA-16 | T10 | miles fork commit `dc26e45` 把 `_e2e_megatron_step.py` 参数化:`MILES_E2E_SHAPE={reduced,real}`,real 切到 DSv4-Flash 真数(hidden=512 H=64 q_lora_rank=1024 kv_lora_rank=512 qk_head_dim=128 qk_pos_emb_head_dim=64 v_head_dim=512 ffn_hidden=1024,SEQ=2048,topk=512)。**A3 tlrescue cold cache 实测**:`MILES_E2E_SHAPE=real python -m _e2e_megatron_step` → 52,270,848 params,DSAMLASelfAttention forward `AscendNPU IR compile success`、4 个 tilelang 算子全跑通、`out: [2048, 1, 512]`、indexer score `[2048, 512]`、backward sparse_mla_bwd 也 compile success。**编译 + flow-through 真 shape 全栈打通**。残留:`mla_loss = nan`、6 finite / 6 non-finite grads —— 全部 NaN 来自 sparse_mla_fwd NS=8 受 R-KA-16 影响,**根因已 T9 上抛 AscendNPU-IR #251**,等 Huawei 修。→ artifact:miles fork commit `dc26e45` on `npu-tilelang-dispatch`,实测 log 见 commit message |
-| **T12** | 4 个上游 PR 整理 + 提交 | IN-PROGRESS | T10, T11 | 4 个 PR 拆解:**(1) `tile-ai/tilelang-mlir-ascend` PR #80** 已开,CI 全绿,MERGEABLE,等 reviewer。**(2) `Ascend/AscendNPU-IR`**:T9 已用 issue #251 comment 路径替代上游 PR(Huawei 偏好 issue 沟通)。**(3) Megatron-LM PR 撤销 + 重路由(2026-05-28 实测后再修正)**:第一轮判断「MindSpeed 是 NPU Megatron 适配的正路」对,但实际把 MindSpeed `rsync` 到 A3 tlrescue + `pip install -e . --no-deps` 装好后,**`import mindspeed.megatron_adaptor` 直接 fail**: `ImportError: cannot import name 'activation_recompute_forward' from 'transformer_engine.pytorch.distributed' (mindspeed.dummy_module.py)`。根因:**MindSpeed master 只支持 Mcore 0.12.1**(分支最高 `2.2.0_core_r0.12.1`),而 `Megatron-LM-miles` 是 **Mcore 0.16.0rc0**(`megatron/core/package_info.py` 0.16.0rc0)。4 minor 版本差,MindSpeed 装上也跑不动。**结论:MindSpeed 不是 PR 目标 — 它根本不支持这个 Mcore 版本**。NVIDIA upstream main 不用 `te_general_gemm`,所以也不是。**真正归属:radixark 的 vendored fork**(`radixark/Megatron-LM` 自加了 `te_general_gemm` 用法但忘了 `except ImportError` 分支兜底)。本地 `6f3209b` 这个 8 行 guard 是正确的 fix,but 应当作为 miles PR 的一部分(因为 `Megatron-LM-miles` 实际是被 miles 项目 vendored),不单独提 Megatron PR。**(4) `radixark/miles` PR 分支 `npu-tilelang-ops` commit `d03db2c` 已 audit-cleaned(13 文件 1767 LOC)**;**充分验证现已 done**:T11 e2e 当时在「手工 monkey-patch cuda→npu」路径上做 — 这条路径**就是**唯一能跑的路径(MindSpeed 不支持 Mcore 0.16),所以 T11 实测 PASS 是 valid validation,不是 bypass。无 Claude 签名,gc/gh CLI 发。详 memory `feedback_npu_megatron_via_mindspeed.md`。→ artifact:4 PR URL |
+| **T12** | 4 个上游 PR 整理 + 提交 | IN-PROGRESS | T10, T11 | 4 个 PR 拆解:**(1) `tile-ai/tilelang-mlir-ascend` PR #80** 已开,CI 全绿,MERGEABLE,等 reviewer。**(2) `Ascend/AscendNPU-IR`**:T9 已用 issue #251 comment 路径替代上游 PR(Huawei 偏好 issue 沟通)。**(3) Megatron-LM PR 撤销 + 重路由(2026-05-28 实测后再修正)**:第一轮判断「MindSpeed 是 NPU Megatron 适配的正路」对,但实际把 MindSpeed `rsync` 到 A3 tlrescue + `pip install -e . --no-deps` 装好后,**`import mindspeed.megatron_adaptor` 直接 fail**: `ImportError: cannot import name 'activation_recompute_forward' from 'transformer_engine.pytorch.distributed' (mindspeed.dummy_module.py)`。根因:**MindSpeed master 只支持 Mcore 0.12.1**(分支最高 `2.2.0_core_r0.12.1`),而 `Megatron-LM-miles` 是 **Mcore 0.16.0rc0**(`megatron/core/package_info.py` 0.16.0rc0)。4 minor 版本差,MindSpeed 装上也跑不动。**结论:MindSpeed 不是 PR 目标 — 它根本不支持这个 Mcore 版本**。NVIDIA upstream main 不用 `te_general_gemm`,所以也不是。**真正归属:radixark 的 vendored fork**(`radixark/Megatron-LM` 自加了 `te_general_gemm` 用法但忘了 `except ImportError` 分支兜底)。本地 `6f3209b` 这个 8 行 guard 是正确的 fix,but 应当作为 miles PR 的一部分(因为 `Megatron-LM-miles` 实际是被 miles 项目 vendored),不单独提 Megatron PR。**(4) `radixark/miles` PR 分支 `npu-tilelang-ops` commit `d03db2c` 已 audit-cleaned(13 文件 1767 LOC)**;**改为 gated on T13** — 用户 2026-05-28 20:56 选择走 MindSpeed 兼容路线,所以这个 PR 在 T13(MindSpeed `core_r0.16_compat`)落地后做 T14 重发,带 MindSpeed install 步骤替代手工 monkey-patch。当前 PR 分支不撤,但暂不发,等 T14。无 Claude 签名,gc/gh CLI 发。详 memory `feedback_npu_megatron_via_mindspeed.md`。→ artifact:4 PR URL |
+
+#### Track D(MindSpeed 上游兼容性 — 用户 2026-05-28 提出的新方向)
+
+| ID | 任务 | 状态 | deps | 详细 |
+|---|---|---|---|---|
+| **T13** | 为 MindSpeed 起 `core_r0.16` 兼容工作分支 | TODO-priority | — | **用户 2026-05-28 20:56 确认**:走 MindSpeed 适配路线。背景:miles 官方 Dockerfile 钉 `radixark/Megatron-LM miles-main`(Mcore `0.16.0rc0`,基于 NVIDIA 上游 `0.16.0` commit `4666de7a2` 2025-10-21 bump);MindSpeed master 最高分支 `2.2.0_core_r0.12.1`,**三个 Ascend MindSpeed-* 项目都不支持 Mcore 0.16**(MindSpeed-LLM 和 MindSpeed-RL 也 pin `core_v0.12.1`)。**走 fast track**:在 MindSpeed fork(`zhshgmail/MindSpeed` 待 fork)起 `core_r0.16_compat` 分支,只补 miles 实际触发的 `DSAMLASelfAttention` / MoE permute / tensor parallel init / RNG / Stream / cuda↔npu 几条路径,把我们 `_e2e_megatron_step.py:30-330` 的 manual monkey-patch 翻译成 `MindSpeedFeature.register_patches` 形式。预计 20-50 patches。验证标准:在 tlrescue 装这个 fork 后,`import mindspeed.megatron_adaptor` 不报错;`MILES_E2E_SHAPE=real python -m _e2e_megatron_step` 跑通,且 manual monkey-patch 段全部删除后仍然 PASS。a5_ops 算子生成不需要(MindSpeed 99% 是 Python 监补丁,不是 AscendC)。**T12.4 miles PR 改为 T13 之后做** — miles `_npu/` 子包发 PR 时,可以引用「需要 MindSpeed `core_r0.16` 分支」作为 NPU 安装步骤的一部分,而不是带着自己的手工 monkey-patch。→ artifact:`zhshgmail/MindSpeed core_r0.16_compat` 分支 + register_patch 集合 + 实测 import 通 + miles e2e PASS(无手工 monkey-patch) |
+| **T14** | T13 完成后:把 miles `_npu/` PR 改成 MindSpeed-aware 版本 | TODO | T13 | T12.4 当前的 PR 分支 `npu-tilelang-ops d03db2c` 假设用户手工管理 cuda↔npu monkey-patch。T13 落地后,**miles 端可以删 manual monkey-patch,改成 install + import MindSpeed-0.16-compat**。届时:(a) 把 `_e2e_megatron_step.py:30-330` 的 monkey-patch 段全删,只保留 1 行 `import mindspeed.megatron_adaptor`(这一行可能也不该出现在 prod 代码里,只在 e2e driver) (b) `_npu/` 子包本身和 MindSpeed 解耦,不变 (c) 重发 PR body 强调安装步骤包含 MindSpeed `core_r0.16_compat`。→ artifact:`zhshgmail/miles npu-tilelang-ops` rebase / 重新生成的干净 PR + 新 PR body draft |
 
 ### 监控 / 永续(无 deps,无 end state)
 

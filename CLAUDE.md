@@ -149,6 +149,28 @@ Memorize this index — these are the entry points that always live in tree (not
 - `docs/_meta/kb/` — porting lessons + challenge patterns
 - `docs/_meta/SESSION_HANDOVER_TEMPLATE.md` — fill at session end
 
+**T32 / T33 forensic artifacts (NEVER delete or move without ROADMAP update)**:
+- `workspace/T32_tilelang_rescue/ROADMAP.md` — T32 effort task table + DAG (the inner ROADMAP, not the project one)
+- `workspace/T32_tilelang_rescue/rka16_ns4_passes.txt` (~2.9 MB) — full bishengir 311-pass IR dump for R-KA-16 reproducer; cited from AscendNPU-IR issue #251 update
+- `workspace/T32_tilelang_rescue/rka16_ns4_pass_index.txt` (311 lines) — line-number+pass-name index for the dump; required for re-running the bisect or quoting evidence
+- `workspace/T32_tilelang_rescue/rka16_ns4.npuir` — tilelang-generated NS=4 input to bishengir; reproducer artifact
+- `workspace/T32_tilelang_rescue/dump_rka16_ir.py` — monkey-patch driver that produced the dump
+- `workspace/T32_tilelang_rescue/repro_rka16.py` — self-contained minimal repro at NS=1/2/4/8
+- `workspace/T32_tilelang_rescue/DSV4_REAL_SHAPE_FULLSTACK_ANALYSIS.md` — DSv4-Flash shape derivation + miles component classification table
+- `workspace/T32_tilelang_rescue/UPSTREAM_ISSUE_RKA16.md` — AscendNPU-IR #251 issue body draft
+- `workspace/T32_tilelang_rescue/A5_OPS_DESIGN_NOTES.md` — a5_ops design extraction report (1-day/1-week/1-month plan in §7)
+
+**Prepared-but-unopened upstream PRs (DO NOT lose state on compact)**:
+
+| Target | Branch on fork | Commit | Status | Gating |
+|---|---|---|---|---|
+| `radixark/miles` | `zhshgmail/miles npu-tilelang-ops` | `d03db2c` | audit-clean, T11 valid (MindSpeed unsupported at Mcore 0.16), PR body at `/tmp/miles_pr_body.md` | awaiting user `gh pr create -R radixark/miles --head zhshgmail:npu-tilelang-ops` |
+| `radixark/Megatron-LM` (via miles vendored copy) | local `Megatron-LM-miles fix/te_general_gemm_npu_fallback` | `6f3209b` | 8-line guard, cold-import verified | bundle into miles PR set rather than separate Megatron PR (per user direction) |
+| `Ascend/AscendNPU-IR` issue #251 | n/a (issue comment, not PR) | comment ID `1.73358592e+08` | landed | Huawei compiler team owns the C++ patch |
+| `tile-ai/tilelang-mlir-ascend` PR #80 | `zhshgmail/tilelang-mlir-ascend npuir-check-ub-budget` | `df7431e` | CI all green, MERGEABLE, awaits tile-ai maintainer review | external |
+
+If any of the above migrates / lands / closes, update this table AND `ROADMAP.md` T12 in the same commit. Never let this table go stale.
+
 **Behavioral memory (cross-session)**:
 - `~/.claude/projects/-home-z00637938-workspace-easyr1-npu/memory/MEMORY.md` — auto-memory index (also auto-loaded into system reminder)
 - `memory/*.md` — individual feedback / user-preference / project-context / reference entries
@@ -175,8 +197,13 @@ Memorize this index — these are the entry points that always live in tree (not
 5. **Discord cadence** — push coarse-grained updates at milestones; no > 15-minute silences. (Memory: `discord_cadence.md`, `discord_reporting_cadence.md`.)
 6. **Project docs default to Chinese** (READMEs / port-guides); code + commit messages stay English. (Memory: `project_docs_language.md`.)
 7. **Commit messages**: no Claude-related text.
-8. **A3 firewalled**: do web/probe locally, git-sync to A3. (Memory: `a3_is_firewalled.md`.)
+8. **A3 firewalled, but gitcode reachable**: do web/probe locally for non-CN hosts; clone Ascend / gitcode.com sources direct on A3. (Memory: `a3_is_firewalled.md`.)
 9. **Before recommending a function/file/flag from memory**, verify it still exists (grep / ls). Memory snapshots can rot.
+10. **Upstream PR discipline** (per user 2026-05-28 corrections):
+    - 充分验证后再开 PR — install the production adaptor stack (e.g. MindSpeed, when supported), re-run the end-to-end driver against it, and only THEN write the patch and PR.
+    - 尊重目标 repo 的 PR 格式 — read the target repo's CONTRIBUTING.md / pull_request_template.md, follow their label / format / language conventions.
+    - 无 claude / cc 签名 — neither commits nor PR bodies carry agent trailers; follow the target project's standard.
+    - Identify the correct PR target by version-coverage, not by guess. (Memory: `feedback_npu_megatron_via_mindspeed.md` shows the MindSpeed-vs-Mcore-0.16 case: even the "obvious" Ascend layer may not yet support the consumer's version.)
 
 ### How to extend this
 
