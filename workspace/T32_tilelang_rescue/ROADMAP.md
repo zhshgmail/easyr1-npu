@@ -23,9 +23,9 @@
 ## 当前状态快照(2026-05-28 晚)
 
 * lighting_indexer_fwd 真 shape:✅ PASS(无 UB 问题、无 NaN)
-* lighting_indexer_bwd 真 shape:❌ UB 溢出 259KB
-* sparse_mla_fwd 真 shape:❌ 算子层 NaN(R-KA-16 多 iter softmax bug,issue #251 filed)
-* sparse_mla_bwd 真 shape:❌ 算子层依赖 fwd + bwd 自己 UB 溢出 289KB
+* lighting_indexer_bwd 真 shape:✅ PASS (T1 head-split `block_H_inner=16` → miles `0b39e1b`)
+* sparse_mla_fwd 真 shape:❌ 算子层 NaN(R-KA-16 多 iter softmax bug,issue #251 filed)— 编译已通过
+* sparse_mla_bwd 真 shape:❌ 算子层依赖 fwd + bwd 自己 UB 溢出 289KB(T3)
 * 编译器诊断 PR #80 已开,等 maintainer review
 * 已 file 5 上游 issue(RKA-13/14/15/16 + sglang triton)
 
@@ -70,7 +70,7 @@ T5 (sparse_mla bwd R-KA-13 完整化) ──────────────
 
 | ID | 任务 | 状态 | deps | parallel-with | 详细 |
 |---|---|---|---|---|---|
-| **T1** | 用 `lighting_indexer_bwd` head-split 让真 shape 编译过 | TODO | — | T2, T3, T4 | kernel 把 `pad_heads` 抽出成 `block_H_inner` 参数,grid 改 `B*S*head_groups`。预期 indexer_bwd 不触发 R-KA-16(没 online softmax),应该 PASS。详见文档 §7。 → artifact:miles fork commit + 更新 `_real_shape_smoke.py` 真 shape PASS |
+| **T1** | 用 `lighting_indexer_bwd` head-split 让真 shape 编译过 | DONE | — | T2, T3, T4 | kernel 把 `pad_heads` 抽出成 `block_H_inner` 参数,grid 改 `B*S*head_groups`。预期 indexer_bwd 不触发 R-KA-16(没 online softmax),应该 PASS。详见文档 §7。 → artifact:miles fork commit `0b39e1b` on `npu-tilelang-dispatch`;`_real_shape_smoke.py` `indexer_bwd @ topk=512 SKV=2048` PASS 1.2s,gq/gw/gk 全 finite,max_abs ∈ [2.05, 6.29] |
 | **T2** | 跟进 tile-ai PR #80 review | IN-PROGRESS | — | T1, T3, T4 | 看 reviewer 反馈,如要 C++ port 转化、调注释,响应。 → artifact:PR #80 merged 或 next-revision commit |
 | **T3** | 给 `sparse_mla_bwd` 加完整 R-KA-13 E5 修复 + 把 bwd UB 用 split_store 拆到 < 192KB | TODO | — | T1, T2, T4 | bwd 已知有 R-KA-13 E5 partial workaround(commit `502c29f`),但 UB 仍 289KB。需要:(1) 把 `acc_dkv [BS=32, D=512] fp32 = 64KB` 用 split_store(每次只算 BS=16 半,scatter atomic_addx4 两次)拆 (2) `block_size=32` → 16 缩小 BS 维度。→ artifact:miles fork commit + 真 shape bwd compile PASS(数值仍 R-KA-13 待修) |
 | **T4** | 给 `sparse_mla_fwd` 应用 R-KA-13 E5(`correction_expanded`)固化到 PR-able 形式 | TODO | — | T1, T2, T3 | 已在 miles fork `4cdfc1f` 加了。但还在 NS=2 不彻底(0-1.6% NaN)。需要 cleanup + 加 inline comment 说明 R-KA-16 dep。→ artifact:miles fork 整理 + 文档更新 |
@@ -125,3 +125,4 @@ T5 (sparse_mla bwd R-KA-13 完整化) ──────────────
 ## 历史
 
 * **2026-05-28**:创建。当前活跃 task:T1、T2、T3、T4、T5、T6。
+* **2026-05-28**:**T1 DONE** — `lighting_indexer_bwd` head-split (`block_H_inner=16`) 把 H=64 真 shape 从 UB 溢出 259 KB 拆到能装下。miles fork `npu-tilelang-dispatch` commit `0b39e1b`。`_real_shape_smoke.py` 中 `indexer_bwd @ topk=512 SKV=2048` 从 ❌ FAIL → ✅ PASS 1.2s,gq / gw / gk 全 finite。smoke 总分 2/4 → 3/4(`sparse_mla_fwd` 编译过但 NaN — R-KA-16 已 issue;`sparse_mla_bwd` 仍 UB 溢出 289 KB — T3 范畴)。未碰 sparse_mla 系列 kernel。
