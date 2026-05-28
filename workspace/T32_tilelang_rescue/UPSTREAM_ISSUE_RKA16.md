@@ -1,6 +1,6 @@
 # [Bug-Report|缺陷反馈]: bishengir HIVM 多迭代 pipelined 循环中,online-softmax 跨迭代累加器在 NS≥4 出现 NaN(非确定性)
 
-> 拟提交目标: `Ascend/AscendNPU-IR` (gitcode.com/Ascend/AscendNPU-IR/issues)
+> **FILED 2026-05-28**: <https://gitcode.com/Ascend/AscendNPU-IR/issues/251>
 
 ### Describe the current behavior / 问题描述 (Mandatory / 必填)
 
