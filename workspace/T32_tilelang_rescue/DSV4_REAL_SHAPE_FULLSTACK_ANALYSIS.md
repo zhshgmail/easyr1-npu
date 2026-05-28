@@ -264,6 +264,31 @@ NPU runtime
     * `lighting_indexer_bwd` 真 DSv4 shape 也 UB 溢出(259 KB),之前的 PASS 是 cache 命中误判。需要同样的 head-split 处理
   - 已分析但未提 PR:还在调 NaN,需要排查"是 init bug 还是 NPU 同步问题"。Roadmap #2 状态从 in-progress 改成 partial。
 
+### 🚨 重大发现:NaN 跟 head-split 无关,是原 kernel 多 iter pipelined 累加器 bug(2026-05-28 晚)
+
+通过 D_V / SKV / topk bisect:
+
+| 配置 | block_M_inner | head_groups | nan比例 |
+|---|---|---|---|
+| H=64 D=64 SKV=64 topk=64 | 16 | 4 | 0% ✅ |
+| H=64 D=512 SKV=64 topk=64 | 16 | 4 | 0% ✅ |
+| H=64 D=512 SKV=256 topk=128 | 16 | 4 | 82.8% 🐛 |
+| H=64 D=512 SKV=2048 topk=512 | 16 | 4 | 79.7% 🐛 |
+| H=64 D=64 SKV=512 topk=128 | **64 (no split)** | **1** | **57.8% 🐛** |
+| H=64 D=64 SKV=512 topk=128 | 16 | 4 | 71.9% 🐛 |
+
+**决定性事实**:`block_M_inner=64`(完全没切分,等同原 kernel)在 topk > block_N=64(也就是 pipelined 多 iter)的情况下**也出 NaN**。
+
+这意味着:
+- 我的 head-split 改动**没有引入 bug**
+- 原 sparse_mla_fwd kernel 在 multi-iter pipelined loop(NS = topk / block_N ≥ 2)情况下,**online softmax accumulator state(`acc_o / acc_m / acc_l`)在 iter 之间没有正确持续**
+- 之前我们的所有 NPU 端 PoC 用 topk ≤ 8/16,NS=1,没有触发这个 bug
+- 这是一个**独立于 R-KA-13 vsub bug 的新 bug**(R-KA-13 在 bwd kernel,这个在 fwd kernel)
+
+**调试方向**:可能是 `T.Pipelined(NS, num_stages)` 的 software pipelining 把 acc_o/acc_m/acc_l 的依赖处理错了。试 `num_stages=1` 看是否消失。如果消失,confirms 是 pipeline scheduler 跟 online softmax 状态的交互问题。
+
+**这条**很可能就是 R-KA-13 的兄弟问题,值得记成 R-KA-16,提交 upstream Ascend issue。
+
 ### 未解决的失败模式(供下次接手)
 
 1. **H=64 head-split NaN**:head_groups=2 (block_M_inner=32) 也超 UB 装不下;head_groups=4 (block_M_inner=16) 装下但 NaN。可能根因:
