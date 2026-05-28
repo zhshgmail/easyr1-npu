@@ -101,11 +101,12 @@ Adjacent (not in critical path for compile/training but in deployment):
 
 | | |
 |---|---|
-| **Why** | T13.B (2026-05-28) confirmed MindSpeed `core_r0.16.0`'s `patch_features()` covers cuda→npu, RNG, Stream, TE (TEColumnParallelLinear / TERowParallelLinear / TEDotProductAttention / TELayerNormColumnParallelLinear / TE*GroupedLinear), and `te_general_gemm = None` — but does NOT install a fallback for `apex.transformer.functional.fused_apply_rotary_pos_emb_thd`. miles `glm5.py:fuse_rope` imports it directly, so without MindSpeed-side coverage the user must hand-shim it (which is what the original `_e2e_megatron_step.py` does in lines 87-130). The MindSpeed-aware variant `_e2e_megatron_step_mindspeed.py` carries a 35-line apex shim until this lands upstream. |
-| **What** | New `MindSpeedFeature` (likely under `mindspeed/features_manager/megatron_basic/apex_basic.py`) that uses `pm.register_patch('apex.transformer.functional.fused_apply_rotary_pos_emb_thd', _torch_fallback, create_dummy=True)` when apex is unavailable. ~30-50 LOC patch + matching test. |
-| **Status** | TODO. To be authored + tested + PR'd. |
-| **Branch** | `Ascend/MindSpeed core_r0.16.0` is the upstream; will fork to `zhshgmail/MindSpeed apex-rope-shim` for the PR. |
-| **Reproducer** | `_e2e_megatron_step_mindspeed.py` initial run output shows `ModuleNotFoundError: No module named 'apex.transformer'` at miles' `glm5.py:484`. After shim added back, full forward+backward at H=64 SEQ=2048 PASS (same residual NaN from R-KA-16 as T11). |
+| **Why** | T13.B (2026-05-28) confirmed MindSpeed `core_r0.16.0`'s `patch_features()` covers cuda→npu, RNG, Stream, TE — but does NOT install a fallback for `apex.transformer.functional.fused_apply_rotary_pos_emb_thd`. miles `glm5.py:fuse_rope` imports it directly. |
+| **What** | T13.C: New module-level `_fused_apply_rotary_pos_emb_thd_fallback` (38-line self-contained pure-torch implementation) + 1 `pm.register_patch` line in `apex_adaptation`. Total +41 / -1 lines, only `mindspeed/features_manager/megatron_basic/requirements_basic.py` touched. Intentionally avoids importing from `mindspeed.core.transformer.flash_attention.reset_attention_mask.adaptor` (which pulls `from megatron.training import get_args` and breaks minimal Megatron checkouts). |
+| **Status** | **PR open** (2026-05-29 06:20 Beijing). |
+| **PR URL** | https://gitcode.com/Ascend/MindSpeed/merge_requests/3509 |
+| **Branch on fork** | `zhengshencn_hwca/MindSpeed apex-rope-thd-shim` commit `1220468b` |
+| **Empirical evidence** | A3 tlrescue with patched mindspeed installed → driver `_e2e_megatron_step_mindspeed.py` whose only NPU adaptation is `import mindspeed.megatron_adaptor` (no manual cuda→npu / RNG / Stream / apex / te shims) runs `MILES_E2E_SHAPE=real` to completion: 52M-param DSAMLASelfAttention forward + backward + Adam step, 4 algos compile at H=64 SEQ=2048 real DSv4-Flash shape. Without the patch, same driver raises `ModuleNotFoundError: No module named 'apex.transformer'`. |
 
 ### 6. Container-level: tlrescue image triton install hygiene
 
