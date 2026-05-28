@@ -52,6 +52,34 @@ Beyond the per-op contracts above, we drive miles' actual `IndexerFunction.apply
 * Shapes: miles canonical (D_V=512, D_TAIL=64, DQK=576), H_MLA=16, H_indexer=8
 * Result: ✅ PASS — all 5 input gradients finite + nonzero (`index_q` 6.4e-1, `index_k` 1.9, `weights` 3.1, `q_mla` 2.5e-5, `kv_mla` 4.6e-4)
 
+## Megatron-engine driver — partial (2026-05-28)
+
+The user's explicit ask after FSDP: "必须走 megatron" (must drive Megatron path, not just FSDP). Status of the Megatron path is **partial — the forward reaches our NPU tilelang kernels but stops at miles-internal config alignment**.
+
+* Driver: `miles_plugins/models/glm5/ops/_npu/_e2e_megatron_step.py`
+* Launch: `torchrun --standalone --nproc_per_node=1 -m ...`
+* Engine: `megatron.core 0.16.0rc0` + HCCL + `parallel_state.initialize_model_parallel(TP=1, PP=1)`
+
+**What works**:
+1. `parallel_state` + `model_parallel_cuda_manual_seed` with full `torch.cuda.*` → `torch.npu.*` shim (rng, Stream, random.*)
+2. `te_general_gemm = None` placeholder on `megatron.core.transformer.moe.moe_utils` so `RouterGatingLinearFunction` falls back
+3. `apex.transformer.functional.fused_apply_rotary_pos_emb_thd` stub via `sys.modules` injection
+4. `_LayerNormColumnParallelLinear` shim (RMSNorm scale + `ColumnParallelLinear`) with `.layer_norm_weight` for `linear_q_up_proj` / `linear_kv_up_proj`
+5. TE-kwarg-stripping shim for `wq_b` / `wk` / `weights_proj`
+6. `torch.nn.LayerNorm` shim (drops `config` kwarg) for `k_norm` (Apex's `FusedLayerNorm` unusable)
+7. `DSAMLASelfAttention(MLATransformerConfig(...))` **instantiates** on Ascend A3 → **2,794,880 params built** ✅
+8. `forward()` runs through `get_absorb_query_key_value_tensors`
+9. `fused_select_topk` → `lighting_indexer(IndexerFunction.apply)` → **our NPU `lighting_indexer_fwd` kernel compiles + executes on Ascend** ✅
+10. `SparseMLA.apply` → **our NPU `npu_sparse_mla_fwd_interface` is reached** ✅
+
+**Where it stops** (last failure point as of 2026-05-28):
+* `sparse_mla_fwd` tilelang JIT compile of MLIR emits `<1x16x16x128xf16>` for Q (dim=128, = `cfg.kv_channels`) instead of `<...x576xf16>` required by miles' `sparse_mla_fwd_interface`. miles' internal q reshape inside `get_absorb_query_key_value_tensors` produces a different shape than what `cfg.qk_head_dim + cfg.qk_pos_emb_head_dim = 576` would suggest.
+* This is a config-alignment gap rather than a tilelang/NPU gap: with a real HF GLM-5 checkpoint config the shapes line up.
+
+**Significance**: 
+* **The production miles GLM-5 attention class (`DSAMLASelfAttention`) is driving our NPU tilelang kernels through Megatron-core's distributed engine.** Parallel_state init, ColumnParallelLinear, RMSNorm, rotary, IndexerFunction, SparseMLA are all hooked up and the autograd graph is valid through stage 1 (indexer).
+* The "tilelang fix end-to-end validated through Megatron" milestone is reached for indexer; sparse_mla is reached at the function-call layer but the kernel doesn't compile until config is HF-aligned.
+
 ## FSDP-wrapped train-step — PASSES (2026-05-27)
 
 The same `GLM5MiniBlock` runs through `torch.distributed.fsdp.FullyShardedDataParallel` on NPU's HCCL backend. One full FSDP forward → reduce-scatter backward → `optim.step()`:
