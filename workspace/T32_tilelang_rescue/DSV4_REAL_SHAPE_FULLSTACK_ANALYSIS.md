@@ -252,5 +252,24 @@ NPU runtime
 
 (每完成一个 roadmap row,在这里追加一段 dated note)
 
-* **2026-05-28**:CheckUBBudget pass 完成,PR #80 开。
-* **2026-05-28**:确认 lighting_indexer fwd/bwd 真 shape 跑通;sparse_mla fwd/bwd 真 shape 失败原因 quantified 到 `acc_o [64, 512] fp32 = 131072 B` 单一最大。
+* **2026-05-28 早**:CheckUBBudget pass 完成,PR #80 开。
+* **2026-05-28 早**:确认 lighting_indexer fwd/bwd 真 shape 跑通;sparse_mla fwd/bwd 真 shape 失败原因 quantified 到 `acc_o [64, 512] fp32 = 131072 B` 单一最大。
+* **2026-05-28 中**:**block_M_inner 头维度切分原型**(commit `4983264` on miles fork branch `npu-tilelang-dispatch`):
+  - `sparse_mla_fwd_kernel.py` + `sparse_mla_bwd_kernel.py` 加 `block_M_inner` / `block_H_inner` 参数,grid 从 `batch*seq_len` 变成 `batch*seq_len*head_groups`,每个 NPU block 处理 `block_M_inner=16` 个 head 而不是全部 H=64
+  - `sparse_mla.py` dispatcher 在 `H % 16 == 0 and H > 16` 时自动选 `block_M_inner=16`
+  - **实测结果**:
+    * `sparse_mla_fwd` 真 DSv4 shape (H=64) **编译成功**(CheckUBBudget 通过,bishengir 通过)
+    * **但输出有 NaN** — 每个 head-group 只有约 1/8 行 finite,模式像 UB 跨 block 复用未清零。在 H=32 (head_groups=2) 没问题,只 H=64 (head_groups=4) 出错
+    * `sparse_mla_bwd` 切分后**仍然 UB 溢出**(289 KB 超过 192 KB):bwd 状态比 fwd 多(`acc_dq` / `acc_dq_tail` / `acc_dkv` / `acc_dkv_tail` 同时活),需要进一步把 `block_size=32` 也缩小
+    * `lighting_indexer_bwd` 真 DSv4 shape 也 UB 溢出(259 KB),之前的 PASS 是 cache 命中误判。需要同样的 head-split 处理
+  - 已分析但未提 PR:还在调 NaN,需要排查"是 init bug 还是 NPU 同步问题"。Roadmap #2 状态从 in-progress 改成 partial。
+
+### 未解决的失败模式(供下次接手)
+
+1. **H=64 head-split NaN**:head_groups=2 (block_M_inner=32) 也超 UB 装不下;head_groups=4 (block_M_inner=16) 装下但 NaN。可能根因:
+   - acc_o 在 vbrc 后跨 grid block 边界没被真正清零(NPU UB 内容在 block 间复用)
+   - 或者 head-group 之间的 sync barrier 缺失(虽然各 block 写不同 H 区间,但 ATB 在 wrapper 可能批量执行)
+   - 或者 bishengir 在 head_groups=4 时给 acc_o 分配了一个对齐错的位置
+   - **调试建议**:加 `T.npuir_clear` 显式清零 acc_o;或者在 fwd 单 head 范围(`Output[..., h_start:h_start+block_M, :]`)外加 `T.npuir_barrier` 看 NaN 是否消失
+2. **bwd UB 溢出 289 KB**:需要把 `block_size=32`(topk 切块大小)缩到 16,或者把 `acc_dkv [BS=32, D=512] fp32 = 64 KB` 在 bwd 拆 split_store(upstream miles 注释里提过 `split_store` 的设计)。这是 follow-up #3。
+3. **lighting_indexer_bwd UB 溢出 259 KB**:同样需要 block_H_inner 切分(目前 kernel 写死 `pad_heads = max(heads, 16)`,改成支持外部传入小 inner 值)。Follow-up。
