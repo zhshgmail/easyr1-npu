@@ -77,17 +77,16 @@ Adjacent (not in critical path for compile/training but in deployment):
 | **Status** | Issue #251 update posted (comment `1.73358592e+08`); Huawei compiler team owns the C++ patch. |
 | **PR** | n/a (issue path) |
 
-### 3. `radixark/miles` + `radixark/Megatron-LM` — `_npu/` subpackage + dispatch
+### 3. `radixark/miles` — `_npu/` subpackage + dispatch
 
 | | |
 |---|---|
-| **Why** | miles glm5 ops on NPU need tilelang implementations; manual monkey-patch in `_e2e_megatron_step.py` is a temporary bridge |
-| **What** | Two coupled PRs (currently bundled in one branch on the miles fork): |
-| | • miles `_npu/` subpackage with 4 tilelang kernels + dispatcher (commit `d03db2c`, 13 files, 1767 LOC) |
-| | • Megatron-LM-miles 8-line guard in `moe_utils.py except ImportError` to bind `te_general_gemm = None` (commit `6f3209b`) |
-| **Status** | Audit-clean, NOT yet opened. Gated on T13.B/C validation through MindSpeed core_r0.16.0 (per user direction "走 MindSpeed 适配路线" 2026-05-28 20:56). |
+| **Why** | miles glm5 ops on NPU need tilelang implementations; dispatch hook makes them activate when `q.is_npu`. |
+| **What** | miles `_npu/` subpackage with 4 tilelang kernels + dispatcher (commit `d03db2c`, 13 files, 1767 LOC). |
+| **Status** | Audit-clean. T13.B (2026-05-28) confirmed it runs through MindSpeed core_r0.16.0 + 1 small apex shim (see #6). Ready to open against `radixark/miles miles-main`. |
 | **Branch** | `zhshgmail/miles npu-tilelang-ops` |
 | **PR body** | `/tmp/miles_pr_body.md` |
+| **te_general_gemm sub-patch (`6f3209b` on `Megatron-LM-miles`)** | **WITHDRAWN as redundant** — T13.A confirmed MindSpeed core_r0.16.0 already binds `te_general_gemm = None` when TE is absent. The 8-line guard is no longer needed; the local branch stays as a fallback for the no-MindSpeed path. |
 
 ### 4. `Ascend/triton-ascend` — packaging conflict with mainline `triton`
 
@@ -98,14 +97,15 @@ Adjacent (not in critical path for compile/training but in deployment):
 | **Status** | NOT yet filed (T13.D candidate). Workaround for our work: `pip uninstall triton + pip install --force-reinstall triton-ascend`. Memory `feedback_triton_vs_triton_ascend_packaging_conflict.md` records the recipe. |
 | **Triton 3.6.0 needed?** | **No** for miles training. miles's triton kernels use the stable `@triton.jit / tl.*` DSL that triton-ascend 3.2.0 implements. Mainline triton 3.6 is pulled in only by xgrammar (via vllm) for inference-time grammar paths, dead code in training. |
 
-### 5. `Ascend/MindSpeed` core_r0.16.0 — gaps surfaced during T13
+### 5. `Ascend/MindSpeed` core_r0.16.0 — `apex.transformer.functional.fused_apply_rotary_pos_emb_thd` shim
 
 | | |
 |---|---|
-| **Why** | T13.A confirmed adaptor boots cleanly. T13.B/C may surface additional Mcore 0.16-specific patches that Huawei MindSpeed team hasn't landed yet. |
-| **What** | TBD — pending T13.B miles e2e PASS log. If gaps found, contribute precise commits to `core_r0.16.0` branch (e.g. cherry-pick our R-KA-16 diagnostic, or add a missing `register_patch` for a Megatron-LM-miles symbol). |
-| **Status** | TODO after T13.B / T13.C. |
-| **Branch** | `Ascend/MindSpeed core_r0.16.0` is the upstream; fork on demand |
+| **Why** | T13.B (2026-05-28) confirmed MindSpeed `core_r0.16.0`'s `patch_features()` covers cuda→npu, RNG, Stream, TE (TEColumnParallelLinear / TERowParallelLinear / TEDotProductAttention / TELayerNormColumnParallelLinear / TE*GroupedLinear), and `te_general_gemm = None` — but does NOT install a fallback for `apex.transformer.functional.fused_apply_rotary_pos_emb_thd`. miles `glm5.py:fuse_rope` imports it directly, so without MindSpeed-side coverage the user must hand-shim it (which is what the original `_e2e_megatron_step.py` does in lines 87-130). The MindSpeed-aware variant `_e2e_megatron_step_mindspeed.py` carries a 35-line apex shim until this lands upstream. |
+| **What** | New `MindSpeedFeature` (likely under `mindspeed/features_manager/megatron_basic/apex_basic.py`) that uses `pm.register_patch('apex.transformer.functional.fused_apply_rotary_pos_emb_thd', _torch_fallback, create_dummy=True)` when apex is unavailable. ~30-50 LOC patch + matching test. |
+| **Status** | TODO. To be authored + tested + PR'd. |
+| **Branch** | `Ascend/MindSpeed core_r0.16.0` is the upstream; will fork to `zhshgmail/MindSpeed apex-rope-shim` for the PR. |
+| **Reproducer** | `_e2e_megatron_step_mindspeed.py` initial run output shows `ModuleNotFoundError: No module named 'apex.transformer'` at miles' `glm5.py:484`. After shim added back, full forward+backward at H=64 SEQ=2048 PASS (same residual NaN from R-KA-16 as T11). |
 
 ### 6. Container-level: tlrescue image triton install hygiene
 
@@ -123,15 +123,14 @@ If everything in the picture lands:
 
 | # | Upstream | Patch type | Outstanding work |
 |---|---|---|---|
-| 1 | tile-ai/tilelang-mlir-ascend | open PR (small Python pass) | Reviewer merge |
-| 2 | Ascend/AscendNPU-IR | filed issue, Huawei writes C++ | External |
-| 3 | radixark/miles | PR open after T13.B/C | Open after MindSpeed validation |
-| 4 | radixark/Megatron-LM (vendored in miles) | 8-line guard PR bundled with #3 | Same |
-| 5 | Ascend/triton-ascend | new packaging issue + maybe PR | TODO |
-| 6 | Ascend/MindSpeed (core_r0.16.0) | TBD by T13.B/C | TODO |
-| 7 | tlrescue container | image recipe | TODO |
+| 1 | tile-ai/tilelang-mlir-ascend | Python pass + UT | Reviewer merge (PR #80 open) |
+| 2 | Ascend/AscendNPU-IR | C++ compiler pass | External (Huawei team owns the patch on issue #251) |
+| 3 | radixark/miles | Python: tilelang kernels + dispatch | T13.B validated; open PR against miles-main |
+| 4 | Ascend/triton-ascend | metadata: `Provides-Dist: triton` (or docs) | Author + PR after empirical verification |
+| 5 | Ascend/MindSpeed (core_r0.16.0) | New `MindSpeedFeature` for apex rope shim | Author + PR (T13.C) |
+| 6 | tlrescue container | image recipe to drop mainline triton | Author + image rebuild test |
 
-**Total at present**: 4 strictly required upstream changes (#1 in flight, #2 with Huawei, #3+#4 prepared, #5 simple), plus 2-3 likely arising from T13 validation. None of them is blocking us today; we have a working manual-monkey-patch fallback that gets us through real-shape e2e.
+**Total**: 5 strictly required upstream changes authored or auth-ready by me, plus 1 (#2) where I own the diagnostic and Huawei owns the patch. **None is blocking us today**; the manual-monkey-patch driver + Triton workaround keep miles compiling and running at real shape. The remaining numerical NaN is gated only on #2.
 
 ---
 
