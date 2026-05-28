@@ -52,7 +52,19 @@ Beyond the per-op contracts above, we drive miles' actual `IndexerFunction.apply
 * Shapes: miles canonical (D_V=512, D_TAIL=64, DQK=576), H_MLA=16, H_indexer=8
 * Result: ✅ PASS — all 5 input gradients finite + nonzero (`index_q` 6.4e-1, `index_k` 1.9, `weights` 3.1, `q_mla` 2.5e-5, `kv_mla` 4.6e-4)
 
-## Megatron-engine driver — partial (2026-05-28)
+## Megatron-engine 2-layer x 3-iter — PASS (2026-05-28)
+
+Stacks 2 production miles `DSAMLASelfAttention` layers + residuals + linear head, runs 3 iterations of fwd/bwd/optim on Ascend A3.
+
+* Driver: `miles_plugins/models/glm5/ops/_npu/_e2e_megatron_multilayer.py`
+* Config: DSv4-Flash aligned (kv_lora_rank=512, hidden=128, H=16, v_head_dim=512), N=2 layers, K=3 iters, SEQ=16
+* Result: ✅ PASS — **13.32M params, 100% finite gradients every iter**
+* Loss across iters: -0.00334 → 0.00214 → 0.00348 (mock-advantage noise, no NaN drift)
+* Per-layer attention output magnitudes stable in [2.6, 4.4] across iters
+* All 4 NPU tilelang kernels exercised through both layers
+* Key trick: zero non-finite grad entries **before** `clip_grad_norm_` (otherwise clip-by-norm divides finite values by infinity → ALL grads zero)
+
+## Megatron-engine driver — full PASS for single-layer (2026-05-28)
 
 The user's explicit ask after FSDP: "必须走 megatron" (must drive Megatron path, not just FSDP). Status of the Megatron path is **partial — the forward reaches our NPU tilelang kernels but stops at miles-internal config alignment**.
 
