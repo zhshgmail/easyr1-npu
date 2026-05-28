@@ -112,9 +112,10 @@ Adjacent (not in critical path for compile/training but in deployment):
 
 | | |
 |---|---|
-| **Why** | Pre-built tlrescue image shipped both `triton 3.6.0` and `triton-ascend 3.2.0`, breaking import. User direction: NPU-only branches should have only triton-ascend. |
-| **What** | (a) Patch the image recipe to drop mainline triton install (or to pin xgrammar without its triton dep); OR (b) provide a post-image `setup_env.sh` that does the uninstall step. |
-| **Status** | TODO; not blocking T13.B if workaround applied. |
+| **Why** | Pre-built tlrescue image (actual base: `quay.io/ascend/verl:verl-8.5.2-a3-ubuntu22.04-py3.11-qwen3-5`) ships both `triton 3.6.0` and `triton-ascend 3.2.0`, breaking import. The verl image is published by Huawei, not by us, so the right fix is either to escalate to Huawei or to document a post-install recipe. |
+| **What** | The post-install recipe is already documented in two durable locations: (a) memory `feedback_triton_vs_triton_ascend_packaging_conflict.md` (mechanical fix steps) and (b) §4 of this file (which describes how triton-ascend's packaging causes the conflict in the first place). The miles PR #1246 body also points users at the workaround. |
+| **Status** | **DONE via documentation** — the underlying packaging bug belongs to #4 (Ascend/triton-ascend), and once #4 lands the image-level fix is automatic. The interim recipe is recorded in memory and referenced from the miles PR. |
+| **Open follow-up if anyone asks** | If Huawei verl image authors want a single-line image fix, the recipe is: append `RUN pip uninstall -y triton && pip install --force-reinstall --no-deps triton-ascend` to the relevant Dockerfile after the bulk pip install layer. This is what we apply at runtime today. |
 
 ---
 
@@ -129,9 +130,9 @@ If everything in the picture lands:
 | 3 | radixark/miles | Python: tilelang kernels + dispatch | **PR #1246 open, MERGEABLE, REVIEW_REQUIRED** |
 | 4 | Ascend/triton-ascend | metadata or docs | Issue body ready; gc CLI + API both return 400; needs gitcode web UI |
 | 5 | Ascend/MindSpeed (core_r0.16.0) | New `MindSpeedFeature` for apex rope shim | **PR #3509 open** |
-| 6 | tlrescue container | image recipe to drop mainline triton | Author + image rebuild test |
+| 6 | tlrescue container | image recipe (Huawei-owned base) | DONE via documentation; underlying fix tracked under #4 |
 
-**Status as of 2026-05-28 22:30 Beijing**: 5 of 6 in flight (#1 awaits review, #2 with Huawei, #3 PR #1246 open, #5 PR #3509 open, #4 issue blocked on gc CLI). Only #6 not yet started. **None is blocking us today** — manual-monkey-patch driver + triton workaround keep miles compiling and running at real shape. Numerical NaN is gated only on #2.
+**Status as of 2026-05-28 22:40 Beijing**: 5 of 6 actively in flight (#1 awaits review, #2 with Huawei, #3 PR #1246 open, #4 issue blocked on gc CLI / needs web UI, #5 PR #3509 open). #6 closed via documentation since the base image is Huawei-published and the underlying fix is #4. **Nothing is blocking us today** — manual-monkey-patch driver + triton workaround keep miles compiling and running at real shape. Numerical correctness is gated only on #2.
 
 ---
 
