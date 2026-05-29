@@ -88,14 +88,18 @@ Adjacent (not in critical path for compile/training but in deployment):
 | **Branch on fork** | `zhshgmail/miles npu-tilelang-ops` commit `d03db2c` |
 | **te_general_gemm sub-patch (`6f3209b` on `Megatron-LM-miles`)** | **WITHDRAWN as redundant** — T13.A confirmed MindSpeed core_r0.16.0 already binds `te_general_gemm = None` when TE is absent. The 8-line guard is no longer needed; the local branch stays as a fallback for the no-MindSpeed path. |
 
-### 4. `Ascend/triton-ascend` — packaging conflict with mainline `triton`
+### 4. `triton-lang/triton-ascend` — packaging conflict with mainline `triton`
 
 | | |
 |---|---|
-| **Why** | triton-ascend 3.2.0 and mainline triton 3.6.0 share `triton/backends/compiler.py` path but their forks have diverged (mainline has `Language`, triton-ascend has `AttrsDescriptor`). If both are installed, the later one wins and the former's amd/nvidia backends crash with `ImportError: cannot import name 'Language'`. |
-| **What** | Issue at `Ascend/triton-ascend` with full repro + 4 fix-direction options (Provides-Dist, Conflicts, namespace packaging, install-guide). |
-| **Status** | **Issue body ready at `/tmp/triton_ascend_issue.md`** (matches the repo's `Bug-Report` YAML template's 5 required textareas). **gc CLI + raw API both return 400 Bad Request** even for minimal test issues (likely server-side template-enforcement). Needs to be filed via gitcode web UI. Workaround for our work continues: `pip uninstall triton + pip install --force-reinstall triton-ascend`. Memory `feedback_triton_vs_triton_ascend_packaging_conflict.md` records the recipe. |
-| **Triton 3.6.0 needed?** | **No** for miles training. miles's triton kernels use the stable `@triton.jit / tl.*` DSL that triton-ascend 3.2.0 implements. Mainline triton 3.6 is pulled in only by xgrammar (via vllm) for inference-time grammar paths, dead code in training. |
+| **Why** | triton-ascend 3.2.0/3.2.1 and mainline triton 3.6.0 share `triton/backends/compiler.py` path but their forks have diverged (mainline has `Language`, triton-ascend has `AttrsDescriptor`). If both are installed, the later one wins and the former's amd/nvidia backends crash with `ImportError: cannot import name 'Language'`. |
+| **What** | Issue with full repro + 4 fix-direction options (Provides-Dist, Conflicts, namespace packaging, install-guide). |
+| **Status** | **Issue open** (2026-05-29). |
+| **Issue URL** | https://github.com/triton-lang/triton-ascend/issues/306 |
+| **Repo move** | The project moved from `gitcode.com/Ascend/triton-ascend` (now archived) to **`github.com/triton-lang/triton-ascend`** (canonical, under upstream Triton org). All future contributions land at the github home. |
+| **gc CLI dead-end (memo)** | Filing the issue via `gc CLI`/raw API was blocked: both returned `400 Bad Request` with `body不能为空` regardless of which body field name was tried. The repo's `Bug-Report` YAML template enforced 5 required textareas at the server level; only the gitcode web UI could satisfy them. Since the canonical home is now github, this dead-end is no longer relevant for new issues. |
+| **Triton 3.6.0 needed?** | **No** for miles training. miles's triton kernels use the stable `@triton.jit / tl.*` DSL that triton-ascend 3.2.0+ implements. Mainline triton 3.6 is pulled in only by xgrammar (via vllm) for inference-time grammar paths, dead code in training. |
+| **Adjacent context** | The README announces a planned Triton 3.5 upgrade for 2026 (current 3.2.1 tracks Triton 3.2). The packaging conflict is orthogonal to which mainline version is tracked — even at 3.5, the two `compiler.py` files will continue to diverge on per-vendor symbols. |
 
 ### 5. `Ascend/MindSpeed` core_r0.16.0 — `apex.transformer.functional.fused_apply_rotary_pos_emb_thd` shim
 
@@ -128,11 +132,11 @@ If everything in the picture lands:
 | 1 | tile-ai/tilelang-mlir-ascend | Python pass + UT | Reviewer merge (PR #80 open) |
 | 2 | Ascend/AscendNPU-IR | C++ compiler pass | External (Huawei team owns the patch on issue #251) |
 | 3 | radixark/miles | Python: tilelang kernels + dispatch | **PR #1246 open, MERGEABLE, REVIEW_REQUIRED** |
-| 4 | Ascend/triton-ascend | metadata or docs | Issue body ready; gc CLI + API both return 400; needs gitcode web UI |
+| 4 | triton-lang/triton-ascend | metadata or docs | **Issue #306 open** at github canonical home (gitcode home is archived) |
 | 5 | Ascend/MindSpeed (core_r0.16.0) | New `MindSpeedFeature` for apex rope shim | **PR #3509 open** |
 | 6 | tlrescue container | image recipe (Huawei-owned base) | DONE via documentation; underlying fix tracked under #4 |
 
-**Status as of 2026-05-28 22:40 Beijing**: 5 of 6 actively in flight (#1 awaits review, #2 with Huawei, #3 PR #1246 open, #4 issue blocked on gc CLI / needs web UI, #5 PR #3509 open). #6 closed via documentation since the base image is Huawei-published and the underlying fix is #4. **Nothing is blocking us today** — manual-monkey-patch driver + triton workaround keep miles compiling and running at real shape. Numerical correctness is gated only on #2.
+**Status as of 2026-05-29 02:30 Beijing**: 5 of 6 actively in flight (#1 awaits review, #2 with Huawei, #3 PR #1246 open, #4 issue #306 open at github canonical home, #5 PR #3509 open). #6 closed via documentation. **Nothing is blocking us today** — manual-monkey-patch driver + triton workaround keep miles compiling and running at real shape. Numerical correctness is gated only on #2.
 
 ---
 
