@@ -136,7 +136,19 @@ If everything in the picture lands:
 | 5 | Ascend/MindSpeed (core_r0.16.0) | New `MindSpeedFeature` for apex rope shim | **PR #3509 open** |
 | 6 | tlrescue container | image recipe (Huawei-owned base) | DONE via documentation; underlying fix tracked under #4 |
 
-**Status as of 2026-05-29 05:20 Beijing**: 4 actively in flight (#1 awaits review, #2 with Huawei, #3 PR #1246 open, #5 PR #3509 open). #4 closed via reframing (responsibility lies upstream of triton-ascend, not at triton-ascend). #6 closed via documentation. **Nothing is blocking us today** — manual-monkey-patch driver + triton workaround keep miles compiling and running at real shape. Numerical correctness is gated only on #2.
+**Status as of 2026-05-29 10:30 Beijing**: 3 actively in flight (#1 awaits review, #2 with Huawei) + 2 PRs intentionally held as drafts pending fuller multi-step / multi-layer validation (#3 PR #1246 draft, #5 PR #3509 draft). #4 closed via reframing. #6 closed via documentation.
+
+**Component validation matrix as of 2026-05-29 10:25 Beijing**:
+
+| Test | Patched-MindSpeed stack | Manual-monkey-patch stack | Notes |
+|---|---|---|---|
+| `MILES_E2E_SHAPE=reduced` single step | ✅ 11/12 finite grads, PASS | ✅ same | wq_b.weight non-finite is R-KA-15 indexer_bwd known |
+| `MILES_E2E_SHAPE=reduced` 2-layer x 3-iter | ✅ 25/25 finite per iter, PASS | ✅ baseline `4e12a91` | no NaN drift across iters |
+| `MILES_E2E_SHAPE=real` single step | ✅ compile + flow PASS | ✅ same | R-KA-16 numerical NaN (gated on #2) |
+| `MILES_E2E_SHAPE=real` multi-iter | not run | not run | gated on R-KA-16 |
+| RL full step (rollout → reward → actor train) | not run | not run | requires vllm-ascend rollout path — TBD |
+
+**Nothing is blocking miles real-shape compile-and-flow-through today**. Numerical correctness on real shape is gated only on #2 (R-KA-16). The PR drafts will move to ready after full RL-step or further reviewer feedback. miles fork `npu-tilelang-dispatch` commit `aef6e2d` carries the MindSpeed-aware drivers.
 
 ---
 
