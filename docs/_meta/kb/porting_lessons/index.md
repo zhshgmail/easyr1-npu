@@ -21,6 +21,7 @@ when a new failure mode is discovered.
 ### triton-ascend
 
 - [`triton-ascend-001-llvm-version-must-match-bishengir.md`](triton-ascend-001-llvm-version-must-match-bishengir.md) — triton-ascend libtriton.so and bishengir-compile must be built against the same LLVM source; MLIR text format diverges across major LLVM versions and produces misleading "custom op X unknown" parse errors at the binary boundary.
+- [`triton-ascend-002-packaging-conflict-with-mainline-triton.md`](triton-ascend-002-packaging-conflict-with-mainline-triton.md) — triton-ascend and mainline triton both register-overwrite `triton/backends/compiler.py`; only the later install is functional. Workaround on NPU hosts is `pip uninstall -y triton && pip install --force-reinstall --no-deps triton-ascend`. Don't file at triton-lang/triton-ascend (closed not-planned 2026-05-29) — the conflict belongs upstream of triton-ascend.
 
 ### vllm-ascend
 
