@@ -88,18 +88,18 @@ Adjacent (not in critical path for compile/training but in deployment):
 | **Branch on fork** | `zhshgmail/miles npu-tilelang-ops` commit `d03db2c` |
 | **te_general_gemm sub-patch (`6f3209b` on `Megatron-LM-miles`)** | **WITHDRAWN as redundant** — T13.A confirmed MindSpeed core_r0.16.0 already binds `te_general_gemm = None` when TE is absent. The 8-line guard is no longer needed; the local branch stays as a fallback for the no-MindSpeed path. |
 
-### 4. `triton-lang/triton-ascend` — packaging conflict with mainline `triton`
+### 4. Packaging conflict between `triton-ascend` and mainline `triton` (REFRAMED)
 
 | | |
 |---|---|
-| **Why** | triton-ascend 3.2.0/3.2.1 and mainline triton 3.6.0 share `triton/backends/compiler.py` path but their forks have diverged (mainline has `Language`, triton-ascend has `AttrsDescriptor`). If both are installed, the later one wins and the former's amd/nvidia backends crash with `ImportError: cannot import name 'Language'`. |
-| **What** | Issue with full repro + 4 fix-direction options (Provides-Dist, Conflicts, namespace packaging, install-guide). |
-| **Status** | **Issue open** (2026-05-29). |
-| **Issue URL** | https://github.com/triton-lang/triton-ascend/issues/306 |
-| **Repo move** | The project moved from `gitcode.com/Ascend/triton-ascend` (now archived) to **`github.com/triton-lang/triton-ascend`** (canonical, under upstream Triton org). All future contributions land at the github home. |
-| **gc CLI dead-end (memo)** | Filing the issue via `gc CLI`/raw API was blocked: both returned `400 Bad Request` with `body不能为空` regardless of which body field name was tried. The repo's `Bug-Report` YAML template enforced 5 required textareas at the server level; only the gitcode web UI could satisfy them. Since the canonical home is now github, this dead-end is no longer relevant for new issues. |
-| **Triton 3.6.0 needed?** | **No** for miles training. miles's triton kernels use the stable `@triton.jit / tl.*` DSL that triton-ascend 3.2.0+ implements. Mainline triton 3.6 is pulled in only by xgrammar (via vllm) for inference-time grammar paths, dead code in training. |
-| **Adjacent context** | The README announces a planned Triton 3.5 upgrade for 2026 (current 3.2.1 tracks Triton 3.2). The packaging conflict is orthogonal to which mainline version is tracked — even at 3.5, the two `compiler.py` files will continue to diverge on per-vendor symbols. |
+| **Symptom on tlrescue** | `import triton` raises `ImportError: cannot import name 'Language' from 'triton.backends.compiler'`. Both `triton-ascend 3.2.0/3.2.1` (NPU DSL) and mainline `triton 3.6.0` (GPU DSL) are present in site-packages; their forks of `triton/backends/compiler.py` have diverged enough that the last-installed one breaks the other's amd/nvidia backends. |
+| **Reframing 2026-05-29** | I initially filed this at `triton-lang/triton-ascend` (issue #306) asking for `Provides-Dist: triton` / namespace packaging / conflict declaration. User correctly pointed out: **`triton-ascend` shouldn't need to defend against mainline triton being present** — they are alternatives that aren't meant to coexist. The real source of the conflict is upstream: **`xgrammar` declares `Requires-Dist: triton; platform_system == "Linux" and platform_machine == "x86_64"`**, which fires on NPU hosts (also Linux x86_64) and transitively pulls in mainline triton via `vllm` → `vllm-ascend`. Then `pip install triton-ascend` collides. So the responsible layers are `xgrammar` (dep declaration) or the `quay.io/ascend/verl` image recipe (install order / mutual exclusion). |
+| **What I did** | Closed the `triton-lang/triton-ascend` issue as "not planned" with a comment explaining the reframing; the close comment preserves the underlying repro and the workaround so future folks landing via web search aren't lost. |
+| **Closed issue** | https://github.com/triton-lang/triton-ascend/issues/306 (closed 2026-05-29 with reframing comment) |
+| **Real upstream targets if escalated** | (A) `mlc-ai/xgrammar` — request platform-aware triton dep that doesn't fire on NPU hosts; (B) Huawei `quay.io/ascend/verl` image authors — request install-order fix so triton-ascend and xgrammar's mainline triton dep aren't both materialized; (C) downstream NPU integrators (vllm-ascend, miles users) — internal workaround documented + applied as part of `setup_env.sh` recipes. |
+| **Status** | **Closed via reframing** (not a triton-ascend issue). The workaround (`pip uninstall triton && pip install --force-reinstall --no-deps triton-ascend`) remains documented in memory and in this map; not blocking miles training. |
+| **gc CLI dead-end (memo)** | The earlier attempt to file at `gitcode.com/Ascend/triton-ascend` via `gc CLI`/raw API was blocked with `400 Bad Request body不能为空`. The gitcode repo is now archived (project moved to github canonical home) and this dead-end is moot for future work. |
+| **Triton 3.6.0 needed?** | **No** for miles training. miles's triton kernels use the stable `@triton.jit / tl.*` DSL that triton-ascend 3.2.0+ implements. Mainline triton 3.6 only enters via xgrammar's inference-time grammar path (dead code in training). |
 
 ### 5. `Ascend/MindSpeed` core_r0.16.0 — `apex.transformer.functional.fused_apply_rotary_pos_emb_thd` shim
 
@@ -132,11 +132,11 @@ If everything in the picture lands:
 | 1 | tile-ai/tilelang-mlir-ascend | Python pass + UT | Reviewer merge (PR #80 open) |
 | 2 | Ascend/AscendNPU-IR | C++ compiler pass | External (Huawei team owns the patch on issue #251) |
 | 3 | radixark/miles | Python: tilelang kernels + dispatch | **PR #1246 open, MERGEABLE, REVIEW_REQUIRED** |
-| 4 | triton-lang/triton-ascend | metadata or docs | **Issue #306 open** at github canonical home (gitcode home is archived) |
+| 4 | triton-lang/triton-ascend | (reframed) | **Issue #306 closed as "not planned"** — see §4 for full reframing |
 | 5 | Ascend/MindSpeed (core_r0.16.0) | New `MindSpeedFeature` for apex rope shim | **PR #3509 open** |
 | 6 | tlrescue container | image recipe (Huawei-owned base) | DONE via documentation; underlying fix tracked under #4 |
 
-**Status as of 2026-05-29 02:30 Beijing**: 5 of 6 actively in flight (#1 awaits review, #2 with Huawei, #3 PR #1246 open, #4 issue #306 open at github canonical home, #5 PR #3509 open). #6 closed via documentation. **Nothing is blocking us today** — manual-monkey-patch driver + triton workaround keep miles compiling and running at real shape. Numerical correctness is gated only on #2.
+**Status as of 2026-05-29 05:20 Beijing**: 4 actively in flight (#1 awaits review, #2 with Huawei, #3 PR #1246 open, #5 PR #3509 open). #4 closed via reframing (responsibility lies upstream of triton-ascend, not at triton-ascend). #6 closed via documentation. **Nothing is blocking us today** — manual-monkey-patch driver + triton workaround keep miles compiling and running at real shape. Numerical correctness is gated only on #2.
 
 ---
 
