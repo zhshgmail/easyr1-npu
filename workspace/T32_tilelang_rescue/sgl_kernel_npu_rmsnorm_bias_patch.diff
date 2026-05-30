@@ -1,0 +1,37 @@
+# sgl_kernel_npu 2026.5.1 upstream bug
+#
+# File: python/sgl_kernel_npu/sgl_kernel_npu/norm/fused_split_qk_norm.py
+# Symptom: AttributeError: 'RMSNorm' object has no attribute 'bias'
+# Cause: kernel call site assumes LayerNorm.bias attribute exists, but
+#        sglang's deepseek_v2 path uses RMSNorm which has only .weight.
+# Fix: use getattr(layernorm, 'bias', None) instead of bare .bias attr access.
+#
+# Reproduces in: lmsysorg/sglang:main-cann8.5.0-a3 (2026-05-25 build) with
+# our random-init 1-layer DSv4-Flash fab checkpoint.
+#
+# Local workaround applied inside sgl_probe container at runtime; should
+# be reported upstream to sgl-project/sgl-kernel-npu.
+
+--- a/python/sgl_kernel_npu/sgl_kernel_npu/norm/fused_split_qk_norm.py
++++ b/python/sgl_kernel_npu/sgl_kernel_npu/norm/fused_split_qk_norm.py
+@@ -114,13 +114,13 @@ def fused_split_qk_norm(
+         q_lora,
+         k_nope,
+         k_pe,
+         q_a_layernorm.weight,
+-        q_a_layernorm.bias,
++        getattr(q_a_layernorm, "bias", None),
+         kv_a_layernorm.weight,
+-        kv_a_layernorm.bias,
++        getattr(kv_a_layernorm, "bias", None),
+         total_hidden,
+         q_lora_rank,
+         kv_lora_rank,
+         qk_rope_dim,
+         eps,
+-        q_a_layernorm.bias is not None,
+-        kv_a_layernorm.bias is not None,
++        getattr(q_a_layernorm, "bias", None) is not None,
++        getattr(kv_a_layernorm, "bias", None) is not None,
+         **launch_grid,
+     )
