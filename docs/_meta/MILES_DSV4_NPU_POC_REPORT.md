@@ -198,6 +198,47 @@ miles 在 CUDA / H100 上跑得通。**目标**:让它跑在 Ascend A3 NPU 上(9
 
 **vllm-ascend rollout + Megatron+MindSpeed+tilelang actor train 在 NPU 同一进程跑通。这是 PR #1246 + PR #3509 + tile-ai PR #80 在 production RL 上下文里第一次端到端验证。**
 
+### 3.6 miles 本地实测配置(2026-05-30,user-confirmed)
+
+为了在 **HBM 受限**(共享 NPU host 时只有几 GB headroom)场景下也能持续做 miles 全栈本地验证,经实测确认下面这个 **1-layer 真 DSv4-Flash dims** 配置:
+
+| 字段 | 值 | 备注 |
+|---|---|---|
+| `hidden_size` | 4096 | 真 DSv4-Flash |
+| `num_attention_heads` | 64 | 真 DSv4-Flash |
+| **`num_layers`** | **1** | 减层(原 43) |
+| `q_lora_rank` | 1024 | 真 DSv4-Flash |
+| `kv_lora_rank` | 512 | 真 DSv4-Flash |
+| `v_head_dim` | 512 | 真 DSv4-Flash |
+| `qk_pos_emb_head_dim` | 64 | 真(凑出 `dim_plus_tail=576`)|
+| `index_num_attention_heads` | 64 | 真 |
+| `index_head_dim` | 128 | 真 |
+| **`index_topk`** | **8** | 缩小(原 512;保证算子走 sparse path) |
+| **`SEQ`** | **128** | 缩小(原 2048) |
+| `dtype` | bf16 | 真 |
+
+**总 params:183,502,592 ≈ 0.34 GB at bf16**。脚本 `workspace/T32_tilelang_rescue/dsv4_1layer_hbm_probe.py`。watchdog `dsv4_safe_probe.sh` 包住跑保证不影响别人。
+
+**实测结果(2026-05-30 在 sgl host 上 chip 1 跑)**:
+- forward 4.7s,backward 3.5s,Adam ~0.1s,**总 ~8.2s**
+- 4 个 tilelang 算子全部 compile + run(AscendNPU IR compile success ×4)
+- loss = -0.00151,**finite grads 7/12**(5 个非 finite 来自 R-KA-16 sparse_mla_fwd NS≥2,等 Huawei #251 修)
+
+**为什么这个配置是「miles 本地实测的最低代价 + 全算子覆盖」**:
+- **算子覆盖完整**:lighting_indexer_fwd/bwd + sparse_mla_fwd/bwd 都走真 production shape(H=64, D_V=512, dim_plus_tail=576),只是 SEQ 和 topk 缩小
+- **dim_plus_tail=576 约束被严格满足**(`kv_lora_rank + qk_pos_emb_head_dim = 512+64 = 576`),miles `sparse_mla_fwd_interface:185` 的 `assert dim_plus_tail_dim == 576` 通过
+- **HBM 极低**:0.34 GB 权重 + 几百 MB activation/HCCL = **几 GB 量级**,在 60 GB chip 上不会撞别人的长跑
+
+**对比 vs 原 PoC 的两个配置**:
+
+| 配置 | hidden | H | num_layers | SEQ | topk | params | 适用场景 |
+|---|---|---|---|---|---|---|---|
+| `reduced`(原)| 128 | 16 | 1 | 16 | 4 | ~6.6M | toy 烟火 smoke / CI |
+| **`miles_local`**(新)| **4096** | **64** | **1** | **128** | **8** | **183.5M** | **真 production dim 但 HBM 受限本地验证** |
+| `real`(原)| 512 | 64 | 1 | 2048 | 512 | 52M | 真 DSv4-Flash dim 全跑(包括 SEQ) |
+
+注:原 `real` preset 其实只取了 DSv4-Flash 的 attention dim,把 hidden_size 调成 512(因为 v_head_dim 也是 512,凑数好看);**新 `miles_local` 是第一个真正用 DSv4-Flash 完整 hidden=4096 跑 forward+backward 的配置**(也因此 params 从 52M 长到 183.5M)。
+
 ---
 
 ## 4. 已发现的问题 + 上游 PR / issue 清单
