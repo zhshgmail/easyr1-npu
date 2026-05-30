@@ -49,10 +49,11 @@
 └───────────────────────────────────────────────────────────────┘
 ```
 
-Adjacent (not in critical path for compile/training but in deployment):
-* **vllm-ascend** (`Ascend/vllm-ascend`) — inference; pulls `xgrammar` which transitively pins mainline `triton`.
-* **MindSpeed-LLM** (`Ascend/MindSpeed-LLM`) — LLM-specific pretraining; depends on MindSpeed Core; 47 model families. Not needed if miles + Mcore-0.16 covers the model.
-* **MindSpeed-RL** (`Ascend/MindSpeed-RL`) — RL on top; miles replaces it.
+Adjacent (rollout / deployment side, in critical path for full RL):
+* **sglang on NPU** (`sgl-project/sglang` + `sgl-project/sgl-kernel-npu`) — **miles 默认 rollout engine**(`miles/ray/rollout.py:16` 顶层 `from sglang.srt.constants import …`)。NPU 支持 in-tree(`docs/platforms/ascend/`),不是 Ascend fork。**已发现的版本错位**:Huawei 发布的 `quay.io/ascend/verl:verl-sglang-8.5.0` 和 `swr.../lmsysorg/sglang:cann8.5.0-a3-glm5` 都比上游落后(我们手上 sgl-kernel-npu 2026.02.01 vs 上游 2026.05.01.post3,差 3 个 release wave;sglang 0.5.10 vs 上游 v0.5.12.post1)。**推荐路径**:`lmsysorg/sglang:main-cann8.5.0-a3`(每天更新)或 `lmsysorg/sglang:v0.5.12.post1-cann8.5.0-a3`。**Tracker**:sglang issue **#23598 "DeepSeek-V4 Day 0 Support on NPUs" 仍 open**;PR #23882「Deepseek V4」merged 2026-05-08 进 v0.5.12,PR #18521「GlmMoeDsaForCausalLM」merged 2026-02-10,PR #11061「DeepSeek V3.2 Exp」merged 2025-10-06。
+* **vllm-ascend** (`Ascend/vllm-ascend`) — 备用 inference engine;pulls `xgrammar` which transitively pins mainline `triton`。
+* **MindSpeed-LLM** (`Ascend/MindSpeed-LLM`) — LLM-specific pretraining;depends on MindSpeed Core;47 model families。Not needed if miles + Mcore-0.16 covers the model.
+* **MindSpeed-RL** (`Ascend/MindSpeed-RL`) — RL on top;miles replaces it.
 
 ---
 
