@@ -6,6 +6,40 @@
 
 ---
 
+## TL;DR
+
+### 当前系统状态
+
+miles DSv4-Flash 在 Ascend A3 NPU 上 **PoC 端到端跑通**:
+- 4 个 tilelang 算子(lighting_indexer_fwd/bwd、sparse_mla_fwd/bwd)在真 DSv4-Flash shape(H=64 / SEQ=2048 / topk=512)下**编译 PASS,3/4 数值正确**
+- 52M-param Megatron+MindSpeed+tilelang 训练栈在真 shape 下 **forward+backward+Adam 跑通**
+- **完整一步 RL 跑完**:vllm-ascend 拉 Qwen2-0.5B 真做 rollout(NPU 上真推理 + 真生成)→ GRPO advantage → miles DSAMLA actor train,**12/12 finite grads,loss = -0.06163,result: PASS**
+- 唯一数值缺口:`sparse_mla_fwd` 在 NS≥2 有 NaN,锁定为单一上游编译器 bug R-KA-16,已上抛 Huawei 编译器组
+
+### 已完成的修复
+
+| 修复 | 提交去向 |
+|---|---|
+| tilelang `CheckUBBudget` 早失败诊断 pass | **tile-ai PR #80 ready / CI 全绿** |
+| miles `_npu/` 子包(4 个 NPU 算子 + dispatcher + head-split + UB cap)| **radixark PR #1246 ready, MERGEABLE** |
+| MindSpeed apex.transformer.functional.fused_apply_rotary_pos_emb_thd shim | **Ascend/MindSpeed PR #3509 ready** |
+| R-KA-16 ExtendedCanonicalizer 罪魁定位 + 311-pass bisect 报告 | **AscendNPU-IR Issue #251** |
+| miles `sparse_mla_fwd/bwd` UB 容量优化 + R-KA-16 mitigation(本地)| miles fork `npu-tilelang-dispatch` |
+| vllm + MindSpeed 共存的 3 处 import-order fix | 在 RL driver 里 + 沉淀到 KB |
+
+外加 8 条 NPU porting lesson 沉淀到 auto-memory 和 KB。
+
+### 后续要做的工作
+
+按重要性:
+1. **等 R-KA-16 上游修**(Huawei 编译器组)→ 修了之后做数值回测,把 PR #1246 从 "blocked on R-KA-16" 更新到 "fully validated"
+2. **3 个 PR 等 reviewer 审查**(tile-ai #80 / radixark #1246 / Ascend/MindSpeed #3509),目前已连续 15+ 小时 60-min polling 无活动,等他们
+3. **rollout 升级到 production scale**:当前 PoC rollout 用 Qwen2-0.5B 是 smoke,真 production 需要 vllm-ascend 拉 DSv4-Flash 本体跑长上下文,DSAMLA-aware 推理路径要不要在 `Ascend/vllm-ascend` 提另一个 PR
+4. **真 shape 多 step RL 训练**(需要 R-KA-16 修完后才有意义)
+5. **性能 baseline**(算子 wall time、训练吞吐、端到端 RL step 时长)
+
+---
+
 ## 1. 背景
 
 ### 1.1 miles 是什么
