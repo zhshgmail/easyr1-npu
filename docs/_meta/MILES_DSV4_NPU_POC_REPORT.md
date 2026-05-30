@@ -134,10 +134,16 @@ miles 在 CUDA / H100 上跑得通。**目标**:让它跑在 Ascend A3 NPU 上(9
 用户 10:57 收口要求:**「完整的 rl step,完全验证后在转 ready」**。
 
 写了 `_e2e_rl_step_mindspeed.py`(330 行)走 4 阶段:
-1. **rollout**:vllm-ascend 拉 Qwen2-0.5B 真生成 2 prompt × 2 sample,语义正确("Tokyo"、"2+3=5")
+1. **rollout(vllm-ascend on NPU,真推理引擎,不是 mock)**:
+   - 引擎:`from vllm import LLM, SamplingParams` → vllm-ascend platform plugin auto-activate
+   - 模型:Qwen2-0.5B-Instruct,bf16,enforce-eager,KV cache 7.94 GiB
+   - 设备:chip 1,`gpu_memory_utilization=0.15`(~10 GiB,host 上另一用户在跑 8-chip 训练所以让出来)
+   - 性能:init 9.55s,generate 3.6s,2 prompt × 2 sample = 4 sequence
+   - 输出:语义正确("Tokyo. The capital of Japan is Tokyo."、"2+3 equals 5")
+   - 关键 fix:vllm `+empty` editable install 因 `sys.path` 含 `/` 被 PathFinder 屏蔽 → strip `sys.path`;vllm 与 mindspeed 共存因 MindSpeed `create_dummy=True` 装 stub `flash_attn` 让 vllm `find_spec` 误判 → deferred import + sys.modules 清理
 2. **reward**:length + token diversity(避免 GRPO group std=0)
 3. **advantage**:GRPO group-normalised,**非平凡值** `[-1.0, +1.0, +1.0, -1.0]`
-4. **actor train**:miles DSAMLA(6.6 M params)forward+backward+Adam 走 patched stack
+4. **actor train**:miles DSAMLA(6.6 M params)forward+backward+Adam 走 patched stack(MindSpeed adaptor + 4 个 tilelang kernel compile & run)
 
 **结果**:
 ```
@@ -265,11 +271,11 @@ miles 在 CUDA / H100 上跑得通。**目标**:让它跑在 Ascend A3 NPU 上(9
 - 真 production 需要 real shape (H=64 SEQ=2048) + 多 step + checkpoint + reward function 接真 dataset
 - 这一步是把 PoC 升级到 production demo,**需要 R-KA-16 修了再做**(否则 multi-step real shape 会持续 NaN)
 
-**(5)** **vllm-ascend rollout 真 shape**:
-- 当前 RL step 用 Qwen2-0.5B(0.5B params)做 rollout 是为了 smoke
-- 真 production rollout 用 DSv4-Flash 模型,需要 vllm-ascend 支持 DSAMLA 的推理路径
+**(5)** **vllm-ascend rollout 真 production scale**(注:**rollout 基础设施已经跑通**,见 §3.5;这里说的是把它从 0.5B smoke 升级到真 production 规模):
+- **本 PoC 跑过的 rollout**:vllm-ascend 拉 Qwen2-0.5B,bf16,enforce-eager,init 9.55s + KV cache 7.94 GiB + generate 3.6s,生成内容语义正确,与 patched-stack actor train 在同一 Python 进程跑通,靠 import 顺序(vllm 先 → mindspeed 后)+ sys.path strip + flash_attn shim 清理三层 fix 解决了一系列 vllm/MindSpeed 共存冲突
+- **还没做的**:rollout 模型用 DSv4-Flash 本体(几十 B),vllm-ascend 是否支持 DSAMLA 推理路径未测过
 - vllm-ascend 现在主要还在跑 Qwen / LLaMA,DSv4 推理是否 ready 没实测过
-- 这一步可能要在 `Ascend/vllm-ascend` 提另一个 PR(让 DSAMLA-aware rollout 工作)
+- 真 production 需要 rollout 拉真 DSv4-Flash + 真 SEQ=2048 长上下文,这一步可能要在 `Ascend/vllm-ascend` 提另一个 PR(让 DSAMLA-aware rollout 工作)
 
 ### 5.3 性能 baseline 没做
 
