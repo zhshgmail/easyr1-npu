@@ -18,7 +18,7 @@ miles DSv4-Flash 在 Ascend A3 NPU 上 **PoC 端到端跑通**:
 
 ### 已开 / 已沉淀的上游 PR / Issue 列表
 
-| # | 上游 | 类型 | 状态 | URL |
+| # | 上游 | 类型 | 状态 | PR |
 |---|---|---|---|---|
 | 1 | `tile-ai/tilelang-mlir-ascend` | PR — `CheckUBBudget` 早失败诊断 pass + UT | **ready, MERGEABLE, CI 全绿 24m15s test PASS** | https://github.com/tile-ai/tilelang-mlir-ascend/pull/80 |
 | 2 | `Ascend/AscendNPU-IR` | Issue — R-KA-16 罪魁定位 + 311-pass bisect 报告 + 3 patch 方向 | open;Huawei 编译器组接手 C++ patch | https://gitcode.com/Ascend/AscendNPU-IR/issues/251 |
