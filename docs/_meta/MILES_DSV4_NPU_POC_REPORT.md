@@ -43,6 +43,15 @@ miles DSv4-Flash 在 Ascend A3 NPU 上 **PoC 端到端跑通**:
 - 唯一数值缺口:`sparse_mla_fwd` 在 NS≥2 有 NaN,锁定为单一上游编译器 bug R-KA-16,已上抛 Huawei 编译器组
 - **rollout engine 替换说明**:miles 默认用 **SGLang**(`miles/ray/rollout.py:16` 顶层 `from sglang.srt.constants import ...` + `SGLangEngine`)。本 PoC RL step 用 vllm-ascend 是因为 tlrescue 容器里有 vllm-ascend 没装 sglang;**sglang-on-NPU baseline 已独立 smoke PASS**(2026-05-30,见 §5.2 (3a),Qwen2-0.5B engine init 20.1s + generate 16.9s + 输出语义正确),接 miles RL driver 走 HTTP server 模式是下一步
 
+**2026-05-30 晚 sglang DSv4-Flash 同架构 PoC milestone chain**(§3.7):
+- 拉新 `lmsysorg/sglang:main-cann8.5.0-a3` image(原 `quay.io/ascend/verl:verl-sglang-8.5.0-...` 和 `lmsysorg/sglang:cann8.5.0-a3-glm5` 都比上游落后 3 个 sgl-kernel-npu release wave)
+- **1-layer DSv4-Flash 真 dims** HF 随机 init fab ckpt(architectures=DeepseekV32ForCausalLM,miles_local config dims:hidden=4096/H=64/q_lora=1024/kv_lora=512/v_head_dim=512/index_topk=8)在 sglang 上 PASS,engine init 22-26s,generate 5.6s
+- 发现 + 修上游 bug A:**sgl_kernel_npu `fused_split_qk_norm.py` RMSNorm.bias AttributeError → PR #531**(本地 monkeypatch 后所有测试通过)
+- **R3(`return_routed_experts`)plumbing 全栈通**:engine flag `enable_return_routed_experts=True` + per-request `return_routed_experts=True` 后,meta_info 真返回 base64-encoded per-token expert IDs(MoE-active fab ckpt 上,4 routed experts + 1 shared,实测 8 个 IDs 都在 {1,2} 符合 top-k=2)
+- **Megatron miles DSAMLA → HF deepseek_v2 rename map** 12 keys byte-clean 闭合
+- **dense 1-layer DSv4-Flash 5-step weight sync PASS**:每步 synthesize seeded delta → rename → merge into fab base → POST `/update_weights_from_disk` 返回 success → 5/5 step rollout 输出互不相同(distinct rollout outputs: 6/6)
+- 发现上游 bug B:**MoE-active `/update_weights_from_disk` reload path 在 FusedMoE `_load_w13` 撞 `narrow(0, 4096) > dim_size 1408`,初次 load 通过但 reload crash → Issue #26794**(blocking MoE 全路径 sync 验证,plumbing 已 prove,等上游修)
+
 ### 已开 / 已沉淀的上游 PR / Issue 列表
 
 | # | 上游 | 类型 | 状态 | PR |
@@ -52,10 +61,12 @@ miles DSv4-Flash 在 Ascend A3 NPU 上 **PoC 端到端跑通**:
 | 3 | `radixark/miles` | PR — `_npu/` 子包(4 NPU 算子 + dispatcher + head-split + UB cap + R-KA-16 mitigation) | **ready, MERGEABLE, REVIEW_REQUIRED** | https://github.com/radixark/miles/pull/1246 |
 | 4 | `Ascend/MindSpeed` | PR — `apex.transformer.functional.fused_apply_rotary_pos_emb_thd` shim(38 行 self-contained fallback)| **ready** | https://gitcode.com/Ascend/MindSpeed/merge_requests/3509 |
 | 5 | `triton-lang/triton-ascend` | (Issue closed-with-reframing)triton vs triton-ascend coexistence | closed not-planned + KB lesson `triton-ascend-002` | https://github.com/triton-lang/triton-ascend/issues/306 |
+| **6** | **`sgl-project/sgl-kernel-npu`** | **PR — `fused_split_qk_norm` RMSNorm `.bias` getattr fix(4 行)**(2026-05-30 新) | **OPEN, REVIEW_REQUIRED** | https://github.com/sgl-project/sgl-kernel-npu/pull/531 |
+| **7** | **`sgl-project/sglang`** | **Issue — `/update_weights_from_disk` FusedMoE `_load_w13` narrow regression**(2026-05-30 新) | **OPEN**;等 maintainer 回复 reload path 是否应 honor stacked_params_mapping | https://github.com/sgl-project/sglang/issues/26794 |
 
 外加 8 条 NPU porting lesson 沉淀到 auto-memory 和 KB(完整列表见 §4.4)。
 
-> 「3 PR ready / 1 issue open / 1 closed via reframing」是 PoC 的对外可见成果。详细修复内容、empirical evidence、为什么这样改见后面各节。
+> 「**4 PR ready + 1 Issue OPEN + 1 closed via reframing**」(更新自 2026-05-30 sglang milestone chain)是 PoC 的对外可见成果。详细修复内容、empirical evidence、为什么这样改见后面各节(§3.7 详述 sglang DSv4-Flash 同架构 milestone)。
 
 ### 后续要做的工作
 
