@@ -76,16 +76,19 @@ RMS_NORM_EPS = 1e-5
 ROPE_THETA = 10000.0
 MAX_POSITION_EMBEDDINGS = 2048
 
-# MoE: first_k_dense_replace=1 with num_hidden_layers=1 means our single
-# layer is DENSE MLP (skips MoE path entirely). This keeps the fabricated
-# checkpoint smaller and avoids needing experts. The MoE code path is
-# separately tested in miles' production -- not the focus of this validation.
-N_ROUTED_EXPERTS = 4      # tiny MoE expert pool; layer 0 stays dense via
-                          # first_k_dense_replace=1 (so no MoE weights actually loaded);
-                          # sglang's eplb math still wants a valid count
+# MoE: toggled by MOE_ACTIVE env var.
+# - MOE_ACTIVE=0 (default): first_k_dense_replace=1, layer 0 is dense MLP,
+#   no MoE weights actually loaded. Smaller / simpler / proven to load.
+# - MOE_ACTIVE=1: first_k_dense_replace=0, layer 0 IS the MoE layer with
+#   N_ROUTED_EXPERTS + N_SHARED_EXPERTS. Weights include mlp.gate.weight,
+#   mlp.gate.e_score_correction_bias, experts.N.{gate,up,down}_proj.weight,
+#   shared_experts.{gate,up,down}_proj.weight. Required to test R3 actually
+#   returns per-token expert ids.
+MOE_ACTIVE = bool(int(os.environ.get("MOE_ACTIVE", "0")))
+N_ROUTED_EXPERTS = 4      # tiny MoE expert pool
 MOE_INTERMEDIATE = 1408
 N_SHARED_EXPERTS = 1
-FIRST_K_DENSE_REPLACE = 1  # all layers (= 1) are dense -> no MoE init needed
+FIRST_K_DENSE_REPLACE = 0 if MOE_ACTIVE else 1
 
 
 def build_config_dict():
@@ -202,11 +205,28 @@ def build_random_weights(seed=42):
     weights[f"{idx}.k_norm.weight"] = ones((INDEX_HEAD_DIM,))
     weights[f"{idx}.k_norm.bias"] = zeros((INDEX_HEAD_DIM,))
 
-    # Dense MLP (since first_k_dense_replace=1 >= num_layers=1, this layer is dense)
     mlp = f"{prefix}.mlp"
-    weights[f"{mlp}.gate_proj.weight"] = randn((INTERMEDIATE, HIDDEN))
-    weights[f"{mlp}.up_proj.weight"] = randn((INTERMEDIATE, HIDDEN))
-    weights[f"{mlp}.down_proj.weight"] = randn((HIDDEN, INTERMEDIATE))
+    if MOE_ACTIVE:
+        # MoE layer: gate + N routed experts + (optional) shared experts.
+        weights[f"{mlp}.gate.weight"] = randn((N_ROUTED_EXPERTS, HIDDEN))
+        # noaux_tc topk_method requires e_score_correction_bias (fp32 per-expert)
+        weights[f"{mlp}.gate.e_score_correction_bias"] = torch.zeros(
+            (N_ROUTED_EXPERTS,), dtype=torch.float32
+        )
+        for ei in range(N_ROUTED_EXPERTS):
+            weights[f"{mlp}.experts.{ei}.gate_proj.weight"] = randn((MOE_INTERMEDIATE, HIDDEN))
+            weights[f"{mlp}.experts.{ei}.up_proj.weight"] = randn((MOE_INTERMEDIATE, HIDDEN))
+            weights[f"{mlp}.experts.{ei}.down_proj.weight"] = randn((HIDDEN, MOE_INTERMEDIATE))
+        if N_SHARED_EXPERTS and N_SHARED_EXPERTS > 0:
+            shared_inter = MOE_INTERMEDIATE * N_SHARED_EXPERTS
+            weights[f"{mlp}.shared_experts.gate_proj.weight"] = randn((shared_inter, HIDDEN))
+            weights[f"{mlp}.shared_experts.up_proj.weight"] = randn((shared_inter, HIDDEN))
+            weights[f"{mlp}.shared_experts.down_proj.weight"] = randn((HIDDEN, shared_inter))
+    else:
+        # Dense MLP (first_k_dense_replace=1)
+        weights[f"{mlp}.gate_proj.weight"] = randn((INTERMEDIATE, HIDDEN))
+        weights[f"{mlp}.up_proj.weight"] = randn((INTERMEDIATE, HIDDEN))
+        weights[f"{mlp}.down_proj.weight"] = randn((HIDDEN, INTERMEDIATE))
 
     return weights
 

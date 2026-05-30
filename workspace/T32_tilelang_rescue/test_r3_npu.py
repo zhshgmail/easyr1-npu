@@ -41,6 +41,9 @@ def main():
         tp_size=1,
         disable_cuda_graph=True,
         trust_remote_code=False,
+        # R3: two-layer flag system. Server arg = allocate buffers;
+        # per-request flag = include in response.
+        enable_return_routed_experts=True,
     )
     print(f"[test] engine init in {time.time()-t0:.1f}s")
 
