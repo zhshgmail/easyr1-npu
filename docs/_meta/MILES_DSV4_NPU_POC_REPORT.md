@@ -15,7 +15,7 @@ miles DSv4-Flash 在 Ascend A3 NPU 上 **PoC 端到端跑通**:
 - 52M-param Megatron+MindSpeed+tilelang 训练栈在真 shape 下 **forward+backward+Adam 跑通**
 - **完整一步 RL 跑完**:**vllm-ascend** 拉 Qwen2-0.5B 真做 rollout(NPU 上真推理 + 真生成)→ GRPO advantage → miles DSAMLA actor train,**12/12 finite grads,loss = -0.06163,result: PASS**
 - 唯一数值缺口:`sparse_mla_fwd` 在 NS≥2 有 NaN,锁定为单一上游编译器 bug R-KA-16,已上抛 Huawei 编译器组
-- **rollout engine 替换说明**:miles 默认用 **SGLang**(`miles/ray/rollout.py` 顶层 `from sglang.srt.constants import ...` + `SGLangEngine`)。本 PoC 选用 vllm-ascend 是因为 tlrescue 容器里有 vllm-ascend 没装 sglang;sglang-on-NPU 是后续要做的工作(见 §5.2 (4))
+- **rollout engine 替换说明**:miles 默认用 **SGLang**(`miles/ray/rollout.py:16` 顶层 `from sglang.srt.constants import ...` + `SGLangEngine`)。本 PoC RL step 用 vllm-ascend 是因为 tlrescue 容器里有 vllm-ascend 没装 sglang;**sglang-on-NPU baseline 已独立 smoke PASS**(2026-05-30,见 §5.2 (3a),Qwen2-0.5B engine init 20.1s + generate 16.9s + 输出语义正确),接 miles RL driver 走 HTTP server 模式是下一步
 
 ### 已开 / 已沉淀的上游 PR / Issue 列表
 
@@ -36,7 +36,7 @@ miles DSv4-Flash 在 Ascend A3 NPU 上 **PoC 端到端跑通**:
 按重要性:
 1. **等 R-KA-16 上游修**(Huawei 编译器组)→ 修了之后做数值回测,把 PR #1246 从 "blocked on R-KA-16" 更新到 "fully validated"
 2. **3 个 PR 等 reviewer 审查**(tile-ai #80 / radixark #1246 / Ascend/MindSpeed #3509),目前已连续 15+ 小时 60-min polling 无活动,等他们
-3. **sglang-on-NPU(把 miles 的 default rollout 引擎在 NPU 上跑起来)**:miles 顶层依赖 `sglang.srt`(`miles/ray/rollout.py` import 链),本 PoC 用 vllm-ascend 替代是为了先把 tlrescue 已有环境跑通。真正接 miles 默认 trainer 路径需要 sglang 本体在 NPU 上能用。已知 A3 host 上有两个候选镜像可直接试:`quay.io/ascend/verl:verl-sglang-8.5.0-a3-ubuntu22.04-py3.11-latest` 和 `swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:cann8.5.0-a3-glm5`(后者标 GLM-5,可能 DSv4-Flash 的 attn 路径也带)。计划步骤:(a) 在新容器拉一个 sglang-ascend 镜像;(b) 跑 sglang server + 小模型 NPU 推理 smoke;(c) 把 PoC RL driver 的 `from vllm import LLM` 段切换成 sglang 客户端调用;(d) 如果 sglang-ascend 缺 DSAMLA 推理 path,可能要在 `Ascend/sglang` 或 sglang upstream 提 PR
+3. **sglang-on-NPU(把 miles 的 default rollout 引擎在 NPU 上跑起来)**:miles 顶层依赖 `sglang.srt`(`miles/ray/rollout.py:16` import 链),本 PoC 用 vllm-ascend 替代是为了先把 tlrescue 已有环境跑通。**(3a) DONE 2026-05-30 baseline smoke PASS**:在 `quay.io/ascend/verl:verl-sglang-8.5.0-a3-...`(16 GB,装好 sglang 0.5.10 + `sgl_kernel_npu` 2026.2.1 + torch 2.8 + triton-ascend 3.2.0)拉起 sidecar 容器 `sgl_probe`,跑 Qwen2-0.5B-Instruct,**`sgl.Engine` init 20.1s + generate 16.9s + 输出语义正确("Paris"、"Sarah... UK student"),result: PASS**。脚本 `workspace/T32_tilelang_rescue/sglang_npu_smoke.py`。途中撞 3 个坑:(i) `import sglang` 又遇到 `/` 在 sys.path 的 namespace shadow,跟 vllm 同一个 fix;(ii) 容器只 mount 一个 davinci device 时不能 `ASCEND_RT_VISIBLE_DEVICES=1`(会过滤掉唯一 chip);(iii) sglang Engine 用 multiprocessing spawn → 必须 `if __name__ == "__main__"` 保护。**(3b) TODO 接 miles RL driver**:`sgl_probe`(torch 2.8)和 `tlrescue`(torch 2.9)是不同 ABI,**不能合一**。production 路径走 sglang HTTP server 模式(miles `SGLangEngine` 本来就这样用):sgl_probe 起 sglang server,RL driver 在 tlrescue 跑、用 HTTP 客户端调 sgl_probe 拉 sample。**(3c) TODO 真 production 规模**:本 PoC smoke 用 0.5B 模型,真 production 拉 DSv4-Flash 本体需要 sglang 支持 DSAMLA attn path,sglang 当前是否带要测;如果缺,提 PR 到 `sgl-project/sglang` 或 Huawei `Ascend/sgl-kernel-npu`
 4. **rollout 升级到 production scale**(承接 (3) 之后):当前 PoC rollout 用 Qwen2-0.5B 是 smoke,真 production 需要 sglang(或 vllm-ascend,看哪条 path 先打通)拉 **DSv4-Flash 本体** 跑长上下文,**DSAMLA-aware 推理路径**要不要在对应 ascend rollout 引擎上提另一个 PR
 5. **真 shape 多 step RL 训练**(需要 R-KA-16 修完后才有意义)
 6. **性能 baseline**(算子 wall time、训练吞吐、端到端 RL step 时长)
