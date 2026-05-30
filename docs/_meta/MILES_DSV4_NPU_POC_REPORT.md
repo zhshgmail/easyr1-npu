@@ -16,18 +16,19 @@ miles DSv4-Flash 在 Ascend A3 NPU 上 **PoC 端到端跑通**:
 - **完整一步 RL 跑完**:vllm-ascend 拉 Qwen2-0.5B 真做 rollout(NPU 上真推理 + 真生成)→ GRPO advantage → miles DSAMLA actor train,**12/12 finite grads,loss = -0.06163,result: PASS**
 - 唯一数值缺口:`sparse_mla_fwd` 在 NS≥2 有 NaN,锁定为单一上游编译器 bug R-KA-16,已上抛 Huawei 编译器组
 
-### 已完成的修复
+### 已开 / 已沉淀的上游 PR / Issue 列表
 
-| 修复 | 提交去向 |
-|---|---|
-| tilelang `CheckUBBudget` 早失败诊断 pass | **tile-ai PR #80 ready / CI 全绿** |
-| miles `_npu/` 子包(4 个 NPU 算子 + dispatcher + head-split + UB cap)| **radixark PR #1246 ready, MERGEABLE** |
-| MindSpeed apex.transformer.functional.fused_apply_rotary_pos_emb_thd shim | **Ascend/MindSpeed PR #3509 ready** |
-| R-KA-16 ExtendedCanonicalizer 罪魁定位 + 311-pass bisect 报告 | **AscendNPU-IR Issue #251** |
-| miles `sparse_mla_fwd/bwd` UB 容量优化 + R-KA-16 mitigation(本地)| miles fork `npu-tilelang-dispatch` |
-| vllm + MindSpeed 共存的 3 处 import-order fix | 在 RL driver 里 + 沉淀到 KB |
+| # | 上游 | 类型 | 状态 | URL |
+|---|---|---|---|---|
+| 1 | `tile-ai/tilelang-mlir-ascend` | PR — `CheckUBBudget` 早失败诊断 pass + UT | **ready, MERGEABLE, CI 全绿 24m15s test PASS** | https://github.com/tile-ai/tilelang-mlir-ascend/pull/80 |
+| 2 | `Ascend/AscendNPU-IR` | Issue — R-KA-16 罪魁定位 + 311-pass bisect 报告 + 3 patch 方向 | open;Huawei 编译器组接手 C++ patch | https://gitcode.com/Ascend/AscendNPU-IR/issues/251 |
+| 3 | `radixark/miles` | PR — `_npu/` 子包(4 NPU 算子 + dispatcher + head-split + UB cap + R-KA-16 mitigation) | **ready, MERGEABLE, REVIEW_REQUIRED** | https://github.com/radixark/miles/pull/1246 |
+| 4 | `Ascend/MindSpeed` | PR — `apex.transformer.functional.fused_apply_rotary_pos_emb_thd` shim(38 行 self-contained fallback)| **ready** | https://gitcode.com/Ascend/MindSpeed/merge_requests/3509 |
+| 5 | `triton-lang/triton-ascend` | (Issue closed-with-reframing)triton vs triton-ascend coexistence | closed not-planned + KB lesson `triton-ascend-002` | https://github.com/triton-lang/triton-ascend/issues/306 |
 
-外加 8 条 NPU porting lesson 沉淀到 auto-memory 和 KB。
+外加 8 条 NPU porting lesson 沉淀到 auto-memory 和 KB(完整列表见 §4.4)。
+
+> 「3 PR ready / 1 issue open / 1 closed via reframing」是 PoC 的对外可见成果。详细修复内容、empirical evidence、为什么这样改见后面各节。
 
 ### 后续要做的工作
 
