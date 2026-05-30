@@ -1,8 +1,34 @@
 # miles DeepSeek-V4-Flash 在昇腾 A3 NPU 上的 PoC 总结报告
 
-**版本**:2026-05-30 02:00 Beijing  
+**版本**:2026-05-30 17:10 Beijing  
 **作者**:claude-opus-4-7(在 zhshgmail/easyr1-npu)  
 **对象**:`/home/z00637938/workspace/miles`(radixark/miles GLM-5 子集)在 Ascend 910C(A3 / dav-c220)上跑通真 DSv4-Flash 参数 RL 训练
+
+---
+
+## 项目目标(durable,任何 PoC 工作 must 服务于此)
+
+**最终目标**:**miles + DeepSeek-V4-Flash** 这一对组合在 Ascend NPU 上完成 **RL 后训练**(post-training)。
+
+**为什么要做减层/小规模实测**:
+
+减层版(`miles_local` config:1-layer DSv4-Flash 真 dims)是 **大规模集群正式跑前** 的强制验证阶段,**目的是验证**:
+- **结构问题** — Megatron + MindSpeed + tilelang + miles 在 NPU 上的拼装是否在 DSv4-Flash 的真架构维度下能跑(LoRA-absorb 后 dim_plus_tail=576 等约束 / DSAMLA 子模块拼装 / MoE routing 路径 / Megatron parallel-state)
+- **算子问题** — 4 个 tilelang 算子(lighting_indexer fwd/bwd、sparse_mla fwd/bwd)在真 H=64 / D_V=512 / dim_plus_tail=576 下的编译 + 数值是否正确
+
+如果 1-layer 下结构 + 算子全通,放大到 43 层(完整 DSv4-Flash)在原理上就可信;**如果 1-layer 下都不通,没必要拿大规模集群烧钱**。所以减层不是「玩具」,而是 **正式集群试跑的强制前置条件**。
+
+**关键约束 — 减层试跑必须坚持的设计原则**:
+
+1. **rollout 模型和 training 模型必须是同一个**(都跑 1-layer DSv4-Flash)。否则:
+   - weight update 验证完全无意义(两边模型架构不同,权重无法 sync)
+   - 「RL 训练真的在驱动 rollout 改变」这个命题没法证明
+   - **任何用 Qwen2 / Llama / 别的模型替代 sglang rollout 端的做法,都属于走捷径,不符合项目目标**
+2. **必须用 NPU 真硬件**(不是 mock,不是 CPU-only simulation),所有 4 个 tilelang 算子必须真编译 + 真运行
+3. **减层 = 减 num_layers**,不能减 hidden_size / num_heads / kv_lora_rank 等维度(那些决定算子层的 shape,降这些 = 不是真在测目标算子)
+4. **必要时**减 SEQ 长度 / index_topk 是允许的(只为单步走完 + HBM 控制),只要算子代码路径覆盖一致即可
+
+**当前 PoC 范围**:阶段性目标是把 1-layer DSv4-Flash 在 NPU 上的 RL loop 跑通(sglang rollout 用同一架构的减层 model + Megatron actor train);R-KA-16 上游修了之后,才算真正 unblock 大规模集群跑。
 
 ---
 
