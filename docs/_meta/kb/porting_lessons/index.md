@@ -9,6 +9,39 @@ when a new failure mode is discovered.
 **Cross-link**: 与 PoC 报告 §4 的 `P-COMP/P-API/P-REG/P-ENV/P-CONF-*` 一一对应,见
 [`MILES_DSV4_NPU_POC_REPORT.md` §4.0 总表](../../MILES_DSV4_NPU_POC_REPORT.md#40-一张总表快速-grep)。
 
+**Tool**: 用 `/npu-adapt-assist <error-trace>` 自动按 trigger / symptom 匹配 — 见
+[`src/skills/npu-adapt-assist/`](../../../../src/skills/npu-adapt-assist/README.md)。
+
+---
+
+## Keyword / alias grep 表(retrieval-friendly)
+
+Worker / 用户先 grep 这一节按关键词找到 cookbook ID,然后跳到 [§ By layer](#by-layer) 拿 link。
+每个 cookbook 在 frontmatter 里有完整 `trigger[]` / `symptom_in_wild[]`,这里只放一行别名摘要供快速 grep。
+
+| 现象 / 关键词 | Cookbook | P-CLASS |
+|---|---|---|
+| `AttributeError.*RMSNorm.*bias`, `'RMSNorm' object has no attribute 'bias'`, fused_split_qk_norm, sgl_kernel_npu RMSNorm | `sglang-002` | P-API-2 |
+| `ImportError.*vllm`, `ImportError.*sglang`, namespace package shadow, sys.path '/' or '', PathFinder editable install, `+empty` finder | `cross-layer-008` | P-ENV-2 |
+| sparse_mla_fwd NaN, NS≥2, NS=2/4/8, online softmax cross-iter accumulator, bishengir ExtendedCanonicalizer, R-KA-16, scf.for iter_args | `bishengir-001` | P-COMP-1 |
+| ub overflow, bishengir 30s, UB cap 64KB / 192KB, CheckUBBudget, block_M tuning, per-alloc breakdown | `tilelang-001` | P-COMP-2 |
+| `ModuleNotFoundError.*apex.transformer`, fused_apply_rotary_pos_emb_thd, mindspeed apex_adaptation gap, GLM-5 fuse_rope, fuse_rope ImportError | `mindspeed-002` | P-API-1 |
+| flash_attn stub, `find_spec.*flash_attn`, mindspeed create_dummy, vllm rotary embedding crash, RL single-process import order | `cross-layer-010` / `mindspeed-001` | P-ENV-5 |
+| RuntimeError narrow, FusedMoE `_load_w13`, update_weights_from_disk, MoE weight reload, stacked_params_mapping reload, RL weight sync | `sglang-003` | P-REG-1 |
+| triton vs triton-ascend, `triton/backends/compiler.py` conflict, `cannot import name 'Language'`, xgrammar triton, pip install order | `triton-ascend-002` | P-ENV-1 |
+| sglang Engine fork bomb, multiprocessing spawn, `__main__` guard missing, Engine init hang, context already set | `sglang-001` | P-ENV-4 |
+| `T.vbrc.*rank check`, vbrc raw int, tilelang vbrc literal, vbrc rank-0 mismatch | `tilelang-002` | P-CONF-1 |
+| container NPU invisible, host npu-smi OK container empty, `uda_occupy_dev_by_ns`, Ray raylet zombie, NPU ns lock | `cross-layer-011` | P-CONF-2 |
+| `ASCEND_RT_VISIBLE_DEVICES=1`, single chip filter, container device_count=0, davinci single mount, RT_VISIBLE id-vs-count confusion | `cross-layer-009` | P-ENV-3 |
+| miles DSAMLA, lighting_indexer port, sparse_mla port, NPU tilelang dispatcher, `q.is_npu`, miles 4 算子 NPU port | `miles-001` | P-API-3 |
+| LLVM version mismatch, libtriton.so bishengir-compile, MLIR text format diverges, "custom op X unknown" binary boundary | `triton-ascend-001` | (legacy) |
+| `_TORCH_VERSION_BUILT_FOR`, vllm-ascend torch ABI guard, C++ side never set, 14 iters silent | `vllm-ascend-001` | (legacy) |
+| fixc image tag, image rebuild proof, `.so` torch ABI verification, `ldd` + symbol + native op call | `vllm-ascend-002` | (legacy) |
+| vllm shim plugin-init order, `vllm.v1.sample.*`, `vllm.v1.spec_decode.*`, find_spec + lazy `__getattr__` | `vllm-ascend-003` | (legacy) |
+
+`(legacy)` 标的是 PoC §4 之前已存在的 cookbook;无 `P-CLASS-N` 标号但仍可用。
+
+
 ## By layer
 
 ### cross-layer

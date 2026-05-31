@@ -17,7 +17,9 @@ No external deps — stdlib only (re, pathlib, argparse, json, sys).
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -197,6 +199,30 @@ def load_kb(kb_dir: Path) -> list[dict]:
     return entries
 
 
+def run_preflight() -> int:
+    """Invoke preflight.sh; return its exit code (0=CLEAN, 1=WARN, 2=ABORT).
+
+    Honors NPU_ADAPT_ASSIST_SKIP_PREFLIGHT=1 for testing; not for production.
+    """
+    if os.environ.get("NPU_ADAPT_ASSIST_SKIP_PREFLIGHT") == "1":
+        return 0
+    preflight = Path(__file__).resolve().parent / "preflight.sh"
+    if not preflight.exists():
+        print(
+            "[retrieve] WARN: preflight.sh not found; proceeding without check",
+            file=sys.stderr,
+        )
+        return 0
+    try:
+        r = subprocess.run(
+            [str(preflight), "--quiet"], capture_output=False, timeout=10
+        )
+        return r.returncode
+    except Exception as e:
+        print(f"[retrieve] WARN: preflight failed to run: {e}", file=sys.stderr)
+        return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Retrieve KB entries matching a trace.")
     ap.add_argument("--trace-file", type=Path, help="Read input from file")
@@ -204,7 +230,22 @@ def main() -> int:
     ap.add_argument("--kb-dir", type=Path, help="Override KB dir")
     ap.add_argument("--json", action="store_true", help="Emit JSON only")
     ap.add_argument("--top", type=int, default=3, help="Top N to surface")
+    ap.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="Skip preflight check (testing only)",
+    )
     args = ap.parse_args()
+
+    if not args.skip_preflight:
+        rc = run_preflight()
+        if rc == 2:
+            print(
+                "[retrieve] ABORT — preflight failed. Run scripts/preflight.sh "
+                "to see errors, fix them, then re-run.",
+                file=sys.stderr,
+            )
+            return 2
 
     if args.trace_file:
         input_text = args.trace_file.read_text(encoding="utf-8")

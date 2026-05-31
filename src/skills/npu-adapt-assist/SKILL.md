@@ -21,6 +21,18 @@ context: inline
 
 # /npu-adapt-assist — KB retrieval for NPU adaptation failures
 
+> **Anti-pressure protocols (MANDATORY, load first)**: read
+> [`src/skills/_shared/references/ANTI_PRESSURE_PROTOCOLS.md`](../_shared/references/ANTI_PRESSURE_PROTOCOLS.md)
+> before recommending a fix. P1–P8 are LLM-pressure drift modes (user-watching,
+> context-filling, batch-throughput, simple-op assumption, failure discomfort,
+> infrastructure friction, closure desire, tool-path-of-least-resistance) that
+> override technical rules under load. Cite the relevant Px before
+> recommending the user act on a retrieval result.
+
+> **Preflight (MANDATORY)**: `retrieve.py` invokes `scripts/preflight.sh`
+> automatically on startup. If preflight returns ABORT, retrieve.py refuses to
+> proceed (exit 2). Don't bypass with `--skip-preflight` except for testing.
+
 ## Your role
 
 When the user pastes an error or describes a porting question:

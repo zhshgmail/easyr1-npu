@@ -2,7 +2,7 @@
 
 把 [`hiyouga/EasyR1`](https://github.com/hiyouga/EasyR1) 适配到 Ascend 910C (A3) NPU，并沉淀一套针对 4 个 NPU 上游（vllm-ascend / torch-npu / transformers / triton-ascend）的可复用版本升级工具链。
 
-最后更新：2026-05-31（新增 miles + DSv4-Flash 子项目 PoC 报告与 13 条 NPU 适配 cookbook）。
+最后更新：2026-05-31（新增 miles + DSv4-Flash 子项目 PoC 报告与 13 条 NPU 适配 cookbook；`/npu-adapt-assist` skill 加 preflight + KB index 加 keyword 表，借鉴自 [a5_ops](workspace/a5_ops_audit_2026_05_31/FINDINGS.md) audit）。
 
 > **想直接在 A3 上跑 EasyR1 → [`ONBOARDING.md`](ONBOARDING.md)**（一页 quickstart，两条已验证路径）
 >
@@ -58,7 +58,8 @@ PoC 阶段性产出 **5 个上游 PR + 1 个 Issue**：
 | 想看 open work / 技术债 / 下一步做什么 | [`docs/_meta/ROADMAP.md`](docs/_meta/ROADMAP.md)（**唯一权威 backlog**） |
 | 想接手项目（continuing agent / 新 session） | [`docs/_meta/handovers/`](docs/_meta/handovers/) + [`ROADMAP.md`](docs/_meta/ROADMAP.md) + [`ARCHITECTURE.md`](docs/_meta/ARCHITECTURE.md) |
 | 想查 NPU 操作模式与已知 bug（29 stable IDs） | [`knowledge/npu-patterns.md`](knowledge/npu-patterns.md) |
-| 想查跨层移植教训（lessons learned，27 条 NPU 适配 cookbook） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/) |
+| 想查跨层移植教训（lessons learned，27 条 NPU 适配 cookbook） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/)（顶部有 keyword grep 表） |
+| 想根据 error trace 自动找匹配的 cookbook | `/npu-adapt-assist <paste-trace>`，详见 [`src/skills/npu-adapt-assist/`](src/skills/npu-adapt-assist/README.md)（启动会自动跑 preflight） |
 | 想看 miles + DSv4-Flash PoC 完整报告（问题分类 + 解决方案 + 上游 PR / Issue 清单） | [`docs/_meta/MILES_DSV4_NPU_POC_REPORT.md`](docs/_meta/MILES_DSV4_NPU_POC_REPORT.md) |
 | 你是 vllm-ascend 维护者，想看升级流程详解 | [`docs/vllm-ascend/PORTING-GUIDE.md`](docs/vllm-ascend/PORTING-GUIDE.md) |
 | 你是 torch-npu 维护者 | [`docs/torch-npu/PORTING-GUIDE.md`](docs/torch-npu/PORTING-GUIDE.md) |

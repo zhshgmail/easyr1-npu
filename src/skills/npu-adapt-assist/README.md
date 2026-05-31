@@ -16,7 +16,10 @@ Or with a file:
 
 ## What it does
 
-1. Loads all 27 KB entries (`docs/_meta/kb/porting_lessons/*.md`)
+0. **Preflight** (automatic) — `scripts/preflight.sh` verifies prerequisites
+   (KB dir reachable, retrieve.py present, python3 OK, ≥1 schema-conformant
+   KB entry). ABORT verdict → retrieve.py refuses to proceed (exit 2).
+1. Loads all 25 schema-conformant KB entries (`docs/_meta/kb/porting_lessons/*.md`)
 2. Ranks by frontmatter `trigger` and `symptom_in_wild` match against input
 3. Returns top match + correction recipe quoted verbatim
 
@@ -36,6 +39,16 @@ Or with a file:
 | C | `sparse_mla_fwd` NaN at NS≥2, NS=1 OK | `bishengir-001` |
 
 Run validator: `./scripts/cold_drive_validate.sh`.
+
+## Preflight standalone
+
+```
+./scripts/preflight.sh           # human verdict
+./scripts/preflight.sh --json    # machine verdict (CI)
+./scripts/preflight.sh --quiet   # output only on WARN/ABORT
+```
+
+Verdicts: `CLEAN` (exit 0) | `WARN` (exit 1) | `ABORT` (exit 2).
 
 ## When to add a new KB entry
 
