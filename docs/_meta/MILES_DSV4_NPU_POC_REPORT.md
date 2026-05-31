@@ -1,6 +1,6 @@
 # miles DeepSeek-V4-Flash 在昇腾 A3 NPU 上的 PoC 总结报告
 
-**版本**:2026-05-31 07:50 Beijing(§4 重组为「问题分类 → 解决方案 cookbook」格式)  
+**版本**:2026-05-31 11:00 Beijing(reviewer feedback 闭环:PR #1246 `ff0161cc0` + PR #80 `27e5c54`,UT 新增 14 条)  
 **作者**:claude-opus-4-7(在 zhshgmail/easyr1-npu)  
 **对象**:`/home/z00637938/workspace/miles`(radixark/miles GLM-5 子集)在 Ascend 910C(A3 / dav-c220)上跑通真 DSv4-Flash 参数 RL 训练
 
@@ -56,17 +56,19 @@ miles DSv4-Flash 在 Ascend A3 NPU 上 **PoC 端到端跑通**:
 
 | # | 上游 | 类型 | 状态 | PR |
 |---|---|---|---|---|
-| 1 | `tile-ai/tilelang-mlir-ascend` | PR — `CheckUBBudget` 早失败诊断 pass + UT | **ready, MERGEABLE, CI 全绿 24m15s test PASS** | https://github.com/tile-ai/tilelang-mlir-ascend/pull/80 |
-| 2 | `Ascend/AscendNPU-IR` | Issue — R-KA-16 罪魁定位 + 311-pass bisect 报告 + 3 patch 方向 | open;Huawei 编译器组接手 C++ patch | https://gitcode.com/Ascend/AscendNPU-IR/issues/251 |
-| 3 | `radixark/miles` | PR — `_npu/` 子包(4 NPU 算子 + dispatcher + head-split + UB cap + R-KA-16 mitigation) | **ready, MERGEABLE, REVIEW_REQUIRED** | https://github.com/radixark/miles/pull/1246 |
-| 4 | `Ascend/MindSpeed` | PR — `apex.transformer.functional.fused_apply_rotary_pos_emb_thd` shim(38 行 self-contained fallback)| **ready** | https://gitcode.com/Ascend/MindSpeed/merge_requests/3509 |
+| 1 | `tile-ai/tilelang-mlir-ascend` | PR — `CheckUBBudget` 早失败诊断 pass + UT | **reviewer feedback addressed `27e5c54`,CI 待重跑,REVIEW_REQUIRED**(gemini 2026-05-28 提 4 条:1 HIGH `mod.attrs=None` crash + 3 MEDIUM `_scope_of` fallback / `name_hint` / `_suggest_block_M` 3 bugs;全部 fix 含 5 个新 UT) | https://github.com/tile-ai/tilelang-mlir-ascend/pull/80 |
+| 2 | `Ascend/AscendNPU-IR` | Issue — R-KA-16 罪魁定位 + 311-pass bisect 报告 + 3 patch 方向 | open;Huawei 编译器组 `SL25` 2026-05-29 09:08 加 `triage-review` label,issue 已分配到 triage 队列;无 owner / ETA | https://gitcode.com/Ascend/AscendNPU-IR/issues/251 |
+| 3 | `radixark/miles` | PR — `_npu/` 子包(4 NPU 算子 + dispatcher + head-split + UB cap + R-KA-16 mitigation) | **reviewer feedback addressed `ff0161cc0`,REVIEW_REQUIRED**(gemini 2026-05-28 提 6 条 HIGH:5 个 negative-sentinel guard + 1 个 intrinsic 拼写 `T.atomic_addx4` → `T.npuir_atomic_addx4` + AMP-safe `_MAGIC_THRESHOLD` 1e3→1e30;全部 fix 含新增 9-test source-level UT,本地 9/9 PASS,negative-test 验过) | https://github.com/radixark/miles/pull/1246 |
+| 4 | `Ascend/MindSpeed` | PR — `apex.transformer.functional.fused_apply_rotary_pos_emb_thd` shim(38 行 self-contained fallback)| **ready**(无 human reviewer 反馈;10 条 comment 全 `ascend-robot` docs CI skip) | https://gitcode.com/Ascend/MindSpeed/merge_requests/3509 |
 | 5 | `triton-lang/triton-ascend` | (Issue closed-with-reframing)triton vs triton-ascend coexistence | closed not-planned + KB lesson `triton-ascend-002` | https://github.com/triton-lang/triton-ascend/issues/306 |
-| **6** | **`sgl-project/sgl-kernel-npu`** | **PR — `fused_split_qk_norm` RMSNorm `.bias` getattr fix(4 行)**(2026-05-30 新) | **OPEN, REVIEW_REQUIRED** | https://github.com/sgl-project/sgl-kernel-npu/pull/531 |
+| **6** | **`sgl-project/sgl-kernel-npu`** | **PR — `fused_split_qk_norm` RMSNorm `.bias` getattr fix(4 行)**(2026-05-30 新) | **OPEN, REVIEW_REQUIRED**(gemini 2026-05-30 review:"no review comments, no feedback") | https://github.com/sgl-project/sgl-kernel-npu/pull/531 |
 | **7** | **`sgl-project/sglang`** | **Issue — `/update_weights_from_disk` FusedMoE `_load_w13` narrow regression**(2026-05-30 新) | **OPEN**;等 maintainer 回复 reload path 是否应 honor stacked_params_mapping | https://github.com/sgl-project/sglang/issues/26794 |
 
-外加 8 条 NPU porting lesson 沉淀到 auto-memory 和 KB(完整列表见 §4.4)。
+外加 27 条 NPU porting lesson 沉淀到 KB(`docs/_meta/kb/porting_lessons/`,13 条新增自本 PoC),含 keyword grep 表 + scope-tag schema(借鉴 a5_ops audit 2026-05-31)。
 
-> 「**4 PR ready + 1 Issue OPEN + 1 closed via reframing**」(更新自 2026-05-30 sglang milestone chain)是 PoC 的对外可见成果。详细修复内容、empirical evidence、为什么这样改见后面各节(§3.7 详述 sglang DSv4-Flash 同架构 milestone)。
+> 「**4 PR ready + 1 Issue OPEN + 1 closed via reframing**」(更新自 2026-05-31 reviewer feedback 闭环)。**reviewer 在 PR #1246 上抓到一个真 production bug**(`_MAGIC_THRESHOLD = 1e3` 在 AMP 下会把合法 loss-scaled gradient 给 silently zero),这条 finding 单独就值得 PR 的存在。**Lesson learned**(2026-05-31):上游 PR polling 必须查 `reviews[]` 和 line-level `/pulls/N/comments`,光看 `gh pr view comments[]` 会漏掉 bot reviewer 留下的 review submission(它们不算 issue-comments)。memory `pr_polling_must_check_reviews_field.md` 已沉淀。
+>
+> 详细修复内容、empirical evidence、为什么这样改见后面各节(§3.7 详述 sglang DSv4-Flash 同架构 milestone)。
 
 ### 后续要做的工作
 
@@ -446,11 +448,14 @@ miles 在 CUDA / H100 上跑得通。**目标**:让它跑在 Ascend A3 NPU 上(9
 - 时间表:外部,不可控
 - 解决之后:撤掉 num_stages=1 workaround,在 PR #1246 之上加第二个 commit
 
-**(b) 3 个 PR 等 reviewer 审查** —— **非阻塞**
-- tile-ai PR #80:CI 全绿等 maintainer,**已连续 15 次 60-min polling 无活动**
-- radixark/miles PR #1246:open ready,0 comments,**同样 polling 无活动**
-- Ascend/MindSpeed PR #3509:open ready,无活动
-- 时间表:外部,正常 OSS review 时长一般是几天到几周
+**(b) 5 个 PR / 1 Issue 等 reviewer 审查** —— **非阻塞**(2026-05-31 update)
+- tile-ai PR #80:**reviewer feedback addressed `27e5c54`**(gemini 4 条,3 MEDIUM + 1 HIGH TVM API hardening;新增 5 个 UT;CI 待 re-run),REVIEW_REQUIRED
+- radixark/miles PR #1246:**reviewer feedback addressed `ff0161cc0`**(gemini 6 条 HIGH:5 个 negative-sentinel guard + 1 个 intrinsic 拼写 + 1 个 production-bug-level AMP `_MAGIC_THRESHOLD`;新增 9 个 source-level UT,本地 9/9 PASS),REVIEW_REQUIRED
+- sgl-kernel-npu PR #531:gemini 2026-05-30 review "no review comments",4 行 patch 无反馈,等 human reviewer
+- Ascend/MindSpeed PR #3509:gitcode 无 human reviewer 反馈,10 条 `ascend-robot` docs CI skip
+- AscendNPU-IR Issue #251:Huawei `SL25` 加 `triage-review` label,已分配到 triage 队列;无 owner / ETA
+- sglang Issue #26794:OPEN,等 maintainer
+- 时间表:外部,正常 OSS review 时长一般是几天到几周;reviewer 在 PR #1246 上抓到一个真 AMP production bug,值得记录
 
 ### 5.2 后续计划
 
@@ -465,11 +470,10 @@ miles 在 CUDA / H100 上跑得通。**目标**:让它跑在 Ascend A3 NPU 上(9
 - 把这些更新做成 PR #1246 第二个 commit,push 到 fork 同 PR 分支
 - 同时 update PR body 把 "blocked on R-KA-16" 改成 "fully validated"
 
-**(2)** 跟进 reviewer 反馈循环:
-- PR #80 reviewer 如果要 nit 改:5-30 min
-- PR #80 reviewer 如果要 C++ port:几小时
-- PR #1246 reviewer 反馈:基本是 code review 问题,reduced/medium/real + multi-iter + RL step 四组验证证据都备好了
-- PR #3509 reviewer 反馈:38 行 self-contained 函数,reviewer 应该不会有大问题
+**(2)** ~~跟进 reviewer 反馈循环~~(2026-05-31 闭环):
+- PR #80:gemini 4 条反馈全 fix 进 `27e5c54`,5 个新 UT(`test_mod_attrs_none_does_not_crash` / `test_scope_of_falls_back_via_name_hint` / `test_uses_name_hint_not_name` / `test_suggest_block_M_resets_per_row_state` / `test_suggest_block_M_uses_bit_length_not_log2`)
+- PR #1246:gemini 6 条 HIGH 全 fix 进 `ff0161cc0`,9 个 source-level UT 本地 9/9 PASS(negative-test 过)。**reviewer 抓到一个 production bug**(AMP `_MAGIC_THRESHOLD = 1e3` 会 silently zero loss-scaled gradient),这条 finding 单独就值得 PR 存在
+- PR #3509 / #531:无 human reviewer 反馈,继续等
 
 **(3)** **DSA fused-op 探索**(可选,production value 评估):
 - Huawei MindSpeed core_r0.16.0 已经在做 DSA op 集成,有 `npu_lightning_indexer.cpp` + `triton_indexer_bf16.py`
