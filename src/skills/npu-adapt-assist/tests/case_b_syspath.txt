@@ -1,0 +1,5 @@
+ImportError: cannot import name 'LLM' from 'vllm'
+
+But pip show vllm succeeds and shows vllm installed via pip install -e .
+The script was run from / (root working directory).
+sys.path includes '' or '/'.

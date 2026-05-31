@@ -1,0 +1,5 @@
+miles sparse_mla_fwd_interface output all NaN at NS=4 on Ascend A3 NPU.
+NS=1 PASS, only NS>=2 fails.
+GPU H100 triton reference on identical shape passes with max abs err 3e-4.
+tilelang code uses num_stages>=2 + online softmax accumulator.
+bishengir-compile produces correct IR for NS=1 but NaN at NS>=2.

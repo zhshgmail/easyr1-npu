@@ -2,7 +2,7 @@
 
 把 [`hiyouga/EasyR1`](https://github.com/hiyouga/EasyR1) 适配到 Ascend 910C (A3) NPU，并沉淀一套针对 4 个 NPU 上游（vllm-ascend / torch-npu / transformers / triton-ascend）的可复用版本升级工具链。
 
-最后更新：2026-04-28。
+最后更新：2026-05-31（新增 miles + DSv4-Flash 子项目 PoC 报告与 13 条 NPU 适配 cookbook）。
 
 > **想直接在 A3 上跑 EasyR1 → [`ONBOARDING.md`](ONBOARDING.md)**（一页 quickstart，两条已验证路径）
 >
@@ -25,6 +25,21 @@
 
 **集成 image**：`easyr1-npu:integrated-20260427`（28.2 GB，SHA `044ba0b76183`，A3 host 上）。
 
+### 子项目：miles + DSv4-Flash on NPU PoC（2026-05 闭环）
+
+PoC 阶段性产出 **5 个上游 PR + 1 个 Issue**：
+
+| # | 上游 | 类型 | 状态 | URL |
+|---|---|---|---|---|
+| 1 | `tile-ai/tilelang-mlir-ascend` | PR — `CheckUBBudget` early-fail pass | ready, CI 全绿 | https://github.com/tile-ai/tilelang-mlir-ascend/pull/80 |
+| 2 | `Ascend/AscendNPU-IR` | Issue — R-KA-16 `ExtendedCanonicalizer` drops cross-iter accum | OPEN（Huawei 编译器组接手）| https://gitcode.com/Ascend/AscendNPU-IR/issues/251 |
+| 3 | `radixark/miles` | PR — `_npu/` 子包 + 4 个 DSAMLA tilelang 算子 | ready, MERGEABLE | https://github.com/radixark/miles/pull/1246 |
+| 4 | `Ascend/MindSpeed` | PR — apex rope-thd shim(38 行) | ready, REVIEW_REQUIRED | https://gitcode.com/Ascend/MindSpeed/merge_requests/3509 |
+| 5 | `sgl-project/sgl-kernel-npu` | PR — `fused_split_qk_norm` RMSNorm `.bias` getattr fix | OPEN, REVIEW_REQUIRED | https://github.com/sgl-project/sgl-kernel-npu/pull/531 |
+| 6 | `sgl-project/sglang` | Issue — `/update_weights_from_disk` FusedMoE `_load_w13` narrow regression | OPEN | https://github.com/sgl-project/sglang/issues/26794 |
+
+详细问题分类(`P-COMP/P-API/P-REG/P-ENV/P-CONF-*`)+ 解决方案 cookbook（13 条新沉淀）见 **[`docs/_meta/MILES_DSV4_NPU_POC_REPORT.md` §4](docs/_meta/MILES_DSV4_NPU_POC_REPORT.md#4-问题分类--解决方案-cookbook)**;每条 cookbook 在 [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/) 单独成文(schema 见 [`_schema.md`](docs/_meta/kb/porting_lessons/_schema.md))。
+
 ---
 
 ## 目录
@@ -43,7 +58,8 @@
 | 想看 open work / 技术债 / 下一步做什么 | [`docs/_meta/ROADMAP.md`](docs/_meta/ROADMAP.md)（**唯一权威 backlog**） |
 | 想接手项目（continuing agent / 新 session） | [`docs/_meta/handovers/`](docs/_meta/handovers/) + [`ROADMAP.md`](docs/_meta/ROADMAP.md) + [`ARCHITECTURE.md`](docs/_meta/ARCHITECTURE.md) |
 | 想查 NPU 操作模式与已知 bug（29 stable IDs） | [`knowledge/npu-patterns.md`](knowledge/npu-patterns.md) |
-| 想查跨层移植教训（lessons learned） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/) |
+| 想查跨层移植教训（lessons learned，27 条 NPU 适配 cookbook） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/) |
+| 想看 miles + DSv4-Flash PoC 完整报告（问题分类 + 解决方案 + 上游 PR / Issue 清单） | [`docs/_meta/MILES_DSV4_NPU_POC_REPORT.md`](docs/_meta/MILES_DSV4_NPU_POC_REPORT.md) |
 | 你是 vllm-ascend 维护者，想看升级流程详解 | [`docs/vllm-ascend/PORTING-GUIDE.md`](docs/vllm-ascend/PORTING-GUIDE.md) |
 | 你是 torch-npu 维护者 | [`docs/torch-npu/PORTING-GUIDE.md`](docs/torch-npu/PORTING-GUIDE.md) |
 | 你是 transformers 维护者，想看 PR 资料 | [`docs/transformers/PR_MATERIAL_v5.4_outcome_A.md`](docs/transformers/PR_MATERIAL_v5.4_outcome_A.md) |

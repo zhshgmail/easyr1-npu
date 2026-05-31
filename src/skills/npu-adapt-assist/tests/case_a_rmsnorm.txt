@@ -1,0 +1,6 @@
+AttributeError: 'RMSNorm' object has no attribute 'bias'
+  File "/usr/local/lib/python3.11/site-packages/sgl_kernel_npu/norm/fused_split_qk_norm.py", line 118, in fused_split_qk_norm
+    q_a_layernorm.bias
+AttributeError: 'RMSNorm' object has no attribute 'bias'
+
+This crash happened during sglang Engine init for a DeepseekV32 model on Ascend NPU. Initial weight load fails immediately. Same model works on GPU.
