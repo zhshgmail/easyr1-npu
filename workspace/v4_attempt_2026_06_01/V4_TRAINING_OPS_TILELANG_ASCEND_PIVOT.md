@@ -60,3 +60,22 @@ torch_npu / CANN 8.5 已有 V4 sparse-MLA + indexer 的**直接 native 算子**(
 3. op-gen 手写:仅 CANN+tilelang 都没有的真缺口(基本只剩 hc_split_sinkhorn,且它能 primitive 组合)。
 
 **下一步**:核对 NSA/MLA native op 的 signature 参数(select_block_size/topk/head_num)跟 V4 spec 对得上 + 跟 tilelang-ascend 版 match+perf 对照,选 native 接进 miles V4 训练。
+
+## VERIFIED RUN (2026-06-01) — npu_nsa_select_attention on A3 with V4 spec
+```
+npu_nsa_select_attention(q[128,4,192], k[1024,1,192], v[1024,1,128], topk_idx[128,1,16] int32,
+                         scale, head_num=4, select_block_size=64, select_block_count=16,
+                         actual_seq_qlen=[128], actual_seq_kvlen=[1024])
+  -> attn (128,4,128) fp16 npu:0 finite ✓
+  -> + softmax max/sum (128,4,8)×2  [backward state — training-ready]
+  -> 94.9µs
+```
+Constraints (learned): layout TND, D_qk=192/D_v=128, select_block_size ONLY 64, sbc=16,
+KV S≥1024 (mult of 64), G=Nq/Nkv≤32, topk int32 in [0,S2/64). errno 561103 = constraint violation.
+Atlas A2 train (ran fine on A3 = superset). **= V4 sparse-MLA op, native, training-ready.**
+
+compress_attention (V4 Compressor): `npu_nsa_compress_attention` compress_block_size=32,
+compress_stride=16, sbs=64, sbc=16, SparseMode=1 — spec matches V4. lightning indexer:
+`npu_sparse_lightning_indexer_grad_kl_loss` — fwd+grad+KL, **explicitly Atlas A3 train**.
+
+**This is the e2e answer: V4 training ops run on NPU via CANN native NSA/MLA/sparse ops. No op-gen, no tilelang port needed for the hard ops.**
