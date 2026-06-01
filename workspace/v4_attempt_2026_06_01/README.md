@@ -1,7 +1,12 @@
 # V4 真路径 attempt — 2026-06-01
 
-> 这个目录是 2026-06-01 sglang V4 真路径在 NPU 上尝试 PoC 跑通过程的 raw artifact。
-> **没有可执行 milestone — Engine 起来了,generate() 不返回**。本目录保留是为了让下一次 attempt 不从零开始,有完整证据链。
+> 这个目录是 2026-06-01 sglang V4 真路径在 NPU 上 PoC 跑通过程的 raw artifact。
+>
+> **两个 milestone PASS(2026-06-01)**:
+> 1. **generate() PASS** — `DeepseekV4ForCausalLM` 真 V4 model class 在 Ascend A3 NPU bf16 跑通 `llm.generate()`,非空输出(shape-correct,gibberish 是减层预期)。证据:`v4_PASS_log_2026_06_01.txt` + `_*_PASS.py` patched sources。
+> 2. **RL loop PASS** — rollout → weight-update → re-rollout 完整闭环,5/5 步 weight-sync 都改变了 rollout 输出。证据:`v4_RL_LOOP_PASS_log_2026_06_01.txt` + `_v4_rl_loop_tensor_PASS.py`。weight-sync 用 `update_weights_from_tensor`(attention-only)绕开 #26794 MoE reload bug。
+>
+> gibberish 文本是极限减层 PoC 的预期结果(user 2026-06-01 确认);本 PoC 验证的是**循环闭合 + 形状正确性**,不是数值/文本质量。
 
 ## 状态
 
@@ -15,6 +20,8 @@
 | Engine init OK time | ✓(22-32s) |
 | `llm.generate(["Hi"], max_new_tokens=2)` | ✓ — 2026-06-01: generate returns non-empty text in 0.9s after 14 PoC workarounds (see Gap table + PASS section below) |
 | 给 customer 看的 "PoC PASS" 证据 | **有 — `v4_PASS_log_2026_06_01.txt` + frozen patched-source snapshots** |
+
+> ⚠ **下面 "已尝试的关闭路径 / generate hang / NO PASS / IPC contradiction" 等段落是 attempt 过程中的历史 narrative,记录调试时序,对上游 PR 有用。最终结论已被顶部两个 milestone PASS + 文末 "RL LOOP PASS" / "PASS" 段落取代 —— generate() 和 RL loop 都已跑通。阅读时以顶部 + 文末为准。**
 
 ## 已尝试的关闭路径(都不解决 generate hang)
 
@@ -240,3 +247,40 @@ We CANNOT say:
 3. PR `**kwargs` absorption to `forward_extend` / `forward_decode` (back-compat).
 4. PR `linear_bf16_fp32` NPU-path: replace `out_dtype=fp32` with `.float()` cast.
 5. File NPU complex64 aclnnIndex issue (real-domain index workaround).
+
+## 2026-06-01 RL LOOP PASS — full closure (rollout → weight-update → re-rollout)
+
+第二个 milestone:在 generate() PASS 之上,闭合完整 RL 循环。
+
+```
+step0 ids=[122081,112435] / [127281,77292]
+step1 update_weights_from_tensor(5 attn tensors) -> (True,'Success')
+step1 ids=[108542,12794]  / [27153,21390]    DIFF
+step2 ids=[109679,119564] / [72919,65113]    DIFF
+step3 ids=[38768,13815]   / [120381,128901]  DIFF
+step4 ids=[49227,121506]  / [53545,16520]    DIFF
+step5 ids=[57028,44658]   / [106928,85967]   DIFF
+distinct_vs_step0=5/5  step_to_step_changes=5/5
+=== V4 RL LOOP PASS — attention weight-sync changes inference ===
+```
+
+**证明的命题**:weight update 真的把权重 sync 进了运行中的 sglang V4 engine,且改变了 inference 行为。这是 RL 循环闭合的核心证据(rollout 端用真训练后权重,而非陈旧权重)。
+
+**绕开 #26794 的方法**:用 `Engine.update_weights_from_tensor(named_tensors)` 只推 5 个 attention 权重(`self_attn.{wq_a,wq_b,wkv,wo_a,wo_b}.weight`),**不碰 MoE experts**。这样 FusedMoE 的 `_load_w2` reload narrow 崩溃路径根本不触发。`/update_weights_from_disk`(全量 reload)会撞 #26794(`narrow length 4096 > dim 2048`),`update_weights_from_tensor`(选择性 in-memory)不会。
+
+**dense fab 不能绕 #26794**:sglang V4 的 `DeepseekV4DecoderLayer` 在 `first_k_dense_replace=1` + 单层时仍无条件用 `DeepseekV2MoE`(deepseek_v4.py:795),所以 dense fab 反而撞 `gate_up_proj` KeyError。结论:绕 #26794 必须走 `update_weights_from_tensor` 路径,不是换 fab。
+
+**诚实边界**:
+- weight delta 是 seeded synthetic(占位),不是真 miles 训练梯度 —— 因为 miles 训练侧的 V4 算子(hash-coding sinkhorn / Compressor / C4Indexer / o_lora)还没移植。这与 T32 `sglang_2step_real_update.py` 的 V3.2 PoC 同样的 "先证 plumbing,后接真训练" 纪律。
+- 真 RL loop 把 synth delta 换成 miles V4 actor 的训练输出即可,plumbing 已 prove。
+
+**Artifact**:
+- `v4_RL_LOOP_PASS_log_2026_06_01.txt` — 完整 5-step log
+- `_v4_rl_loop_tensor_PASS.py` — driver(attention-only `update_weights_from_tensor`)
+
+## hc_split_sinkhorn AscendC op-gen(/ascendc-op-gen,进行中)
+
+唯一需要 A5 ops 生成的 vector 算子(native NPU 无对应):
+- `model.py` PyTorch CPU-truth reference(从 tilelang kernel 反推,验证输出 doubly-stochastic)
+- op-gen O2.5 已生成 `input_gen.py` + `edge_inputs.pt` + `edge_dataset.pt` + `op_classification.json`(tags 正确:fused/transcendental/softmax/reduction/normalization)
+- **blocker**:ref_preflight 在 a5ops-a3 容器跑 Model.forward 时撞 `aclInit 107001 device id error` —— CPU-truth reference 不该碰 NPU,但 ref harness 强制 device init。需要设 `ASCEND_RT_VISIBLE_DEVICES` 或让 ref 跑 CPU-only。

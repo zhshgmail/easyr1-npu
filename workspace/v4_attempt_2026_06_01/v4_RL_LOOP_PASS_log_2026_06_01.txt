@@ -1,0 +1,34 @@
+[v4-rl2] sgl 0.5.12.post2.dev434+gb13d3d18c
+[v4-rl2] base ckpt loaded, 49 tensors
+[v4-rl2] Engine init OK in 34.1s
+[v4-rl2] step0 prompt0 ids=[122081, 112435] text='醺报废'
+[v4-rl2] step0 prompt1 ids=[127281, 77292] text='נון_EPS'
+[v4-rl2] step0 rollout 0.9s sig=((122081, 112435), (127281, 77292))
+[v4-rl2] step1 update_weights_from_tensor (5 attn tensors) -> (True, 'Success') in 0.0s
+[v4-rl2] step1 prompt0 ids=[108542, 12794] text='也可能 exports'
+[v4-rl2] step1 prompt1 ids=[27153, 21390] text=' fuckedMaybe'
+[v4-rl2] step1 rollout 0.0s sig=((108542, 12794), (27153, 21390))
+[v4-rl2] step2 update_weights_from_tensor (5 attn tensors) -> (True, 'Success') in 0.0s
+[v4-rl2] step2 prompt0 ids=[109679, 119564] text='的成本叻'
+[v4-rl2] step2 prompt1 ids=[72919, 65113] text='/packages_FACE'
+[v4-rl2] step2 rollout 0.0s sig=((109679, 119564), (72919, 65113))
+[v4-rl2] step3 update_weights_from_tensor (5 attn tensors) -> (True, 'Success') in 0.0s
+[v4-rl2] step3 prompt0 ids=[38768, 13815] text='justice tradition'
+[v4-rl2] step3 prompt1 ids=[120381, 128901] text='唢들은'
+[v4-rl2] step3 rollout 0.0s sig=((38768, 13815), (120381, 128901))
+[v4-rl2] step4 update_weights_from_tensor (5 attn tensors) -> (True, 'Success') in 0.0s
+[v4-rl2] step4 prompt0 ids=[49227, 121506] text='.matcher潋'
+[v4-rl2] step4 prompt1 ids=[53545, 16520] text='[user bb'
+[v4-rl2] step4 rollout 0.0s sig=((49227, 121506), (53545, 16520))
+[v4-rl2] step5 update_weights_from_tensor (5 attn tensors) -> (True, 'Success') in 0.0s
+[v4-rl2] step5 prompt0 ids=[57028, 44658] text='_computeBullet'
+[v4-rl2] step5 prompt1 ids=[106928, 85967] text='新媒体 secretion'
+[v4-rl2] step5 rollout 0.0s sig=((57028, 44658), (106928, 85967))
+[v4-rl2] === 5-step RL loop summary (attention-only weight sync) ===
+[v4-rl2]   step1: diff_vs_step0=True diff_vs_prev=True
+[v4-rl2]   step2: diff_vs_step0=True diff_vs_prev=True
+[v4-rl2]   step3: diff_vs_step0=True diff_vs_prev=True
+[v4-rl2]   step4: diff_vs_step0=True diff_vs_prev=True
+[v4-rl2]   step5: diff_vs_step0=True diff_vs_prev=True
+[v4-rl2]   distinct_vs_step0=5/5  step_to_step_changes=5/5
+[v4-rl2] === V4 RL LOOP PASS — attention weight-sync changes inference (rollout->weight-update->rollout closed) ===
