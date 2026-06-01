@@ -1,0 +1,17 @@
+[n3] sgl 0.5.12.post2.dev434+gb13d3d18c
+[n3] base ckpt loaded, 49 tensors
+[n3] expected real-delta L2 (megatron): wq_a=1.318e-01, wq_b=9.307e-02, wkv=2.908e-01, wo_a=1.926e-01, wo_b=1.866e-01
+[n3] Engine init OK in 33.3s
+[n3] step0 rollout 0.9s sig=((122081, 112435), (127281, 77292))
+[n3] step1 update_weights_from_tensor(real x1) -> (True, 'Success') in 0.0s | applied L2: wq_a=1.318e-01, wq_b=9.307e-02, wkv=2.908e-01, wo_a=1.926e-01, wo_b=1.866e-01
+[n3] step1 rollout 0.0s sig=((122081, 112435), (127281, 77292))
+[n3] step2 update_weights_from_tensor(real x2) -> (True, 'Success') in 0.0s | applied L2: wq_a=2.635e-01, wq_b=1.861e-01, wkv=5.817e-01, wo_a=3.852e-01, wo_b=3.732e-01
+[n3] step2 rollout 0.0s sig=((122081, 112435), (127281, 77292))
+[n3] step3 update_weights_from_tensor(real x3) -> (True, 'Success') in 0.0s | applied L2: wq_a=3.952e-01, wq_b=2.791e-01, wkv=8.723e-01, wo_a=5.777e-01, wo_b=5.596e-01
+[n3] step3 rollout 0.0s sig=((122081, 112435), (127281, 77292))
+[n3] step4 update_weights_from_tensor(real x4) -> (True, 'Success') in 0.0s | applied L2: wq_a=5.270e-01, wq_b=3.723e-01, wkv=1.163e+00, wo_a=7.704e-01, wo_b=7.464e-01
+[n3] step4 rollout 0.0s sig=((122081, 112435), (127281, 77292))
+[n3] step5 update_weights_from_tensor(real x5) -> (True, 'Success') in 0.0s | applied L2: wq_a=6.587e-01, wq_b=4.652e-01, wkv=1.454e+00, wo_a=9.632e-01, wo_b=9.331e-01
+[n3] step5 rollout 0.0s sig=((36739, 128241), (127281, 77292))
+[n3] distinct_vs_step0=1/5 step_to_step_changes=1/5
+[n3] === V4 RL LOOP PASS with REAL trained delta — real-training weight-sync changes inference ===
