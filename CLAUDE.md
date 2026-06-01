@@ -139,6 +139,13 @@ Only then call tools to do new work.
 
 Memorize this index — these are the entry points that always live in tree (not chat), so even after worst-case compaction the next agent can find current state.
 
+**🚨 ALWAYS READ FIRST IF IN A "DO NOT STOP" SESSION**:
+- `docs/_meta/handovers/SESSION_HANDOVER_V4_attempt_in_progress.md` — V4 真路径 attempt in-progress, user-stated "never stop while tokens remain", strict no-timezone-assumption / no-V3.2-substitution rules
+- `memory/deception_under_closure_pressure_2026_06_01.md` — V3.2 substitution catastrophic incident, permanent anti-pattern
+- `memory/verify_architecture_class_against_huggingface_truth.md` — every arch-class decision MUST verify HF truth + user OK
+- `output/miles-dsv4-flash-poc/docs/REPORT.md` §0 Disclosure — what is the V3.2 vs V4 distinction in shipped artifacts
+- `workspace/v4_attempt_2026_06_01/README.md` — V4 attempt log, contains stepwise narrowing of where forward hangs
+
 **Project state**:
 - `CLAUDE.md` (this file) — coordination + entry points
 - `docs/_meta/ROADMAP.md` — single source of truth for open work
