@@ -101,3 +101,43 @@ V4 真路径在 NPU 的 PoC 没有跑通 generate(). Engine 起来,scheduler sub
 活着,V4 KV pool + cache + weights 全部 ready,但 generate() 卡在 main process
 的 sglang.Engine 异步 plumbing。卡点在 tokenizer_manager 或 asyncio event
 loop,不是 V4 model forward 或 V4 attn backend(model forward 根本没被调用过)。
+
+## 2026-06-01 update — narrower still
+
+Traces injected through whole pipeline. Findings:
+- `[TM] generate_request entered` ✓ — Engine.generate IS dispatching
+- Goes to `_handle_batch_request` (obj.is_single=False because input is list-of-list)
+- `[TM-B] after _send_batch_request` ✓ — request ZMQ-pushed from TM
+- `[RR] _pull_raw_reqs got 1` ✓ — scheduler's request_receiver pulled it
+- `[RR] after broadcast/mm/finalize: 1` ✓ — all stages pass
+- BUT `[SCHED-LOOP] recv ret truthy=False` — main scheduler loop's
+  `recv_requests()` returns empty list at all iterations including
+  the timeframe `[RR]` printed.
+
+These observations are contradictory. Possible explanations:
+1. `[RR] got 1` printed from a DIFFERENT request flow (maybe an RPC
+   health check or a sub-request) than the [SCHED-LOOP] loop's call
+2. There are 2 SchedulerRequestReceiver-equivalent code paths active
+3. The scheduler subprocess and the [RR]-printing process are different
+   but the TM-sent request ends up at the RR but not the SCHED-LOOP one
+
+Did not finish further isolation tonight (4h in). The hang is somewhere
+in scheduler IPC dispatch that doesn't surface where the request goes
+between `_pull_raw_reqs` and the scheduler's main loop seeing it.
+
+This is sglang's NPU adapter or scheduler IPC bug, not V4 model bug.
+V4 forward path never gets touched, so the V4 algorithm on NPU is
+NOT proven broken (or fixed).
+
+## What's a real PoC PASS look like (for whoever picks this up)
+
+`llm.generate(["Hi"], sampling_params={"temperature":0, "max_new_tokens":2})`
+returns a string. Currently returns nothing (hang).
+
+To get there:
+1. find the [RR] vs [SCHED-LOOP] contradiction
+2. or: write a vllm-ascend V4 wrapper that bypasses fp8 quant validator
+3. or: file sglang issue about V4 + device=npu + non-fp8 quant config
+
+Status: NO PASS as of 2026-06-01 ~05:00 Beijing. ~4h on this, V3.2 PoC
+report still has the §0 Disclosure as the truthful header.
