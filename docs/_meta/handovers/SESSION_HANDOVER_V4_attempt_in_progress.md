@@ -2,7 +2,13 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖 LATEST IN-FLIGHT STATE (2026-06-01 ~08:55Z — read first)
+## 🔖 LATEST IN-FLIGHT STATE (2026-06-01 ~09:25Z — read first)
+
+- **本轮新增 (repo HEAD `afd2c7d`, pushed)**:
+  - ✅ **#310 native op swap DONE + e2e verified**: V4 torch fallback → native torch_npu。换了 `npu_rms_norm`(bit-exact 0.0)+ `npu_clipped_swiglu(alpha=1.0,bias=0.0,interleaved=False)`(bf16-ulp 等价)。RoPE **不换**(实测 npu_rotary_mul/apply_rotary 是 rotate-half 约定,差 4.3;V4 是 interleaved-complex;fp32 torch 更准)。换完 V4 RL loop 重跑 PASS(5/5 distinct, EXIT=0)。snapshot+harness+findings 在 `workspace/v4_attempt_2026_06_01/native_op_snapshots/`(commit `9348868`)。
+  - ✅ **V4 训练侧 op gap inventory**: `workspace/v4_attempt_2026_06_01/V4_TRAINING_SIDE_OP_GAP.md`。真训练侧在 `miles-v4-extracted/.../models/deepseek_v4/ops/`。训练侧 e2e 卡 **6 个 TileLang kernel**(sinkhorn/act_quant/indexer fwd+bwd/sparse_mla fwd+bwd)+ 3 个纯 torch module(compressor/hc/rope)。**交叉验证**了 op-gen 的 CPU-truth model.py 跟真训练 kernel `sinkhorn.py` 的 pre/post/comb + 迭代结构逐行一致。
+  - ⏸ **#311 hc_split_sinkhorn op-gen 重跑 → 停在 await_user_decision**: a5_ops 三个 bug(task#28/29/30)merge 到 origin/main `30f385e7` 我 pull 重跑。routing 走对了(没 IL 误路由 ✓)。但发现**第 4 个 bug**:task#28 name-gate 漏了 `kw_brief.py:172` call-site,它还用旧 tag-based `is_fa_class` → 给 worker 注入 "STOP DO NOT AUTHOR" → 两 gate 矛盾。worker probe-first 顶住没乱写,handoff 诊断(在 `workspace/hc_split_sinkhorn/PROGRESS.md`)。已报 main + 给出一行 fix(gate 换 `is_attention_named(workspace.name)`)。**memory `a5ops_fa_gate_two_callsites.md`**。team 修 push 后 pull → resume `orchestrator.py hc_split_sinkhorn --lane 0`(workspace 停在 await_user_decision,会接着走)。
+  - **下一大步(infra 决策点)**: 训练侧 e2e(#313/#314)需要 A3 上一个 **miles-training-deps 容器**(megatron+mbridge+miles+tilelang)。sgl_probe 是 inference-only(无 megatron/mbridge/tilelang)。tlrescue sacred 不能 overlay。需定容器方案再投 A3 资源。
 
 - **两个 V4 milestone DONE + pushed**: generate() PASS (`fc2f486`) + RL loop PASS (`d65c219`, synth-delta 占位). 14-gap 分析 + fp8/bf16 分析已 push.
 - **上游 PR 决策**: V4 sglang-NPU adapter patch **不零散提**,留 fork,等整个 miles+V4 RL loop 真 e2e(真训练非 synth-delta)再批量 PR. Issue draft HELD 在 `workspace/v4_attempt_2026_06_01/UPSTREAM_ISSUE_sglang_v4_npu.md`. (memory `project_v4_upstream_pr_batch_after_e2e.md`)
