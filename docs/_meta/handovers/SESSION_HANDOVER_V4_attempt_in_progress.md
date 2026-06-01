@@ -2,7 +2,22 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖🔖🔖 V4 OPS LAYER RUNS ON NPU (2026-06-01 ~17:25Z — latest, read first)
+## 🔖🔖🔖🔖 V4 MEGATRON LAYER TRAINING STEP RUNS ON NPU (2026-06-01 ~18:25Z — LATEST, read first)
+
+**The real `DeepSeekV4Attention` megatron layer does a full FORWARD+BACKWARD training step on A3 NPU** (`loss=0.0353 grad_norm=0.173 params_with_grad=8`, finite). V4 training is viable on NPU at the layer level — proven, not asserted. repo HEAD `a577cc0`. Driver: `repo/workspace/v4_attempt_2026_06_01/npu_native_shims/v4_e2e_megatron_layer_forward_npu.py`.
+
+**The working stack (all proper fixes, NO hacks)**:
+1. MindSpeed branch **`core_r0.16.0`** (commit 8bf0959, dsa TND support) — DOES support Mcore 0.16 (my old "0.12.1 ceiling" memory was STALE, corrected in [[feedback_npu_megatron_via_mindspeed]]). `import mindspeed.megatron_adaptor` first.
+2. **Megatron-LM-miles fork patch** (PR-ready, `npu_native_shims/megatron_npu_patches/`): added `all_reduce_grad_fp32` kwarg to `copy_to_tensor_model_parallel_region` + `_CopyToModelParallelRegion` (radixark V4 calls it; newer megatron has it; default False=no-change). This is the "mindspeed支持/megatron-NPU-port" work per owner.
+3. **CANN-native V4 ops** (the 5 patched ops modules — sparse_attn→nsa_select / indexer→lightning / qat→fp8-grid-sim / sinkhorn→torch) at `/opt/miles_v4/miles_plugins/models/deepseek_v4/` (patches saved in `npu_native_shims/miles_*_npu_patched.py`).
+4. config: MLATransformerConfig + V4 dims (kv_lora_rank=512, qk_pos_emb_head_dim=64, dsv4_o_lora_rank=1024, q_lora_rank=1536, rotary_scaling_factor=4, original_max_position_embeddings=65536, beta_fast=32/slow=1) + dsv4_* fields. `MEGATRON_SPARSE_ATTN_IMPL=sparse` (V4 torch sparse_attn on NPU). parallel_state + model_parallel_cuda_manual_seed(1234) + attn_sink fp32.
+5. PYTHONPATH=`/opt/miles_v4:/home/z00637938/workspace/Megatron-LM-miles` (NOT `/home/.../miles` — glm5 miles_plugins shadows V4). tlrescue container.
+
+**OWNER CORRECTED ME TWICE (both right, banked)**: (a) megatron WAS used before (glm5 full-pipeline via `_e2e_megatron_*` drivers — my "never touched megatron" was about the sglang-inference line only). (b) MindSpeed core_r0.16.0 branch HAS the support ("pull it solves it") — my stale-memory framing of "miles's concern" was wrong; making mindspeed/megatron support the version IS in-scope NPU-port work.
+
+**REMAINING to full V4 training e2e**: stack N layers → full DeepseekV4ForCausalLM (GPTModel assembly) → real miles training loop (data pipeline + optimizer + the miles launcher). The layer-level training step PROVES the path; full-model is the miles-training-launch assembly phase.
+
+## 🔖🔖🔖 V4 OPS LAYER RUNS ON NPU (2026-06-01 ~17:25Z)
 
 **ALL 5 miles V4 training ops modules import + run on NPU via CANN-native/torch dispatch** (patches in `repo/workspace/v4_attempt_2026_06_01/npu_native_shims/`, miles-PR-ready). Patch pattern = lazy tilelang import (CUDA-only) + `if x.is_npu:` → CANN-native/torch:
 - `attention_core.sparse_attn_tilelang` → `npu_nsa_select_attention` (VERIFIED A3: o=(128,4,128) finite, +bwd state)
