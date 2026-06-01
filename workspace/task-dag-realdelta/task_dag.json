@@ -1,0 +1,36 @@
+{
+  "session_tag": "tdp-realdelta",
+  "goal": "Replace the synth-delta in the V4 RL loop with the REAL trained-weight delta from the megatron 1-layer training iteration, so the rollout->update->re-rollout loop is driven by actual training (reduced-layer basis). Cold-drives the new /task-dag-planner skill.",
+  "nodes": [
+    {
+      "id": "n1_export",
+      "title": "Export real trained attn-weight delta from the megatron training-iteration driver",
+      "reversibility": "reversible",
+      "locale": "needs-NPU",
+      "kb": "kb-lookup-first:miles-003",
+      "artifact": "workspace/task-dag-realdelta/trained_attn_delta.pt (5 tensors: self_attn.{wq_a,wq_b,wkv,wo_a,wo_b}.weight, post-AdamW minus pre)",
+      "verify": "torch.load the .pt; assert 5 keys present, each finite, and at least one has nonzero L2 delta vs pre-step snapshot (proves AdamW actually moved weights)",
+      "blockedBy": []
+    },
+    {
+      "id": "n2_remap",
+      "title": "Build megatron->sglang weight-name remap for the 5 attn tensors",
+      "reversibility": "reversible",
+      "locale": "local",
+      "kb": "kb-lookup-first:cross-layer-012",
+      "artifact": "workspace/task-dag-realdelta/megatron_to_sglang_attn_remap.py (name map + any transpose/layout fixups)",
+      "verify": "for each of the 5 sglang names (model.layers.0.self_attn.*), the map yields a megatron source name + a shape-checked transform; unit-asserted on the exported tensor shapes from n1",
+      "blockedBy": ["n1_export"]
+    },
+    {
+      "id": "n3_bridge",
+      "title": "Run RL loop feeding the REAL remapped delta via update_weights_from_tensor (replace synth)",
+      "reversibility": "reversible",
+      "locale": "needs-NPU",
+      "kb": "kb-lookup-first:cross-layer-012",
+      "artifact": "workspace/task-dag-realdelta/v4_rl_loop_REAL_delta_log.txt",
+      "verify": "EXIT=0; update_weights_from_tensor returns (True,Success); re-rollout output diverges from step0 AND the delta applied equals the real trained delta (not a synth perturbation) — assert by hashing the pushed tensors against trained_attn_delta.pt",
+      "blockedBy": ["n2_remap"]
+    }
+  ]
+}
