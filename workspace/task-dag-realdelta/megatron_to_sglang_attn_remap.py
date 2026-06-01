@@ -1,10 +1,17 @@
-"""n2_remap SCAFFOLD — megatron -> sglang attn weight-name remap for the V4 real-delta bridge.
+"""n2_remap — megatron -> sglang attn weight-name remap for the V4 real-delta bridge.
 
-STATUS: template only. The megatron-side source names + exact shapes are captured
-at runtime by n1_export (the megatron module's named_parameters() — they are NOT
-grep-able from the shim files because the layer is built live). This scaffold fixes
-the sglang TARGET names (known) + the lookup/transform STRATEGY; n1's trained_attn_delta.pt
-provides the source side. Do NOT hardcode guessed megatron prefixes here — fill from n1.
+STATUS: name-map VERIFIED locally against n1's real export keys (unit test passed
+2026-06-01). The megatron-side names came from n1_export at runtime:
+    layers.0.self_attention.{wq_a,wq_b,wkv,wo_a,wo_b}.weight
+        wq_a (1024,4096)  wq_b (32768,1024)  wkv (512,4096)
+        wo_a (8192,4096)  wo_b (4096,8192)   [all fp32 delta]
+Note the name difference the remap resolves: megatron `self_attention` vs sglang
+`self_attn`. build_remap matches on the wq_a/.../wo_b suffix so it is robust to that.
+
+The LAYOUT/transpose check (transform()) is the ONLY part not verifiable at n2 — it
+needs the live sglang model's current tensor shapes, which exist in n3's sglang.Engine
+stack. transform() shape-asserts against the sglang tensor and auto-transposes or
+fails loud; n3 must call it per tensor before update_weights_from_tensor.
 
 sglang target names (confirmed, from _v4_rl_loop_tensor_PASS.py:78-82):
     model.layers.0.self_attn.wq_a.weight
