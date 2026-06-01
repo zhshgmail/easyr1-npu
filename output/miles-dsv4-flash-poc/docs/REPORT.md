@@ -53,6 +53,29 @@
 - ✅ V3.2-flavored DSAMLA stack PoC 闭环(4 tilelang ops + miles + MindSpeed + sglang R3 plumbing,**前述报告 §3-4 全部内容**仍然有效作为 V3.2 PoC 的成果)
 - ⚠ V4 真路径 NPU 适配 — **未开始**,工程量初估 1-3 个月跨 sglang / vllm-ascend / miles 三个上游
 
+
+## 0.5. 2026-06-01 V4 真路径 attempt — 状态更新
+
+User 2026-06-01 03:00 catch 后,启动 V4 真路径在 NPU 上的 PoC 跑通尝试。**结果:Engine 起来了,generate() hang。没有 customer-facing PASS,但 V4 真 config + 真 architecture class wire 通了。**
+
+工程证据保留在 `workspace/v4_attempt_2026_06_01/`:
+- `fabricate_dsv4_REAL_1layer_ckpt.py` — 真 V4 schema 减层 fab(43 字段 / 1.3B params)
+- `_sglang_v4_minimal.py` — 最简 sglang V4 启动脚本
+- `v4_engine_log.txt` — 完整 Engine init OK + Tree cache + generate hang 5min 的 raw log
+- `README.md` — 完整状态 + 已尝试的 env / stub / fix 链 + 下次 attempt 候选清单
+
+| 阶段 | 结果 |
+|---|---|
+| HF DSv4-Flash 真 config + sglang `deepseek_v4.py` trunk | ✓ |
+| 真 V4 减层 fab(`DeepseekV4ForCausalLM`,真 schema 43 字段)| ✓ |
+| sglang Engine init,0 weights missing | ✓ |
+| V4 KV pool + SWA + c4/c128 alloc | ✓ |
+| `llm.generate()` forward | ✗ 5+ min hang,NPU utilization 0%(Python-level scheduler IPC 或 V4 attn backend 阻塞)|
+
+**真 V4 NPU 适配是新工作量**,不是 V3.2 PoC 报告里说的「reviewer review」就能闭环。
+
+---
+
 下面 §1 ~ §7 是之前的 V3.2 PoC 内容,**仍然有效**(算子、PR #1246/#80/#3509/#531、KB cookbooks),但**title 是误导的**,应理解为 "miles + DSAMLA(V3.2-style)on Ascend A3 NPU PoC"。后续报告版本会重命名。
 
 ---
