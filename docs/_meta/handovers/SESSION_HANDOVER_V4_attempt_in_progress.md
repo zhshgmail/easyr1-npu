@@ -2,7 +2,15 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖 LATEST IN-FLIGHT STATE (2026-06-01 ~09:25Z — read first)
+## 🔖 LATEST IN-FLIGHT STATE (2026-06-01 ~11:25Z — read first)
+
+- **hc_split_sinkhorn AscendC kernel ✅ DONE** (op-gen terminal state=done, honest gate-passed): precision PASS pass_a 28/28 + pass_b 28/28 T1_STRICT, det 2/2, **perf 5.34× symmetric** (NOT the worker's premature 51× — P0ee gate forced honest re-measure; O5 gate forced count reconcile 6→28). archive → `a5_ops/output/npukernelbench/src/kernels/hc_split_sinkhorn/`. easyr1-npu repo `e1d8335`. This is V4 training-side `hyper_connection.forward` hard dep.
+- **kw_brief FA-gate bug**: I self-fixed + PR'd; tilelang merged as task#33 (`eefeaeca`). a5_ops local pulled to `a68f61f4`, reference branch deleted. **NEW STANDING RULE (owner, memory `feedback_self_fix_pr_dont_wait`)**: when I can fix something → DO it + send PR + keep working; NEVER ask "self-fix or report?"; owner overrides main's "blue=user" framing. @-mention agents with `<@id>` not plain "@main".
+- **4 a5_ops backlog repros delivered → main codified**: DEBT-111 (build harness not in container) + DEBT-138 (slow-scp silence-timeout) + DEBT-139 (O5 count-basis, opgen-style no benchmark.json) + DEBT-140 (P0ee perf-method author-time). doc `workspace/v4_attempt_2026_06_01/A5OPS_BACKLOG_REPRO_debt111_silence_scp.md`.
+- **🔄 act_quant op-gen RUNNING** (#315, V4 training kernel #2 of 6): block-wise fp8 quant, CPU-truth model.py + manifest written (`a5_ops/workspace/act_quant/`), launched on a5ops-a3 davinci2. Log `/tmp/orch_20260601_042208_118091.log`. main confirmed no conflict w/ FA/CV sprint (that's A5 host; my build is A3). Remaining #314: indexer fwd/bwd + sparse_mla fwd/bwd (sparse_mla = FA-class → IL chain).
+- **op-gen honesty discipline LEARNED**: do NOT report "done/PASS" off worker self-reported verification.json; wait for orchestrator terminal state=done (O5 + P0ee gates re-measure independently). I prematurely reported sinkhorn "51× full PASS" off self-report; gates corrected to honest 5.34×; I corrected the record.
+
+## 🔖 PRIOR IN-FLIGHT STATE (2026-06-01 ~09:25Z)
 
 - **本轮新增 (repo HEAD `afd2c7d`, pushed)**:
   - ✅ **#310 native op swap DONE + e2e verified**: V4 torch fallback → native torch_npu。换了 `npu_rms_norm`(bit-exact 0.0)+ `npu_clipped_swiglu(alpha=1.0,bias=0.0,interleaved=False)`(bf16-ulp 等价)。RoPE **不换**(实测 npu_rotary_mul/apply_rotary 是 rotate-half 约定,差 4.3;V4 是 interleaved-complex;fp32 torch 更准)。换完 V4 RL loop 重跑 PASS(5/5 distinct, EXIT=0)。snapshot+harness+findings 在 `workspace/v4_attempt_2026_06_01/native_op_snapshots/`(commit `9348868`)。
