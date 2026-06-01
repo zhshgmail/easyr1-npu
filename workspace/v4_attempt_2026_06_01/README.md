@@ -76,3 +76,28 @@ So we have isolated:
 This is upstream issue territory: V4 on NPU via sglang.Engine needs a
 sgl-project/sglang fix to the V4-specific scheduler/tokenizer wiring
 when device=npu.
+
+## 2026-06-01 update — IPC isolation
+
+Added [SCHED] traces to `event_loop_overlap` in scheduler.py:
+- `[SCHED] entered event_loop_overlap` — prints ✓ scheduler is alive
+- `[SCHED] RECV N reqs` — **NEVER prints** even after generate() called
+
+So the scheduler subprocess **never receives any request via its ZMQ socket**.
+This narrows the hang to one of:
+1. tokenizer_manager.generate_request main-side hangs before `_send_one_request`
+   (i.e. tokenization, normalize_batch_and_arguments, _validate_and_resolve_lora,
+   or model_update_lock.reader_lock all run first)
+2. ZMQ pub/sub binding mismatch between tokenizer_manager and scheduler
+3. asyncio event loop blocked in `auto_create_handle_loop` or `is_pause_cond.wait_for`
+
+Tested workaround `input_ids=[[1,2,3]]` to skip tokenization → same hang. So
+tokenization itself is not the cause. It's somewhere in the pre-tokenize
+plumbing (asyncio setup, lock acquire, or ZMQ wiring).
+
+## Honest state to land
+
+V4 真路径在 NPU 的 PoC 没有跑通 generate(). Engine 起来,scheduler subprocess
+活着,V4 KV pool + cache + weights 全部 ready,但 generate() 卡在 main process
+的 sglang.Engine 异步 plumbing。卡点在 tokenizer_manager 或 asyncio event
+loop,不是 V4 model forward 或 V4 attn backend(model forward 根本没被调用过)。
