@@ -2,7 +2,19 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖🔖 MAJOR STRATEGY PIVOT (2026-06-01 ~16:30Z — READ THIS FIRST, supersedes op-gen approach below)
+## 🔖🔖🔖 V4 OPS LAYER RUNS ON NPU (2026-06-01 ~17:25Z — latest, read first)
+
+**ALL 5 miles V4 training ops modules import + run on NPU via CANN-native/torch dispatch** (patches in `repo/workspace/v4_attempt_2026_06_01/npu_native_shims/`, miles-PR-ready). Patch pattern = lazy tilelang import (CUDA-only) + `if x.is_npu:` → CANN-native/torch:
+- `attention_core.sparse_attn_tilelang` → `npu_nsa_select_attention` (VERIFIED A3: o=(128,4,128) finite, +bwd state)
+- `v4_indexer.batched_indexer_fwd` → `npu_lightning_indexer` (VERIFIED: out (1,128,1,2048))
+- `qat.fp8_simulate` → NPU fp8-grid sim in fp32 (torch_npu lacks Float8_e4m3fn cast op → `_fp8_e4m3_round` rounds to e4m3 grid) (VERIFIED finite)
+- `hyper_connection.hc_split_sinkhorn` → torch composition (VERIFIED: comb doubly-stochastic, rowsum=1.000)
+- `compressor` imports OK
+- env: tlrescue container, `PYTHONPATH=/opt/miles_v4:/home/z00637938/workspace/Megatron-LM-miles:<tilelang-ascend paths>`; mbridge pip-installed (`--no-deps`); V4 model at `/opt/miles_v4/miles_plugins/models/deepseek_v4/`. repo HEAD `bf1e568`.
+- **REMAINING layer to full-model forward**: instantiate `DeepSeekV4Attention` (megatron MegatronModule) needs `megatron.core.extensions.transformer_engine` (TE — NPU gap, goes via MindSpeed per [[feedback_npu_megatron_via_mindspeed]]) + full DeepSeekV4 TransformerConfig + parallel-state init + weights. That's the heavy megatron-model-build layer (miles training-launch stack), distinct from the now-done op layer.
+- **3 harness PRs** (gitcode a5_ops): perf-capture (MERGED task#35), o5-sync-timeout-env (DEBT-141, pending), kb-nd2nz-srcdvalue (pending). NEW memory: project_v4_ops_cann_native_mapping, feedback_tilelang_ops_try_ascend_backend_first, feedback_cann_has_basic_ops_dont_hand_gen, feedback_run_full_test_suite_not_just_new, feedback_self_fix_pr_dont_wait (+sharpened feedback_run_the_whole_loop_no_asking: NEVER ask "should I start the next phase" — just start).
+
+## 🔖🔖 MAJOR STRATEGY PIVOT (2026-06-01 ~16:30Z — supersedes op-gen approach below)
 
 **Owner corrected the whole V4-training-ops approach. The op-gen-everything path was WRONG.**
 - All 6 V4 training kernels are `@tilelang.jit` **TileLang** (0 raw CUDA) — verified.
