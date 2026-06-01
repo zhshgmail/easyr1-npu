@@ -63,9 +63,9 @@
     {
       "repo": "zhengshencn_hwca/a5_ops",
       "id": "blue/pr/kw-brief-fa-gate-name-align",
-      "url": "https://gitcode.com/zhengshencn_hwca/a5_ops/merge_requests/new?source_branch=blue/pr/kw-brief-fa-gate-name-align",
-      "status": "PUSHED_MR_PENDING_OPEN",
-      "note": "kw_brief FA-gate uses tag-based is_fa_class (task#28 missed this call-site); fix gates on is_attention_named, +5-case regression test. Live repro: hc_split_sinkhorn op-gen blocked at await_user_decision until fix."
+      "url": "a5_ops origin/main eefeaeca (task#33; tilelang re-impl + verbatim test + credit; reference branch deleted)",
+      "status": "MERGED",
+      "note": "kw_brief FA-gate uses tag-based is_fa_class (task#28 missed this call-site); fix gates on is_attention_named, +5-case regression test. Live repro: hc_split_sinkhorn op-gen blocked at await_user_decision until fix. MERGED 2026-06-01 as task#33."
     }
   ],
   "kb_cookbooks": [

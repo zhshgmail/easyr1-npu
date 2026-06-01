@@ -109,9 +109,9 @@ URL: https://github.com/triton-lang/triton-ascend/issues/306
 
 ## 8. `zhengshencn_hwca/a5_ops` MR `blue/pr/kw-brief-fa-gate-name-align` — kw_brief FA-gate 漏改 call-site(task#28 follow-up)
 
-**类型**: gitcode MR(a5_ops 内部 harness)· **当前状态**: pushed, MR 待 main open/merge · **branch HEAD**: kw_brief fix + 5-case regression test
+**类型**: gitcode MR(a5_ops 内部 harness)· **当前状态**: **MERGED**(tilelang re-impl 我的 patch onto clean main,搬我的 test verbatim + credit)→ origin/main `eefeaeca`(task#33)。我的 reference branch `blue/pr/kw-brief-fa-gate-name-align` 已删(superseded)。 · 我本地已 pull `a68f61f4` 对齐。
 
-URL: https://gitcode.com/zhengshencn_hwca/a5_ops/merge_requests/new?source_branch=blue/pr/kw-brief-fa-gate-name-align
+URL(merged via): a5_ops origin/main `eefeaeca`(blue reference branch deleted post-merge)
 
 **时间线**:
 - 2026-06-01:`/ascendc-op-gen hc_split_sinkhorn` 重跑(team 修完 task#28/29/30 后)→ routing 走对(kw 路径),但 kernel-worker 收到的 brief 仍含 "STOP — DO NOT AUTHOR / emit structural_rewrite_needed" FA-escalation block。根因:task#28 把**路由** gate(`should_use_tilelang_il` → name-based `is_attention_named`)修了,但漏了**第二个 call-site** `briefs/kw_brief.py:172` `_fa_class_design_absent_emit_block`,它还用 tag-based `is_fa_class(op_class)`(对 `fused`+`softmax` tag 误判 True)。两 gate disagree → worker 拒绝乱写、handoff await_user_decision、不产出 kernel。

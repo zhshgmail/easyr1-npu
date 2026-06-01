@@ -278,12 +278,20 @@ distinct_vs_step0=5/5  step_to_step_changes=5/5
 - `v4_RL_LOOP_PASS_log_2026_06_01.txt` — 完整 5-step log
 - `_v4_rl_loop_tensor_PASS.py` — driver(attention-only `update_weights_from_tensor`)
 
-## hc_split_sinkhorn AscendC op-gen(/ascendc-op-gen,进行中)
+## hc_split_sinkhorn AscendC op-gen — ✅ DONE 2026-06-01(terminal state=done, gate-passed honest)
 
-唯一需要 A5 ops 生成的 vector 算子(native NPU 无对应):
-- `model.py` PyTorch CPU-truth reference(从 tilelang kernel 反推,验证输出 doubly-stochastic)
-- op-gen O2.5 已生成 `input_gen.py` + `edge_inputs.pt` + `edge_dataset.pt` + `op_classification.json`(tags 正确:fused/transcendental/softmax/reduction/normalization)
-- **blocker**:ref_preflight 在 a5ops-a3 容器跑 Model.forward 时撞 `aclInit 107001 device id error` —— CPU-truth reference 不该碰 NPU,但 ref harness 强制 device init。需要设 `ASCEND_RT_VISIBLE_DEVICES` 或让 ref 跑 CPU-only。
+V4 训练侧 vector 算子(native NPU 无对应),用 `/ascendc-op-gen` cold-drive 整 chain 在 Ascend A3 上生成 + 编译 + 验精度/性能。**最终诚实结果**(经 O5 + P0ee honesty gate 强制纠正后):
+
+| 维度 | 结果 |
+|---|---|
+| 精度 | **PASS** — pass_a 28/28 + pass_b 28/28 T1_STRICT(ref=CPU+fp64 from model.py) |
+| 确定性 | 2/2 True |
+| 性能 | **5.34× mean**(honest SYMMETRIC perf_counter same-wrapper)—— **不是** worker 初报的 51×(P0ee gate 强制对称重测;profiler device-duration 路径在 V220 上 fail 回落 perf_counter,但 ref+impl 同 wrapper 同 sync 同 warmup/repeats,对称有效) |
+| archive | 24 files → `a5_ops/output/npukernelbench/src/kernels/hc_split_sinkhorn/` |
+
+**这一路踩的坑(全过)**:① 3 个已报 a5_ops bug(npu-id/manifest/is_fa_class,team merge)② 我自己 fix+PR 的第 4 个 bug(kw_brief FA-gate,merged `eefeaeca` as task#33)③ DEBT-111(build harness 不在容器,worker 自 provision)④ silence-timeout(24MB tarball 慢传,→ DEBT-138)⑤ **2 次 honesty-gate rollback**:O5 count 口径(6 vs 28,reconcile 成 28/28)+ P0ee perf-method(强制对称重测,51×→5.34×)。
+
+**意义**:hc_split_sinkhorn 是 V4 训练侧 `hyper_connection.forward` 的**硬依赖**(见上文 #313),现在有了一个验过精度的 NPU AscendC kernel —— 训练侧 e2e 的第一块真算子落地。honesty gate 把我抢跑的"51× / 全 PASS"纠正成诚实的"5.34× symmetric"。
 
 ## native NPU op 替换路径(task #310 — 已完成 + e2e verified 2026-06-01)
 
