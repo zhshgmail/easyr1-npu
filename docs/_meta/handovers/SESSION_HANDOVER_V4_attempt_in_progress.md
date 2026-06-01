@@ -2,7 +2,19 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖 LATEST IN-FLIGHT STATE (2026-06-01 ~11:25Z — read first)
+## 🔖🔖 MAJOR STRATEGY PIVOT (2026-06-01 ~16:30Z — READ THIS FIRST, supersedes op-gen approach below)
+
+**Owner corrected the whole V4-training-ops approach. The op-gen-everything path was WRONG.**
+- All 6 V4 training kernels are `@tilelang.jit` **TileLang** (0 raw CUDA) — verified.
+- Correct path = **tilelang-ascend (MLIR backend, built in T32, tlrescue container `/home/z00637938/workspace/tilelang-mlir-ascend/`)**, NOT op-gen. PYTHONPATH: `<TLM>:<TLM>/3rdparty/AscendNPU-IR/build/install/python_packages/{mlir_core,bishengir}`.
+- **VERIFIED LIVE on NPU (tlrescue)**: tilelang-ascend examples PASS — `sparse_mla_fwd.py` ✅, `fp8_lighting_indexer.py`(=indexer_fwd) ✅, `norm/example_rms_norm.py` ✅, `exp2.py` ✅, `gemm/example_gemm.py` ✅. **i.e. the V4 training ops RUN on NPU via tilelang-ascend — no op-gen needed.**
+- The 3 op-gen'd kernels (sinkhorn/act_quant/indexer_fwd) = REDUNDANT for e2e (but not wasted: surfaced 3 harness bugs I fixed+PR'd + Nd2Nz srcDValue KB pattern). indexer_fwd op-gen STOPPED (was gate-whack-a-mole, redundant).
+- **CURRENT directive (owner)**: "tilelang op vs CANN op — can they fully match? perf diff? find what runs." → task #317. rms_norm: MATCH ✓ (tilelang-ascend passes torch ref = npu_rms_norm math); perf comparison blocked on a harness-reuse quirk (example's kernel fns fail to compile when re-invoked outside the example's main() setup — cbuf→cbuf / store-ub-to-gm; the example file itself PASSES). NEXT: sparse_mla match question (top-k sparse MLA vs CANN dense FlashAttentionScore — likely NOT a full match; the real open question).
+- **3 harness PRs pushed** (all `blue/pr/*` on gitcode a5_ops): `perf-capture-canonical-na` (MERGED as task#35 `139c3dcf`), `o5-sync-timeout-env` (DEBT-141, +tests, pending), `kb-nd2nz-srcdvalue-overflow` (cube hazard KB for triton/tilelang FA, pending). local a5_ops on main @ `73f24a12`, branches clean.
+- **Memory written this session**: feedback_self_fix_pr_dont_wait, feedback_run_full_test_suite_not_just_new, feedback_cann_has_basic_ops_dont_hand_gen, feedback_tilelang_ops_try_ascend_backend_first, a5ops_fa_gate_two_callsites + the discord-mention-syntax note.
+- **KEY LESSON**: TileLang-referenced op → try tilelang-ascend FIRST, never reflexively op-gen. CANN covers basic ops via torch/aclnn dispatch. (memories above.)
+
+## 🔖 (prior) LATEST IN-FLIGHT STATE (2026-06-01 ~11:25Z)
 
 - **hc_split_sinkhorn AscendC kernel ✅ DONE** (op-gen terminal state=done, honest gate-passed): precision PASS pass_a 28/28 + pass_b 28/28 T1_STRICT, det 2/2, **perf 5.34× symmetric** (NOT the worker's premature 51× — P0ee gate forced honest re-measure; O5 gate forced count reconcile 6→28). archive → `a5_ops/output/npukernelbench/src/kernels/hc_split_sinkhorn/`. easyr1-npu repo `e1d8335`. This is V4 training-side `hyper_connection.forward` hard dep.
 - **kw_brief FA-gate bug**: I self-fixed + PR'd; tilelang merged as task#33 (`eefeaeca`). a5_ops local pulled to `a68f61f4`, reference branch deleted. **NEW STANDING RULE (owner, memory `feedback_self_fix_pr_dont_wait`)**: when I can fix something → DO it + send PR + keep working; NEVER ask "self-fix or report?"; owner overrides main's "blue=user" framing. @-mention agents with `<@id>` not plain "@main".
