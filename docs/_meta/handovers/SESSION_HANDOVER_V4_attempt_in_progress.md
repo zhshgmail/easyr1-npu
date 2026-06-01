@@ -2,7 +2,19 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖🔖🔖🔖 V4 MEGATRON LAYER TRAINING STEP RUNS ON NPU (2026-06-01 ~18:25Z — LATEST, read first)
+## 🔖🔖🔖🔖🔖 REAL DSV4 CONFIG REDUCED-1-LAYER FULL TRAINING STEP RUNS ON NPU (2026-06-01 ~20:28Z — LATEST, read first)
+
+**The REAL DeepSeek-V4 config (hidden=4096, 64 heads, 256-expert MoE, real MLA kv_lora=512/o_lora=1024, rope factor=16) reduced to num_layers=1 — a 4.42B-param decoder block — does a complete FORWARD+BACKWARD TRAINING STEP on Ascend A3 NPU.** This is the owner-requested "DSV4 真 config 减到 1 层" scenario, achieved. repo HEAD `5c84d22`, driver `npu_native_shims/v4_REAL_config_1layer_training_step_npu.py`.
+```
+REAL V4 1-layer block built: 4.42B params
+FORWARD OK:  out=(64,1,4096) finite
+BACKWARD OK: loss=1.0000 grad_norm=0.034 params_with_grad=526/526
+```
+**Working stack (all proper fixes)**: full miles pkg at `/opt/miles_full` (provides `miles.utils` for the MoE router — the missing dep that blocked it; tar from `miles-v4-extracted/miles/miles`) + MindSpeed `core_r0.16.0` + `import mindspeed.megatron_adaptor` + CANN-native V4 ops (patched modules) + `all_reduce_grad_fp32` Megatron-LM-miles patch + rms_norm skew shim (drop extra args + match x/gamma dtype) + `MEGATRON_SPARSE_ATTN_IMPL=sparse`. config from `v4_real_truth/v4_real_config.json`. **PYTHONPATH=`/opt/miles_v4:/opt/miles_full:/home/z00637938/workspace/Megatron-LM-miles`** (order matters: miles_v4 first for V4 miles_plugins; miles_full for miles framework). num_moe_experts=256, moe_router_topk=6, moe_layer_freq=1, kv_lora_rank=head_dim=512.
+**flash/attention is PROTECTED + tagged** `v4-flash-attention-npu-working` (a577cc0). Earlier wrong synthetic config (non-MoE) is superseded by this real-config run.
+**REMAINING**: multi-layer → full 43 layers → real training loop (miles data/optimizer). Architecture layer (incl MoE) is verified on NPU; rest is memory/multi-layer engineering.
+
+## 🔖🔖🔖🔖 V4 MEGATRON LAYER TRAINING STEP RUNS ON NPU (2026-06-01 ~18:25Z)
 
 **The real `DeepSeekV4Attention` megatron layer does a full FORWARD+BACKWARD training step on A3 NPU** (`loss=0.0353 grad_norm=0.173 params_with_grad=8`, finite). V4 training is viable on NPU at the layer level — proven, not asserted. repo HEAD `a577cc0`. Driver: `repo/workspace/v4_attempt_2026_06_01/npu_native_shims/v4_e2e_megatron_layer_forward_npu.py`.
 
