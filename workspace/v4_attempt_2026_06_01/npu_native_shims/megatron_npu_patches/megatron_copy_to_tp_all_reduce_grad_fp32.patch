@@ -1,0 +1,15 @@
+# Megatron-LM-miles NPU/V4 support patch (blue 2026-06-01)
+# File: megatron/core/tensor_parallel/mappings.py
+# Adds `all_reduce_grad_fp32` kwarg to copy_to_tensor_model_parallel_region +
+# _CopyToModelParallelRegion, so radixark DeepSeek-V4 (deepseek_v4.py:292 calls it
+# with all_reduce_grad_fp32=True, present in a newer Megatron-LM) runs on this checkout.
+# Default False = no behavior change for existing callers. When True, backward grad
+# all-reduce is done in fp32. VERIFIED: V4 DeepSeekV4Attention layer forward runs on
+# A3 NPU (out=(64,1,512) finite) via MindSpeed core_r0.16.0 + this patch, NO local hack.
+#
+# _CopyToModelParallelRegion.{symbolic,forward}: add all_reduce_grad_fp32=False param;
+#   forward stashes ctx.all_reduce_grad_fp32; backward returns 3 grads (input_, group, flag).
+#   backward: if all_reduce_grad_fp32 and grad.dtype!=fp32 -> _reduce(grad.float()).to(orig).
+# copy_to_tensor_model_parallel_region(input_, group=None, all_reduce_grad_fp32=False):
+#   threads the flag to .apply(input_, group, all_reduce_grad_fp32).
+# Full patched function bodies in repo: v4_e2e_megatron_layer_forward_npu.py drives it.
