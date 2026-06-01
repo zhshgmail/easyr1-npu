@@ -104,3 +104,18 @@ URL: https://github.com/triton-lang/triton-ascend/issues/306
 - 2026-05-29:closed not-planned + 写 KB cookbook `triton-ascend-002` + close-with-reframing comment
 
 **经验**: memory `feedback_check_responsibility_layer_before_filing.md`(别因为 `ImportError` 出现在 package A 文件里就反射性提 issue 到 A;先追责任链:谁的 install 把两个东西放到同一 site-packages?那个层才是责任方)
+
+---
+
+## 8. `zhengshencn_hwca/a5_ops` MR `blue/pr/kw-brief-fa-gate-name-align` — kw_brief FA-gate 漏改 call-site(task#28 follow-up)
+
+**类型**: gitcode MR(a5_ops 内部 harness)· **当前状态**: pushed, MR 待 main open/merge · **branch HEAD**: kw_brief fix + 5-case regression test
+
+URL: https://gitcode.com/zhengshencn_hwca/a5_ops/merge_requests/new?source_branch=blue/pr/kw-brief-fa-gate-name-align
+
+**时间线**:
+- 2026-06-01:`/ascendc-op-gen hc_split_sinkhorn` 重跑(team 修完 task#28/29/30 后)→ routing 走对(kw 路径),但 kernel-worker 收到的 brief 仍含 "STOP — DO NOT AUTHOR / emit structural_rewrite_needed" FA-escalation block。根因:task#28 把**路由** gate(`should_use_tilelang_il` → name-based `is_attention_named`)修了,但漏了**第二个 call-site** `briefs/kw_brief.py:172` `_fa_class_design_absent_emit_block`,它还用 tag-based `is_fa_class(op_class)`(对 `fused`+`softmax` tag 误判 True)。两 gate disagree → worker 拒绝乱写、handoff await_user_decision、不产出 kernel。
+- 2026-06-01:本地 working-tree 先打 fix 解锁 op-gen(用过的同款 stopgap 模式),验证 `is_attention_named("hc_split_sinkhorn")==False`(正常 author)/ `3_FusionAttention`==True(FA-STOP 保留)→ resume op-gen run#2,worker-2 收到正常 Vector brief、直接 author。
+- 2026-06-01:按 owner 指示提 MR(branch `blue/pr/kw-brief-fa-gate-name-align`)—— fix + `test_task28_followup_kw_brief_name_gate.py`(5 cases green)。
+
+**经验**: memory `a5ops_fa_gate_two_callsites.md`(FA-class gating 有两个 call-site:router + kw_brief;name-gate 修复要查两处)。worker probe-first 顶住 "STOP" 指令(P8)、自己钉死根因到 file:line —— 是 op-gen harness worker 该有的行为。task#31(classifier 发 distinguishing FA tag)落地后两 gate 可回退 tag-based。

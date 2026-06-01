@@ -59,6 +59,13 @@
       "url": "https://github.com/triton-lang/triton-ascend/issues/306",
       "status": "closed",
       "note": "closed not-planned; reframed as KB cookbook triton-ascend-002"
+    },
+    {
+      "repo": "zhengshencn_hwca/a5_ops",
+      "id": "blue/pr/kw-brief-fa-gate-name-align",
+      "url": "https://gitcode.com/zhengshencn_hwca/a5_ops/merge_requests/new?source_branch=blue/pr/kw-brief-fa-gate-name-align",
+      "status": "PUSHED_MR_PENDING_OPEN",
+      "note": "kw_brief FA-gate uses tag-based is_fa_class (task#28 missed this call-site); fix gates on is_attention_named, +5-case regression test. Live repro: hc_split_sinkhorn op-gen blocked at await_user_decision until fix."
     }
   ],
   "kb_cookbooks": [
@@ -82,5 +89,13 @@
   "created": "2026-04-30T00:00:00Z",
   "completed": null,
   "owner_agent": "claude-opus-4-7",
-  "tags": ["miles", "deepseek-v4-flash", "dsamla", "tilelang", "mindspeed", "sglang", "rl-post-training"]
+  "tags": [
+    "miles",
+    "deepseek-v4-flash",
+    "dsamla",
+    "tilelang",
+    "mindspeed",
+    "sglang",
+    "rl-post-training"
+  ]
 }
