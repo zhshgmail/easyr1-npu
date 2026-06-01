@@ -1,7 +1,24 @@
-# SESSION_HANDOVER — V4 真路径在 NPU 上 attempt(in-progress,never stop)
+# SESSION_HANDOVER — V4 真路径在 NPU 上 attempt — **PASS 2026-06-01 06:36 UTC**
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
-> 这次 session **不能 stop**,除非真正 token 用尽。user 已明确:不假设时区、不假设「今天/明天」、只要能前进就不停。
+
+## 🎉 PASS
+
+```
+[v4-min] sgl 0.5.12.post2.dev434+gb13d3d18c
+[v4-min] Engine init OK in 27.7s
+[v4-min] generate done in 0.9s
+[v4-min] output: [{'text': '醺报废', 'output_ids': [122081, 112435], ...}]
+```
+
+`DeepseekV4ForCausalLM` 真 V4 model class 在 Ascend A3 NPU bf16 跑通 `llm.generate()`。Shape-correct,非 numerical correct(1-layer reduced fab + 14 PoC workarounds — REPORT §0.5 + `workspace/v4_attempt_2026_06_01/README.md`)。
+
+Commit: `fc2f486 V4 PoC PASS: DeepseekV4ForCausalLM generate() returns on Ascend A3 NPU bf16`,已 push 到 `origin/main`。
+
+下面历史记录保留,因为它含有完整的 attempt 链 + 调试方法,对后续上游 PR 工作有用。
+---
+
+
 
 ## 工作约束(user-stated,permanent)
 
