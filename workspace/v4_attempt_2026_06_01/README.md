@@ -141,3 +141,41 @@ To get there:
 
 Status: NO PASS as of 2026-06-01 ~05:00 Beijing. ~4h on this, V3.2 PoC
 report still has the §0 Disclosure as the truthful header.
+
+## 2026-06-01 update — IPC unblocked, V4 forward now reachable
+
+Root cause of [RR]/[SCHED-LOOP] mismatch:
+- `PrefillAdder` admission was returning `AddReqResult.NO_TOKEN` and the
+  request was being silently dropped/re-queued instead of run.
+- `_swa_budget_for_req` requires `max(input_len, sliding_window) + page_size`
+  but the SWA token pool only had ~256 slots.
+- Bumped `max_total_tokens=65536` and added `swa_full_tokens_ratio=0.5`,
+  PrefillAdder now returns CONTINUE.
+
+After unblocking, V4 forward is invoked on NPU. Each step now uncovers a
+discrete sgl-kernel-npu / sglang-NPU V4 adapter gap. Discovered so far:
+
+| Gap | Site | PoC workaround |
+|---|---|---|
+| 1 | `AscendAttnBackend._maybe_upgrade_forward_metadata` missing | no-op stub |
+| 2 | `sglang.srt.layers.mhc.hc_split_sinkhorn` requires tilelang/CUDA | torch fallback in driver stub |
+| 3 | `sglang.jit_kernel.dsv4.elementwise.fused_q_norm_rope` JIT-compiles CUDA | torch fallback in source |
+| 4 | Same for `fused_rope_inplace`, `fused_norm_rope_inplace` | torch fallback |
+| 5 | NPU `aclnnIndex` doesn't support complex64 | index real, view-as-complex after |
+| 6 | `fused_k_norm_rope_flashmla` writes FP8-packed bytes to paged kvcache | PoC: skip scatter (1-layer max_tokens=2 is short enough) |
+| 7 | `AscendAttnBackend.forward_c4_indexer` missing | no-op stub |
+| 8 | `AscendAttnBackend.forward_core_compressor` missing | no-op stub |
+| 9 | `AscendAttnBackend.store_cache`, `forward_compress`, `init_forward_metadata_indexer` missing | no-op stubs |
+| 10 | V4 dispatch passes `compress_ratio` kwarg, NPU `forward_extend` doesn't accept it | absorb via `**kwargs` |
+| 11 | `DeepSeekV4TokenToKVPool.get_key_buffer` raises NotImplementedError but NPU `forward_extend` calls it | **CURRENT — fundamental layout mismatch, attempting bypass** |
+
+The pattern is clear: NPU `AscendAttnBackend` was written for V3.x classic MLA;
+V4 introduces a heap of new hooks (compressor, c4_indexer, hash-coding, swa
+kvcache write) the NPU backend has never seen. PoC stubs unblock forward
+propagation; production needs each hook implemented natively (or replaced
+with `torch_npu.npu_*` calls).
+
+This is now a real concrete upstream issue with line numbers and signatures
+for sgl-project/sglang #npu V4 adapter team. Will continue iterating until
+generate() returns OR hit a layout-fundamental block that needs a multi-day
+backend rewrite.
