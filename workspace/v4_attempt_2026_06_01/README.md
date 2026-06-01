@@ -285,12 +285,27 @@ distinct_vs_step0=5/5  step_to_step_changes=5/5
 - op-gen O2.5 已生成 `input_gen.py` + `edge_inputs.pt` + `edge_dataset.pt` + `op_classification.json`(tags 正确:fused/transcendental/softmax/reduction/normalization)
 - **blocker**:ref_preflight 在 a5ops-a3 容器跑 Model.forward 时撞 `aclInit 107001 device id error` —— CPU-truth reference 不该碰 NPU,但 ref harness 强制 device init。需要设 `ASCEND_RT_VISIBLE_DEVICES` 或让 ref 跑 CPU-only。
 
-## native NPU op 替换路径(verified 可行,后续质量提升)
+## native NPU op 替换路径(task #310 — 已完成 + e2e verified 2026-06-01)
 
-V4 PASS 用的是 torch fallback。已 verify native NPU op 存在,可一对一替换(提升精度+性能):
-- `silu_and_mul_clamp` → `torch_npu.npu_clipped_swiglu(x, dim, alpha, limit, bias, interleaved)` — verified bf16 max_diff < 1e-3 vs torch ref
-- `fused_q_norm_rope` / `fused_rope_inplace` / `fused_norm_rope_inplace` → `torch_npu.npu_apply_rotary_pos_emb(q, k, cos, sin, layout="BSND")`(+ `npu_rms_norm` for the norm 部分)— verified runs on npu:0
-- `fused_k_norm_rope_flashmla` → `torch_npu.npu_kv_rmsnorm_rope_cache_v2`(fused rmsnorm+rope+KV cache write,直接对应)
-- `hc_split_sinkhorn` → 无 native 对应,走 a5_ops `/ascendc-op-gen` 生成 AscendC kernel(进行中)
+V4 PASS 原本用 torch fallback。已**实测等价性**后换成 native `torch_npu` 算子。
+**只换数值实测等价的**,不等价的保留 torch(见下)。完整 findings + harness 在
+`native_op_snapshots/NATIVE_OP_SWAP_FINDINGS.md`。
 
-torch ops verified 全在 NPU 上跑(`torch.cuda.is_available()=False`,`torch.npu.is_available()=True`,复数乘 `xc*xc` on npu:0),不是 CPU drop。但 native fused op 更快 + 数值更接近真模型。
+| fallback | native | 实测 vs torch ref | 判定 |
+|---|---|---|---|
+| `silu_and_mul_clamp` | `npu_clipped_swiglu(alpha=1.0, bias=0.0, interleaved=False, limit=lim)` | ≤0.77% rel(bf16 噪声),clamp 内 bit-exact | ✅ 已换 |
+| `fused_q_norm_rope`/`fused_k_norm_rope_flashmla` 的 RMSNorm 部分 | `npu_rms_norm(x, ones, eps)` | **0.000e+00 bit-exact** | ✅ 已换 |
+| RoPE 复数乘部分 | `npu_rotary_mul` / `npu_apply_rotary_pos_emb` | err≈4.2~4.3 或 561002 不支持 | ❌ **不换**(rotate-half ≠ V4 interleaved-complex;且 V4 fp32 复数乘精度更高) |
+| `hc_split_sinkhorn` | 无 native 对应 | — | 走 a5_ops `/ascendc-op-gen`(阻塞 team task #28/#29/#30) |
+
+**关键纠错**:之前笔记说 `npu_apply_rotary_pos_emb`"verified runs"是错的 —— 它**能跑但数值错**
+(rotate-half 约定 ≠ V4 的 interleaved 复数乘,差 4.22)。RoPE 保留 fp32 torch 复数乘是**更优**
+(fp32 > bf16 native kernel 精度),不是妥协。
+
+**e2e gate(关键)**:换完两处 native op,整个 V4 RL loop 重跑 PASS(EXIT=0,
+`distinct_vs_step0=5/5 step_to_step_changes=5/5`),native patch 经确认真在 forward 路径上执行
+(deepseek_v4.py:423 / deepseek_v2.py:364 call-site 无条件命中,非被 OPT flag 旁路)。
+patch 形态 native-first + torch-fallback 守卫,非 NPU 自动回落 —— 适合上游 PR。
+snapshot:`native_op_snapshots/_elementwise_NATIVE.py` / `_moe_NATIVE.py`。
+
+torch ops 全在 NPU 上跑(`torch.npu.is_available()=True`,`cuda=False`),不是 CPU drop。
