@@ -19,6 +19,11 @@
 | 信息类型 | 唯一归属 |
 |---|---|
 | 项目入口 + 当前状态总览 | [`README.md`](../../README.md) |
+| **独立子项目 home**(每个 sub-project 一个目录) | [`output/<slug>/`](../../output/);索引在 [`output/README.md`](../../output/README.md);schema 在 [`output/_project_schema/PROJECT.schema.json`](../../output/_project_schema/PROJECT.schema.json) |
+| Sub-project 详细成果报告 | `output/<slug>/docs/REPORT.md`(每个 sub-project 自带,**不放在 docs/_meta/**) |
+| Sub-project 复现步骤 | `output/<slug>/docs/REPRODUCE.md` |
+| Sub-project 沉淀的 KB 索引 | `output/<slug>/docs/kb_index.md`(指向 docs/_meta/kb/porting_lessons/ 的实际 cookbook 文件) |
+| Sub-project 上游 PR / Issue 反馈历史 | `output/<slug>/artifacts/upstream-prs.md` |
 | 客户一页 quickstart | [`ONBOARDING.md`](../../ONBOARDING.md) |
 | 客户跑 EasyR1 (v1) | [`docs/easyr1/PORT-GUIDE.md`](../easyr1/PORT-GUIDE.md) |
 | 客户跑 EasyR1 (v2 integrated) | [`docs/easyr1/PORT-GUIDE-v2-integrated.md`](../easyr1/PORT-GUIDE-v2-integrated.md) |
@@ -64,6 +69,7 @@
 | 上游 fork 分支前进 | `docs/_meta/UPSTREAM_FORKS.md` |
 | Architecture / 端到端流程变了 | `docs/_meta/ARCHITECTURE.md` |
 | 出现新跨层教训 | `docs/_meta/kb/porting_lessons/<layer>-NNN-<slug>.md` 新建 + index 索引 |
+| 启动一个新独立 sub-project | `cp -r output/_project_template output/<slug>/`,填 PROJECT.json + README + docs/{REPORT,REPRODUCE,kb_index}.md,在 [`output/README.md`](../../output/README.md) 的「当前 sub-projects」表加一行 |
 
 ---
 

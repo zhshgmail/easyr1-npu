@@ -108,7 +108,7 @@ For unmatched case:
    3. Fill trigger[], symptom_in_wild[], root_cause, correction[]
    4. Add link to docs/_meta/kb/porting_lessons/index.md
    5. If it maps to a new bug class, add a P-<class>-<N> row in
-      docs/_meta/MILES_DSV4_NPU_POC_REPORT.md §4.0 table
+      output/miles-dsv4-flash-poc/docs/REPORT.md §4.0 table
 ```
 
 ## Cold-drive validation (BEFORE first user-facing run)

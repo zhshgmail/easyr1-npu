@@ -7,7 +7,7 @@ when a new failure mode is discovered.
 **Schema**: [`_schema.md`](_schema.md)
 
 **Cross-link**: 与 PoC 报告 §4 的 `P-COMP/P-API/P-REG/P-ENV/P-CONF-*` 一一对应,见
-[`MILES_DSV4_NPU_POC_REPORT.md` §4.0 总表](../../MILES_DSV4_NPU_POC_REPORT.md#40-一张总表快速-grep)。
+[`output/miles-dsv4-flash-poc/docs/REPORT.md` §4.0 总表](../../../output/miles-dsv4-flash-poc/docs/REPORT.md#40-一张总表快速-grep)。
 
 **Tool**: 用 `/npu-adapt-assist <error-trace>` 自动按 trigger / symptom 匹配 — 见
 [`src/skills/npu-adapt-assist/`](../../../../src/skills/npu-adapt-assist/README.md)。

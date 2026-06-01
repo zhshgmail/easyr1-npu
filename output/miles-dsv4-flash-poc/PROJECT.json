@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "project": "miles-dsv4-flash-poc",
+  "kind": "poc",
+  "status": "active",
+  "source": {
+    "type": "upstream",
+    "path": "github.com/radixark/miles",
+    "ref": "main + ascend-port/npu-tilelang-ops fork branch"
+  },
+  "target_chip": "Ascend910C_A3",
+  "upstream_prs": [
+    {
+      "repo": "tile-ai/tilelang-mlir-ascend",
+      "id": 80,
+      "url": "https://github.com/tile-ai/tilelang-mlir-ascend/pull/80",
+      "status": "open",
+      "note": "CheckUBBudget early-fail pass + UT; reviewer feedback addressed in 6b5c8df; CI green"
+    },
+    {
+      "repo": "Ascend/AscendNPU-IR",
+      "id": "251",
+      "url": "https://gitcode.com/Ascend/AscendNPU-IR/issues/251",
+      "status": "open",
+      "note": "R-KA-16 ExtendedCanonicalizer drops cross-iter softmax accumulators; Huawei SL25 added triage-review label 2026-05-29"
+    },
+    {
+      "repo": "radixark/miles",
+      "id": 1246,
+      "url": "https://github.com/radixark/miles/pull/1246",
+      "status": "open",
+      "note": "_npu/ subpackage + 4 DSAMLA tilelang ops + dispatcher; reviewer feedback addressed in ff0161cc0 incl. AMP-safe _MAGIC_THRESHOLD"
+    },
+    {
+      "repo": "Ascend/MindSpeed",
+      "id": "3509",
+      "url": "https://gitcode.com/Ascend/MindSpeed/merge_requests/3509",
+      "status": "open",
+      "note": "apex.transformer.functional.fused_apply_rotary_pos_emb_thd shim; no human reviewer feedback yet"
+    },
+    {
+      "repo": "sgl-project/sgl-kernel-npu",
+      "id": 531,
+      "url": "https://github.com/sgl-project/sgl-kernel-npu/pull/531",
+      "status": "open",
+      "note": "fused_split_qk_norm RMSNorm.bias getattr fix; 4-line patch"
+    },
+    {
+      "repo": "sgl-project/sglang",
+      "id": 26794,
+      "url": "https://github.com/sgl-project/sglang/issues/26794",
+      "status": "open",
+      "note": "Issue: /update_weights_from_disk FusedMoE _load_w13 narrow regression"
+    },
+    {
+      "repo": "triton-lang/triton-ascend",
+      "id": 306,
+      "url": "https://github.com/triton-lang/triton-ascend/issues/306",
+      "status": "closed",
+      "note": "closed not-planned; reframed as KB cookbook triton-ascend-002"
+    }
+  ],
+  "kb_cookbooks": [
+    "docs/_meta/kb/porting_lessons/bishengir-001-extended-canonicalizer-drops-cross-iter-accum.md",
+    "docs/_meta/kb/porting_lessons/tilelang-001-check-ub-budget-early-fail.md",
+    "docs/_meta/kb/porting_lessons/tilelang-002-vbrc-needs-bound-local.md",
+    "docs/_meta/kb/porting_lessons/sglang-001-engine-spawn-main-guard.md",
+    "docs/_meta/kb/porting_lessons/sglang-002-rmsnorm-bias-attribute-getattr.md",
+    "docs/_meta/kb/porting_lessons/sglang-003-fusedmoe-reload-narrow-stacked-mapping.md",
+    "docs/_meta/kb/porting_lessons/mindspeed-001-create-dummy-flash-attn-stub.md",
+    "docs/_meta/kb/porting_lessons/mindspeed-002-apex-fused-rope-thd-shim-gap.md",
+    "docs/_meta/kb/porting_lessons/miles-001-dsamla-tilelang-npu-port-pattern.md",
+    "docs/_meta/kb/porting_lessons/cross-layer-008-sys-path-root-namespace-shadow.md",
+    "docs/_meta/kb/porting_lessons/cross-layer-009-ascend-rt-visible-single-chip-trap.md",
+    "docs/_meta/kb/porting_lessons/cross-layer-010-vllm-mindspeed-flash-attn-stub-collision.md",
+    "docs/_meta/kb/porting_lessons/cross-layer-011-uda-namespace-lock-diagnosis.md"
+  ],
+  "skill_changes": [
+    "src/skills/npu-adapt-assist/ (new — retrieval-only KB matcher; preflight; cold-drive validate)"
+  ],
+  "created": "2026-04-30T00:00:00Z",
+  "completed": null,
+  "owner_agent": "claude-opus-4-7",
+  "tags": ["miles", "deepseek-v4-flash", "dsamla", "tilelang", "mindspeed", "sglang", "rl-post-training"]
+}

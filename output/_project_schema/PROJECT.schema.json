@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/zhshgmail/easyr1-npu/output/_project_schema/PROJECT.schema.json",
+  "title": "easyr1-npu sub-project metadata",
+  "description": "Schema for output/<slug>/PROJECT.json. Each independent sub-project (PoC, port, integration) under output/ must conform.",
+  "type": "object",
+  "required": ["schema_version", "project", "kind", "status", "created", "owner_agent"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Bump when this schema changes incompatibly."
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
+      "description": "Slug; must match directory name."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["poc", "port", "integration", "harness", "audit"],
+      "description": "What this sub-project delivers. poc = proof-of-concept on NPU; port = upstream-version port artifact bundle; integration = end-to-end stack with image; harness = tooling/skill bundle; audit = investigation result."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "complete", "blocked", "archived"],
+      "description": "active = work in progress; complete = goals met, still maintained; blocked = waiting on upstream; archived = superseded."
+    },
+    "source": {
+      "type": "object",
+      "description": "Where this work was derived from (upstream repo + ref, or another sub-project).",
+      "properties": {
+        "type": {"type": "string", "enum": ["upstream", "sub-project", "self"]},
+        "path": {"type": "string"},
+        "ref": {"type": "string"}
+      }
+    },
+    "target_chip": {
+      "type": "string",
+      "enum": ["Ascend910C_A3", "Ascend950PR_A5", "Ascend910B_A2", "any"],
+      "description": "Primary NPU target."
+    },
+    "upstream_prs": {
+      "type": "array",
+      "description": "Open / merged upstream PRs that this sub-project produced or addresses.",
+      "items": {
+        "type": "object",
+        "required": ["repo", "id", "url", "status"],
+        "properties": {
+          "repo": {"type": "string"},
+          "id": {"type": ["string", "integer"]},
+          "url": {"type": "string", "format": "uri"},
+          "status": {"type": "string", "enum": ["open", "merged", "closed", "ready", "draft"]},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "kb_cookbooks": {
+      "type": "array",
+      "description": "Path(s) under docs/_meta/kb/porting_lessons/ that this sub-project produced.",
+      "items": {"type": "string"}
+    },
+    "skill_changes": {
+      "type": "array",
+      "description": "Skill modifications under src/skills/ produced by this sub-project.",
+      "items": {"type": "string"}
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed": {
+      "type": ["string", "null"],
+      "description": "ISO date when status flipped to complete. null while active."
+    },
+    "owner_agent": {
+      "type": "string",
+      "description": "claude-opus-4-7 / human / etc."
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

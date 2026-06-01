@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "project": "TODO-slug-matching-dir-name",
+  "kind": "poc",
+  "status": "active",
+  "source": {
+    "type": "upstream",
+    "path": "github.com/<org>/<repo>",
+    "ref": "<branch-or-tag>"
+  },
+  "target_chip": "Ascend910C_A3",
+  "upstream_prs": [],
+  "kb_cookbooks": [],
+  "skill_changes": [],
+  "created": "TODO-iso-datetime",
+  "completed": null,
+  "owner_agent": "claude-opus-4-7",
+  "tags": []
+}
