@@ -2,8 +2,10 @@
 
 把 [`hiyouga/EasyR1`](https://github.com/hiyouga/EasyR1) 适配到 Ascend 910C (A3) NPU，并沉淀一套针对 4 个 NPU 上游（vllm-ascend / torch-npu / transformers / triton-ascend）的可复用版本升级工具链。
 
-最后更新：2026-05-31（新增 miles + DSv4-Flash 子项目 PoC 报告与 13 条 NPU 适配 cookbook；`/npu-adapt-assist` skill 加 preflight + KB index 加 keyword 表，借鉴自 [a5_ops](workspace/a5_ops_audit_2026_05_31/FINDINGS.md) audit）。
+最后更新：2026-06-01（DeepSeek-V4-Flash 在 A3 NPU 上推理+训练两侧打通到减层基线：真 V4 model class `generate()` + RL loop 闭环、真 DSV4 config 减层 1 层完整训练迭代 + 2 层 fwd+bwd、跨栈真训练 delta bridge；新增统一移植报告 + 5 条 V4 cookbook（共 30 条）+ `/task-dag-planner` 自动化编排 skill）。
 
+> **想看 DeepSeek-V4-Flash NPU 移植报告（重点：SGLang 推理 + Megatron/miles 训练两侧的坑 / 解法 / walkaround-vs-production 分类）→ [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md)**
+>
 > **想直接在 A3 上跑 EasyR1 → [`ONBOARDING.md`](ONBOARDING.md)**（一页 quickstart，两条已验证路径）
 >
 > **想看整体架构与流程 → [`docs/_meta/ARCHITECTURE.md`](docs/_meta/ARCHITECTURE.md)**（含 mermaid 图）
@@ -31,7 +33,7 @@
 
 | Slug | Kind | Status | 一句话 |
 |---|---|---|---|
-| [`miles-dsv4-flash-poc`](output/miles-dsv4-flash-poc/) | poc | active | miles + DeepSeek-V4-Flash 在 A3 NPU 上 RL 后训练 PoC;5 PR + 2 Issue + 13 KB cookbook + `/npu-adapt-assist` skill |
+| [`miles-dsv4-flash-poc`](output/miles-dsv4-flash-poc/) | poc | active | miles + DeepSeek-V4-Flash 在 A3 NPU 上 RL 后训练 PoC;5 PR + 2 Issue + KB cookbook + `/npu-adapt-assist` skill。**统一移植报告（推理+训练两侧、walkaround-vs-production）见 [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md)**;训练侧已达减层基线（1 层完整训练迭代 + 2 层 fwd+bwd + 跨栈真 delta RL bridge,见报告 §3 + KB `miles-002/003`、`cross-layer-012`) |
 
 ---
 
@@ -46,12 +48,14 @@
 | 想看 v2 path（integrated overlay image） | [`docs/easyr1/PORT-GUIDE-v2-integrated.md`](docs/easyr1/PORT-GUIDE-v2-integrated.md) |
 | 想看整体架构、组件分工、端到端流程 | [`docs/_meta/ARCHITECTURE.md`](docs/_meta/ARCHITECTURE.md) |
 | 想用 slash command 触发版本升级工具链 | [`docs/_meta/SKILLS-USAGE.md`](docs/_meta/SKILLS-USAGE.md) |
+| 想用通用编排 skill 自动分解任务（分析→子任务→依赖 DAG→分阶段执行+对抗验证） | `/task-dag-planner <目标>`，详见 [`src/skills/orchestrators/task-dag-planner/SKILL.md`](src/skills/orchestrators/task-dag-planner/SKILL.md) |
 | 想看每条工具链当前在哪个 fork / 分支 | [`docs/_meta/UPSTREAM_FORKS.md`](docs/_meta/UPSTREAM_FORKS.md) |
 | 想看下一波 NPU 适配候选清单（镜像里还没 NPU 适配的主要软件） | [`docs/_meta/NPU_ADAPTATION_GAP.md`](docs/_meta/NPU_ADAPTATION_GAP.md) |
 | 想看 open work / 技术债 / 下一步做什么 | [`docs/_meta/ROADMAP.md`](docs/_meta/ROADMAP.md)（**唯一权威 backlog**） |
 | 想接手项目（continuing agent / 新 session） | [`docs/_meta/handovers/`](docs/_meta/handovers/) + [`ROADMAP.md`](docs/_meta/ROADMAP.md) + [`ARCHITECTURE.md`](docs/_meta/ARCHITECTURE.md) |
 | 想查 NPU 操作模式与已知 bug（29 stable IDs） | [`knowledge/npu-patterns.md`](knowledge/npu-patterns.md) |
-| 想查跨层移植教训（lessons learned，27 条 NPU 适配 cookbook） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/)（顶部有 keyword grep 表） |
+| 想查跨层移植教训（lessons learned，30 条 NPU 适配 cookbook） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/)（顶部有 keyword grep 表） |
+| 想看 DeepSeek-V4-Flash NPU 移植统一报告（推理+训练两侧坑/解法/walkaround-vs-production） | [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md) |
 | 想根据 error trace 自动找匹配的 cookbook | `/npu-adapt-assist <paste-trace>`，详见 [`src/skills/npu-adapt-assist/`](src/skills/npu-adapt-assist/README.md)（启动会自动跑 preflight） |
 | 想看 miles + DSv4-Flash PoC（一句话 + 状态表 + 上游 PR 列表） | [`output/miles-dsv4-flash-poc/`](output/miles-dsv4-flash-poc/) |
 | 想看 miles PoC 完整报告（问题分类 + 解决方案 + empirical evidence） | [`output/miles-dsv4-flash-poc/docs/REPORT.md`](output/miles-dsv4-flash-poc/docs/REPORT.md) |
