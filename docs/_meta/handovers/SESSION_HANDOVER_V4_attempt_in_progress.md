@@ -2,7 +2,27 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖🔖🔖🔖🔖 REAL DSV4 CONFIG REDUCED-1-LAYER FULL TRAINING STEP RUNS ON NPU (2026-06-01 ~20:28Z — LATEST, read first)
+## 🔖🔖🔖🔖🔖🔖🔖 KB + AUTOMATION SKILL + WORKFLOW LANDED (2026-06-01 ~21:45Z — LATEST, read first)
+
+Owner asked: sediment V4-NPU knowledge into KB + add a skill automating analysis→decomposition→DAG→execution + use CC's workflow feature. Done, commit `0be0d58`:
+- **5 KB lessons** in `docs/_meta/kb/porting_lessons/`: `sglang-004` (V4 AscendAttnBackend hook gaps), `sglang-005` (V4 PrefillAdder SWA-budget hang), `miles-002` (V4 ops CANN-native-first), `miles-003` (DSV4 megatron layer integration walkarounds + memory wall), `cross-layer-012` (V4 RL weight-sync via update_weights_from_tensor). index.md grep-table + per-layer + `_schema.md` layer-enum all updated.
+- **`/task-dag-planner` skill** `src/skills/orchestrators/task-dag-planner/SKILL.md`: generic goal→decompose+classify→DAG(task_dag.json + CC tasks)→topological staged execution with on-disk honesty gate. Discord-only questions, reduced-layer V4 basis baked in.
+- **`dag.workflow.js`** companion CC Workflow script: deterministic topological DAG executor (parallel waves + per-node adversarial verify + demote-on-fail). `node --check` clean, no forbidden builtins.
+- Authored via a CC workflow (7 authors + 7 adversarial reviewers). Reviewer-caught fixes applied pre-commit: `6f3209b` mis-attribution (it's te_general_gemm guard, NOT the uncommitted fp32-grad `.patch`); `_load_w2`/2048 vs sglang-003 `_load_w13`/1408 reconciled as same-bug-family-different-observation; uncaptured grad-counts + spec-matched-vs-verified-run all qualified.
+- **Owner confirmed reduced-layer is the basis** ("就按减层来") — full 43-layer is NOT the target; deeper = distributed (TP/PP) engineering.
+
+## 🔖🔖🔖🔖🔖🔖 V4 TRAINING ITERATION + 2-LAYER RUN ON NPU (2026-06-01 ~21:05Z)
+
+Real DSV4 config (4096/64h/256-expert MoE) on Ascend A3 NPU, all verified:
+- ✅ **1-layer FULL TRAINING ITERATION**: forward + loss + backward + **AdamW.step** (4.42B, grad finite 526/526). A complete training iteration. Driver `npu_native_shims/v4_REAL_config_training_iteration_npu.py` (NLAYERS env).
+- ✅ **2-layer fwd+bwd training step** (8.84B, grad_norm=0.043, all 1051 finite). Driver `v4_REAL_config_2layer_training_step_npu.py`.
+- ✅ **nan FIX** (the "2-layer doesn't run"): `sparse_attn_torch` all-masked-row softmax instability (scores_max=-inf → exp nan). Fixed with standard masked-softmax guards: `nan_to_num(scores_max,neginf=0)` + `clamp(exp args, max=30)` (nan 282→7→0). Patched module `miles_attention_core_sparse_stable_patched.py` (PR-worthy).
+- **MEMORY LIMITS mapped (one 61GB chip)**: 1-layer+AdamW fits (full iteration); 2-layer fwd+bwd fits but 2-layer+AdamW-states OOMs (~70GB); 4-layer bwd OOMs (17.68B). Deeper → tensor/pipeline parallel or activation checkpointing (standard large-MoE memory, NOT an NPU/op problem).
+- repo HEAD `44bb058`. tags: `v4-flash-attention-npu-working`, `v4-real-config-1layer-training-step-npu`.
+
+**Bottom line: V4 training MECHANICS work on NPU** — ops (CANN-native) + single-layer full training iteration + 2-layer fwd+bwd, real config, all verified. Remaining (full 43-layer / real data loop) = distributed-parallelism + data-pipeline engineering, not NPU porting.
+
+## 🔖🔖🔖🔖🔖 REAL DSV4 CONFIG REDUCED-1-LAYER FULL TRAINING STEP RUNS ON NPU (2026-06-01 ~20:28Z)
 
 **The REAL DeepSeek-V4 config (hidden=4096, 64 heads, 256-expert MoE, real MLA kv_lora=512/o_lora=1024, rope factor=16) reduced to num_layers=1 — a 4.42B-param decoder block — does a complete FORWARD+BACKWARD TRAINING STEP on Ascend A3 NPU.** This is the owner-requested "DSV4 真 config 减到 1 层" scenario, achieved. repo HEAD `5c84d22`, driver `npu_native_shims/v4_REAL_config_1layer_training_step_npu.py`.
 ```
