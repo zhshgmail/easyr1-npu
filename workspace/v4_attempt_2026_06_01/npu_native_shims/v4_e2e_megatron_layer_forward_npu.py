@@ -55,3 +55,19 @@ except Exception as e:
     import traceback; print("FORWARD FAIL:", type(e).__name__, str(e)[:150])
     for ln in traceback.format_exc().splitlines():
         if "deepseek_v4.py" in ln: print("  ", ln.strip()[:120])
+
+# Backward pass (training step needs grad) — test backprop through the V4 layer on NPU
+try:
+    out2 = attn(hs)
+    o2 = out2[0] if isinstance(out2,(tuple,list)) else out2
+    loss = o2.float().pow(2).mean()
+    loss.backward()
+    torch.npu.synchronize()
+    gnorm = sum((p.grad.float().pow(2).sum() for p in attn.parameters() if p.grad is not None)).sqrt().item()
+    ngrad = sum(1 for p in attn.parameters() if p.grad is not None)
+    print(f"V4 ATTENTION LAYER BACKWARD OK on NPU: loss={loss.item():.4f} grad_norm={gnorm:.3e} params_with_grad={ngrad}")
+    print("=> V4 megatron attention layer FORWARD+BACKWARD (a training step) runs on NPU")
+except Exception as e:
+    import traceback; print("BACKWARD FAIL:", type(e).__name__, str(e)[:150])
+    for ln in traceback.format_exc().splitlines():
+        if "deepseek_v4.py" in ln or "mappings.py" in ln: print("  ", ln.strip()[:120])
