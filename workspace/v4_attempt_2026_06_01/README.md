@@ -13,8 +13,8 @@
 | sglang Engine 完整 init,所有 weights 加载 0 missing | ✓ |
 | V4 KV pool + SWA + c4 + c128 全部分配 | ✓(`full=4096 swa=256 c4=1024 c128=32 c4_state=8 c128_state=128`) |
 | Engine init OK time | ✓(22-32s) |
-| `llm.generate(["Hi"], max_new_tokens=2)` | ✗ — call 进 scheduler 后 5+ min 无响应,NPU utilization 0% |
-| 给 customer 看的 "PoC PASS" 证据 | **没有** |
+| `llm.generate(["Hi"], max_new_tokens=2)` | ✓ — 2026-06-01: generate returns non-empty text in 0.9s after 14 PoC workarounds (see Gap table + PASS section below) |
+| 给 customer 看的 "PoC PASS" 证据 | **有 — `v4_PASS_log_2026_06_01.txt` + frozen patched-source snapshots** |
 
 ## 已尝试的关闭路径(都不解决 generate hang)
 
@@ -167,15 +167,76 @@ discrete sgl-kernel-npu / sglang-NPU V4 adapter gap. Discovered so far:
 | 8 | `AscendAttnBackend.forward_core_compressor` missing | no-op stub |
 | 9 | `AscendAttnBackend.store_cache`, `forward_compress`, `init_forward_metadata_indexer` missing | no-op stubs |
 | 10 | V4 dispatch passes `compress_ratio` kwarg, NPU `forward_extend` doesn't accept it | absorb via `**kwargs` |
-| 11 | `DeepSeekV4TokenToKVPool.get_key_buffer` raises NotImplementedError but NPU `forward_extend` calls it | **CURRENT — fundamental layout mismatch, attempting bypass** |
+| 11 | `DeepSeekV4TokenToKVPool.get_key_buffer` raises NotImplementedError but NPU `forward_extend` calls it | Bypassed via V4 dense short-circuit in `forward_extend` |
+| 12 | `forward_decode` same `compress_ratio` kwarg + cache-read mismatch | Same V4 dense short-circuit in `forward_decode` |
+| 13 | `jit_kernel/dsv4/moe.silu_and_mul_clamp` JIT-compiles CUDA | torch fallback (`silu(gate).clamp * up.clamp`) |
+| 14 | `jit_kernel/dsv4/gemm.linear_bf16_fp32` uses `torch.mm(out_dtype=fp32)` not supported on NPU | drop kwarg, `.float()` cast |
 
-The pattern is clear: NPU `AscendAttnBackend` was written for V3.x classic MLA;
-V4 introduces a heap of new hooks (compressor, c4_indexer, hash-coding, swa
-kvcache write) the NPU backend has never seen. PoC stubs unblock forward
-propagation; production needs each hook implemented natively (or replaced
-with `torch_npu.npu_*` calls).
+## 2026-06-01 PASS
 
-This is now a real concrete upstream issue with line numbers and signatures
-for sgl-project/sglang #npu V4 adapter team. Will continue iterating until
-generate() returns OR hit a layout-fundamental block that needs a multi-day
-backend rewrite.
+```
+[v4-min] sgl 0.5.12.post2.dev434+gb13d3d18c
+[v4-min] Engine init OK in 27.7s
+[v4-min] generate done in 0.9s
+[v4-min] output: [{'text': '醺报废', 'output_ids': [122081, 112435],
+  'meta_info': {'finish_reason': {'type': 'length', 'length': 2},
+                'prompt_tokens': 3, 'completion_tokens': 2,
+                'e2e_latency': 0.87s, ...}}]
+```
+
+**真路径 V4 (`DeepseekV4ForCausalLM`) on Ascend A3 NPU, sglang Engine,
+bfloat16, generate() returns non-empty string in 0.9s.**
+
+The text `'醺报废'` is gibberish — expected since:
+- 1-layer reduced fab vs. full 60+ layer model
+- random initialization rather than trained weights
+- 8 PoC no-op stubs in K/V cache path + MoE routing
+- 2 V4 dense short-circuits replace sparse compressor/indexer
+
+This is shape-correct end-to-end execution, not numerical correctness.
+That distinction is honestly stated. A real PoC PASS for *correctness*
+would require:
+1. real DSv4-Flash weights (not 1-layer fab)
+2. NPU-native impl of compressor, c4_indexer, hc_split_sinkhorn,
+   fused_q_norm_rope/k_norm_rope_flashmla, paged FP8/BF16 packed
+   kvcache scatter
+3. removal of the 14 PoC workarounds documented above
+
+## Artifact snapshot (frozen at PASS)
+
+| File | What |
+|---|---|
+| `_sglang_v4_minimal_PASS.py` | The driver with mhc stub + hc_split_sinkhorn torch fallback + Engine ctor args (`max_total_tokens=65536`, `swa_full_tokens_ratio=0.5`) |
+| `_elementwise_PASS.py` | Patched `sglang/jit_kernel/dsv4/elementwise.py` with torch fallbacks for `fused_q_norm_rope`, `fused_rope_inplace`, `fused_k_norm_rope_flashmla` (kvcache scatter skipped) |
+| `_moe_PASS.py` | Patched `silu_and_mul_clamp` torch fallback |
+| `_gemm_PASS.py` | Patched `linear_bf16_fp32` to drop `out_dtype=` keyword |
+| `_ascend_backend_PASS.py` | Patched `AscendAttnBackend` with 7 V4 hook stubs + V4 dense short-circuits in `forward_extend`/`forward_decode` |
+| `v4_PASS_log_2026_06_01.txt` | Full reproducible log of Engine init + generate() PASS |
+
+## Honest customer message (post-PASS)
+
+We can now say:
+- "DeepSeek-V4-Flash 真路径 (sglang trunk `DeepseekV4ForCausalLM` model class)
+  has been demonstrated to execute end-to-end on Ascend A3 NPU bf16, with
+  a 1-layer reduced fabrication and 14 documented PoC workarounds."
+- "Each workaround corresponds to a concrete sgl-kernel-npu / sglang V4
+  NPU-adapter gap. The PoC is a forcing function for the upstream gap
+  inventory, not a production deliverable."
+
+We CANNOT say:
+- "V4 on NPU is production-ready" — it isn't; 14 PoC stubs are in the path
+- "Numerical correctness verified" — output is shape-correct gibberish
+- "Full-model PASS" — this is 1-layer reduced fab
+
+## Next steps (post-PASS, for upstream PR work)
+
+1. File a clean sgl-project/sglang issue: "V4 (DeepseekV4ForCausalLM) on
+   `device=npu` requires N missing AscendAttnBackend V4 hooks", with each
+   of the 14 gaps as a concrete line-number citation and a PASS-of-workaround
+   evidence link.
+2. PR `_maybe_upgrade_forward_metadata` + `forward_c4_indexer` +
+   `forward_core_compressor` + `store_cache` + `init_forward_metadata_indexer`
+   + `forward_compress` as no-op stubs into `AscendAttnBackend` (default safe).
+3. PR `**kwargs` absorption to `forward_extend` / `forward_decode` (back-compat).
+4. PR `linear_bf16_fp32` NPU-path: replace `out_dtype=fp32` with `.float()` cast.
+5. File NPU complex64 aclnnIndex issue (real-domain index workaround).
