@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "project": "miles-dsv4-flash-poc",
+  "_note_2026_06_01": "Per docs/REPORT.md §0 Disclosure: original 'DSv4-Flash PoC' claim was V3.2 substitute fab; real V4 path not yet attempted. Sub-project retained at this slug to keep prior commit/PR/Discord refs intact; may rename to miles-dsamla-v32-poc in future. Current scope = V3.2 DSAMLA stack PoC complete; V4 real path NOT started.",
   "kind": "poc",
   "status": "active",
   "source": {
