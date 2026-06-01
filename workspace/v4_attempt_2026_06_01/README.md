@@ -284,3 +284,13 @@ distinct_vs_step0=5/5  step_to_step_changes=5/5
 - `model.py` PyTorch CPU-truth reference(从 tilelang kernel 反推,验证输出 doubly-stochastic)
 - op-gen O2.5 已生成 `input_gen.py` + `edge_inputs.pt` + `edge_dataset.pt` + `op_classification.json`(tags 正确:fused/transcendental/softmax/reduction/normalization)
 - **blocker**:ref_preflight 在 a5ops-a3 容器跑 Model.forward 时撞 `aclInit 107001 device id error` —— CPU-truth reference 不该碰 NPU,但 ref harness 强制 device init。需要设 `ASCEND_RT_VISIBLE_DEVICES` 或让 ref 跑 CPU-only。
+
+## native NPU op 替换路径(verified 可行,后续质量提升)
+
+V4 PASS 用的是 torch fallback。已 verify native NPU op 存在,可一对一替换(提升精度+性能):
+- `silu_and_mul_clamp` → `torch_npu.npu_clipped_swiglu(x, dim, alpha, limit, bias, interleaved)` — verified bf16 max_diff < 1e-3 vs torch ref
+- `fused_q_norm_rope` / `fused_rope_inplace` / `fused_norm_rope_inplace` → `torch_npu.npu_apply_rotary_pos_emb(q, k, cos, sin, layout="BSND")`(+ `npu_rms_norm` for the norm 部分)— verified runs on npu:0
+- `fused_k_norm_rope_flashmla` → `torch_npu.npu_kv_rmsnorm_rope_cache_v2`(fused rmsnorm+rope+KV cache write,直接对应)
+- `hc_split_sinkhorn` → 无 native 对应,走 a5_ops `/ascendc-op-gen` 生成 AscendC kernel(进行中)
+
+torch ops verified 全在 NPU 上跑(`torch.cuda.is_available()=False`,`torch.npu.is_available()=True`,复数乘 `xc*xc` on npu:0),不是 CPU drop。但 native fused op 更快 + 数值更接近真模型。

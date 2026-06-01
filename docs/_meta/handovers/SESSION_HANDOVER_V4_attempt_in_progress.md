@@ -15,6 +15,23 @@
 
 Commit: `fc2f486 V4 PoC PASS: DeepseekV4ForCausalLM generate() returns on Ascend A3 NPU bf16`,已 push 到 `origin/main`。
 
+## 🎉 PASS #2 — V4 RL LOOP CLOSED (2026-06-01)
+
+rollout → weight-update → re-rollout 全闭环,5/5 步 weight-sync 都改变 rollout 输出。
+- 绕 #26794:`Engine.update_weights_from_tensor`(只推 attention 5 个权重,不碰 MoE experts)
+- weight delta 是 seeded synthetic 占位(miles V4 训练侧算子未移植);plumbing 已 prove
+- Commit `d65c219`,push 到 origin/main
+- Artifact:`workspace/v4_attempt_2026_06_01/v4_RL_LOOP_PASS_log_2026_06_01.txt` + `_v4_rl_loop_tensor_PASS.py`
+
+## 进行中(in-flight,session 末状态)
+
+1. **hc_split_sinkhorn AscendC op-gen** — 用 a5_ops `/ascendc-op-gen` 生成唯一需要的 V4 vector 算子(native NPU 无对应)。已 deploy a5_ops skills(`bash src/deploy.sh` global),配 preflight(A3 target → `easyr1-a3` SSH alias = 115.190.166.102:443,build 容器 `a5ops-a3` on davinci2)。修了 a5_ops orchestrator gap:`_run_ref_preflight_bootstrap` 没传 lane→`--npu-id`(默认 1,容器只有 davinci2=index 0 → aclInit 107001)。fix 在 `a5_ops/src/scripts/orchestrator/orchestrator.py`(working tree,**未 commit 到 a5_ops main** — 那是 user 项目,作者群 + main agent 协调)。op-gen 重跑中(invocation #3),清了 stale ref_runnable.json + pyc。
+2. **native NPU op 替换**(task #310,质量提升,非阻塞)— RL loop 已用 torch fallback PASS;native 替换路径 verified(`npu_clipped_swiglu` / `npu_apply_rotary_pos_emb` / `npu_kv_rmsnorm_rope_cache_v2`),记在 README 末。
+
+## a5_ops 作者 Discord 群(新)
+
+group `1501649396922712105`,我的 alias **"blue"**(bot id 1494824059966324897,role=平台端到端移植到NPU+用a5_ops)。main agent role id `1489941073735450704`。等 main agent @ 我再自我介绍。详见 `memory/reference_a5ops_authors_discord_group.md`。
+
 下面历史记录保留,因为它含有完整的 attempt 链 + 调试方法,对后续上游 PR 工作有用。
 ---
 
