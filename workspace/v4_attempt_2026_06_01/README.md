@@ -53,3 +53,26 @@
 
 - "DSv4-Flash 真 config 我们 wire 到 sglang V4 model class 的入口,真 V4 减层 fab 包含 43 个真 V4 schema 权重,sglang Engine init + V4 KV pool 全部成功,但 forward 在 NPU 上 hang,sglang main 缺一个或多个 V4 NPU-side op,需要上游 sgl-project/sgl-kernel-npu 补"
 - 这是 V4 NPU 真适配工作的真起点,不是终点
+
+## 2026-06-01 update — root cause narrowing
+
+After instrumenting `DeepseekV4DecoderLayer.forward` with 4 `[TRACE]` prints
+and re-running: **zero TRACE prints appeared in the log**. generate() was
+called from main but V4 forward was never invoked. Confirmed the hang is
+NOT in V4 algorithm code — it's in sglang's multi-process Engine
+orchestration (scheduler / tokenizer / detokenizer IPC) for V4 on NPU.
+
+`_sglang_v4_direct.py` confirms in isolation (no Engine multi-proc):
+- sglang.srt.models.deepseek_v4 importable
+- EntryClass=[DeepseekV4ForCausalLM]
+- ModelConfig.from_server_args parses our fab cleanly
+- arch=['DeepseekV4ForCausalLM']
+
+So we have isolated:
+- ✓ V4 model class on NPU works at import / class level
+- ✓ V4 config / weight load / KV pool all OK
+- ✗ sglang Engine multi-process pipeline for V4 on NPU hangs before calling forward
+
+This is upstream issue territory: V4 on NPU via sglang.Engine needs a
+sgl-project/sglang fix to the V4-specific scheduler/tokenizer wiring
+when device=npu.
