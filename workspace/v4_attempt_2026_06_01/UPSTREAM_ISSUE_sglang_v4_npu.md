@@ -1,6 +1,13 @@
-# DRAFT — sgl-project/sglang issue (ready to post pending user OK)
+# DRAFT — sgl-project/sglang issue (HELD — do NOT post yet)
 
-> Target: https://github.com/sgl-project/sglang/issues/new (bug report template)
+> **DECISION (user 2026-06-01 08:46Z)**: do NOT post upstream now. Keep the V4
+> NPU-adapter patches in the **fork repo** (sglang fork branch), wait until the
+> whole miles+V4 RL loop is end-to-end working, THEN submit the upstream PR(s)
+> in one batch with full e2e evidence. (Matches CLAUDE.md upstream-PR discipline:
+> "充分验证后再开 PR".) This draft is the PR-prep material; it becomes the issue
+> body / PR description when the batch goes up. Until then it stays in our repo.
+>
+> Target (eventual): https://github.com/sgl-project/sglang/issues/new (bug report template)
 > Title: `[Bug] DeepseekV4ForCausalLM on device=npu: AscendAttnBackend missing V4 dispatch hooks + bf16-path kernels JIT-compile CUDA`
 > Labels: follow repo defaults (do not add agent labels). NO agent/Claude signature in body.
 > Language: English (template requires it).

@@ -2,6 +2,16 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
+## 🔖 LATEST IN-FLIGHT STATE (2026-06-01 ~08:55Z — read first)
+
+- **两个 V4 milestone DONE + pushed**: generate() PASS (`fc2f486`) + RL loop PASS (`d65c219`, synth-delta 占位). 14-gap 分析 + fp8/bf16 分析已 push.
+- **上游 PR 决策**: V4 sglang-NPU adapter patch **不零散提**,留 fork,等整个 miles+V4 RL loop 真 e2e(真训练非 synth-delta)再批量 PR. Issue draft HELD 在 `workspace/v4_attempt_2026_06_01/UPSTREAM_ISSUE_sglang_v4_npu.md`. (memory `project_v4_upstream_pr_batch_after_e2e.md`)
+- **a5_ops 协作群**(Discord `1501649396922712105`,我 alias=blue `1494824059966324897`): 我是 **consumer 不是 harness dev**;**main(`1489941073735450704`)是我唯一 PoC**,op-gen 问题只找 main. 报了 3 个 a5_ops bug → tilelang task#28(is_fa_class)+ main task#29(ref_preflight npu-id)+ task#30(manifest input_stats). team 修完 push gitcode 我 pull 重跑 hc_split_sinkhorn op-gen. (memory `reference_a5ops_authors_discord_group.md`)
+- **新铁律**: ① 绝不用 console-only 问答(AskUserQuestion/picker)——user 只看 Discord(memory `feedback_no_console_only_questions.md`)② a5_ops 更新随时 pull(KB 更新)
+- **a5_ops op-gen 环境**: build 容器 `a5ops-a3` on davinci2(易容 A3 host),`.ascendc_env` TARGET=a3 → SSH alias `easyr1-a3`. hc_split_sinkhorn workspace ref_preflight=RUNNABLE,卡在 FA-误判 router(等 task#28).
+- **discord 插件已 patch**: `~/.claude/plugins/cache/.../discord/0.0.4/server.ts` 让 allowBots 生效 + 杀孤儿 bun 进程(bot↔bot 通信修复). plugin 升级会 revert,需重打(memory 有 recipe).
+- **easyr1-npu repo HEAD**: `789b891`(upstream issue draft). a5_ops local main 落后 origin ~39 commits,op-gen 前先 pull.
+
 ## 🎉 PASS
 
 ```
