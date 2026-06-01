@@ -53,8 +53,14 @@ indexer-bwd / sparse_mla-fwd / sparse_mla-bwd),且这些是 module forward 的�
 indexer/sparse-mla 的 compute kernel。两侧共享 Compressor/Indexer/hc 的 module 拓扑,但训练侧
 是真 TileLang kernel(CUDA target),推理侧我们已用 torch fallback + native op 跑通 forward。
 
+## 进度(6 个 TileLang kernel 的 NPU path)
+- ✅ **hc_split_sinkhorn** — AscendC kernel done(28/28+28/28, perf 5.34× symmetric)`#311`
+- ✅ **act_quant** — AscendC kernel done(24/24+24/24 byte-exact fp8 + bit-exact fp32, perf N/A canonical)`#315`
+- ⬜ indexer fwd / indexer bwd(vector/quant,kw 路径,next)
+- ⬜ sparse_mla fwd / sparse_mla bwd(FA-class → TileLang-IL chain,最重,留最后)
+
 ## 下一步(到真 e2e)
-1. ✅ sinkhorn → a5_ops AscendC kernel(进行中,#311)
+1. ✅ sinkhorn → a5_ops AscendC kernel(done,#311)
 2. 验证 3 个纯 torch module(compressor/hc/rope)在 NPU 直接跑
 3. sparse_mla fwd/bwd → 评估 tilelang-mlir-ascend backend vs AscendC FA-class IL chain
 4. indexer fwd/bwd + act_quant → AscendC kw 路径

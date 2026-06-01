@@ -66,6 +66,13 @@
       "url": "a5_ops origin/main eefeaeca (task#33; tilelang re-impl + verbatim test + credit; reference branch deleted)",
       "status": "MERGED",
       "note": "kw_brief FA-gate uses tag-based is_fa_class (task#28 missed this call-site); fix gates on is_attention_named, +5-case regression test. Live repro: hc_split_sinkhorn op-gen blocked at await_user_decision until fix. MERGED 2026-06-01 as task#33."
+    },
+    {
+      "repo": "zhengshencn_hwca/a5_ops",
+      "id": "blue/pr/perf-capture-canonical-na",
+      "url": "https://gitcode.com/zhengshencn_hwca/a5_ops/merge_requests/new?source_branch=blue/pr/perf-capture-canonical-na",
+      "status": "PUSHED_MR_PENDING",
+      "note": "phase_o5_perf_capture emitted non-canonical NOT_VERIFIED_SAME_METHOD -> finalize LOOP-BREAK on V220 (profiler device-duration unavailable). Fix: map not-verified -> canonical N/A+reason. +4 tests. Live-validated: act_quant finalize passed after fix. DEBT-140 family."
     }
   ],
   "kb_cookbooks": [
