@@ -4,6 +4,7 @@ Each lesson is one `.md` file with YAML frontmatter + body.
 
 **File name**: `<layer>-<NNN>-<slug>.md` where
 - `<layer>` ∈ `torch-npu`, `transformers`, `vllm-ascend`, `vllm`, `easyr1`,
+  `sglang`, `miles`, `mindspeed`, `bishengir`, `tilelang`, `triton-ascend`,
   `cross-layer`
 - `<NNN>` is 3-digit zero-padded, unique within that layer
 - `<slug>` is hyphenated short description

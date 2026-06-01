@@ -34,6 +34,11 @@ Worker / 用户先 grep 这一节按关键词找到 cookbook ID,然后跳到 [§
 | container NPU invisible, host npu-smi OK container empty, `uda_occupy_dev_by_ns`, Ray raylet zombie, NPU ns lock | `cross-layer-011` | P-CONF-2 |
 | `ASCEND_RT_VISIBLE_DEVICES=1`, single chip filter, container device_count=0, davinci single mount, RT_VISIBLE id-vs-count confusion | `cross-layer-009` | P-ENV-3 |
 | miles DSAMLA, lighting_indexer port, sparse_mla port, NPU tilelang dispatcher, `q.is_npu`, miles 4 算子 NPU port | `miles-001` | P-API-3 |
+| DeepseekV4ForCausalLM on NPU, AscendAttnBackend missing V4 hooks, forward_c4_indexer / forward_core_compressor / store_cache stub, V4 KV pool get_key_buffer NotImplementedError, npu_clipped_swiglu, V4 RoPE interleaved-complex vs rotate-half | `sglang-004` | (V4) |
+| V4 generate() hang, scheduler IPC hang, PrefillAdder NO_TOKEN, _swa_budget_for_req, swa_full_tokens_ratio, SWA pool 256 slots, [RR] vs [SCHED-LOOP] contradiction | `sglang-005` | (V4) |
+| V4 training ops CANN-native, npu_nsa_select_attention, npu_lightning_indexer, npu_nsa_compress_attention, npu_mla_prolog_v3, probe dir(torch_npu) before op-gen, DeepSeek-family sparse-MLA native | `miles-002` | (V4) |
+| DeepSeekV4Attention megatron layer fwd+bwd NPU, MindSpeed core_r0.16.0, npu_rms_norm shim too-many-args, (output,None) TransformerLayer contract, all_reduce_grad_fp32 patch, sparse_attn_torch all-masked-row softmax NaN, single-chip OOM TP/PP | `miles-003` | (V4) |
+| V4 RL loop NPU, update_weights_from_tensor attention-only, update_weights_from_disk #26794 narrow, dense fab gate_up_proj KeyError, synth-delta not real gradient, weight-sync changes rollout | `cross-layer-012` | (V4) |
 | LLVM version mismatch, libtriton.so bishengir-compile, MLIR text format diverges, "custom op X unknown" binary boundary | `triton-ascend-001` | (legacy) |
 | `_TORCH_VERSION_BUILT_FOR`, vllm-ascend torch ABI guard, C++ side never set, 14 iters silent | `vllm-ascend-001` | (legacy) |
 | fixc image tag, image rebuild proof, `.so` torch ABI verification, `ldd` + symbol + native op call | `vllm-ascend-002` | (legacy) |
@@ -57,6 +62,7 @@ Worker / 用户先 grep 这一节按关键词找到 cookbook ID,然后跳到 [§
 - [`cross-layer-009-ascend-rt-visible-single-chip-trap.md`](cross-layer-009-ascend-rt-visible-single-chip-trap.md) — **P-ENV-3**. `ASCEND_RT_VISIBLE_DEVICES` 是 device id 白名单不是 count;单 chip 容器里 set=`1` 会过滤掉唯一一颗 (id=0)。
 - [`cross-layer-010-vllm-mindspeed-flash-attn-stub-collision.md`](cross-layer-010-vllm-mindspeed-flash-attn-stub-collision.md) — **P-ENV-5**. Single-process RL on NPU 需要 import vllm BEFORE mindspeed;MindSpeed `create_dummy=True` stub flash_attn 让 vllm `find_spec` 误判存在 → crash。
 - [`cross-layer-011-uda-namespace-lock-diagnosis.md`](cross-layer-011-uda-namespace-lock-diagnosis.md) — **P-CONF-2**. 容器看不到 NPU 而 host 看得到时,先 `dmesg | grep uda_occupy_dev_by_ns`,不是 driver bug — 别的进程(常常是 zombie Ray raylet)占了 ns 锁。
+- [`cross-layer-012-v4-rl-weight-sync-tensor-not-disk.md`](cross-layer-012-v4-rl-weight-sync-tensor-not-disk.md) — **(V4)**. 闭合 V4 RL loop(rollout→weight-update→re-rollout)用 `update_weights_from_tensor`(只推 5 个 attention 权重)绕开 #26794 FusedMoE reload narrow;**不要**换 dense fab(V4 `DeepseekV4DecoderLayer` 无条件用 `DeepseekV2MoE`,反撞 `gate_up_proj` KeyError)。诚实边界:weight delta 是 synth 占位,非真训练梯度。
 
 ### triton-ascend
 
@@ -74,6 +80,8 @@ Worker / 用户先 grep 这一节按关键词找到 cookbook ID,然后跳到 [§
 - [`sglang-001-engine-spawn-main-guard.md`](sglang-001-engine-spawn-main-guard.md) — **P-ENV-4**. sglang `Engine` 用 multiprocessing spawn;顶层脚本必须 `if __name__ == "__main__"` guard,否则 fork bomb / 死锁。
 - [`sglang-002-rmsnorm-bias-attribute-getattr.md`](sglang-002-rmsnorm-bias-attribute-getattr.md) — **P-API-2**. `sgl_kernel_npu fused_split_qk_norm.py` 直读 `RMSNorm.bias` → AttributeError;改 `getattr(layernorm, "bias", None)` 即可。PR #531。
 - [`sglang-003-fusedmoe-reload-narrow-stacked-mapping.md`](sglang-003-fusedmoe-reload-narrow-stacked-mapping.md) — **P-REG-1**. `/update_weights_from_disk` reload path 不 honor `stacked_params_mapping`,在 FusedMoE `_load_w13` `narrow(0, 4096) > dim 1408` crash;dense 路径 OK。Issue #26794。
+- [`sglang-004-v4-ascend-backend-hook-gaps.md`](sglang-004-v4-ascend-backend-hook-gaps.md) — **(V4)**. SGLang trunk `DeepseekV4ForCausalLM` 在 NPU 上暴露 ~8 个 `AscendAttnBackend` 缺失的 V4 hook(c4_indexer/compressor/store_cache…)+ V4 KV pool `get_key_buffer` NotImplementedError,目前全是 no-op stub / short-circuit(只够 1 层短序列 PoC,生产必须 sgl-kernel-npu 真实现);4 个 production native-op 替换(`npu_rms_norm` bit-exact / `**kwargs` back-compat / `npu_clipped_swiglu` / gemm `.float()`)+ RoPE 保留 fp32 torch(native `npu_apply_rotary_pos_emb` 是 rotate-half ≠ V4 interleaved,err 4.22)。
+- [`sglang-005-v4-prefilladder-swa-budget-hang.md`](sglang-005-v4-prefilladder-swa-budget-hang.md) — **(V4)**. V4 `generate()` 看似卡在 scheduler IPC,真因是 `PrefillAdder` admission 返回 `NO_TOKEN`(`_swa_budget_for_req` 需 `max(input_len, sliding_window)+page_size` 但 SWA pool 只有 ~256 slot),请求被静默 re-queue,V4 forward 从没被调到。修复 `max_total_tokens=65536` + `swa_full_tokens_ratio=0.5`。教训:先 instrument admission result 再追 ZMQ/asyncio。
 
 ### mindspeed
 
@@ -92,3 +100,5 @@ Worker / 用户先 grep 这一节按关键词找到 cookbook ID,然后跳到 [§
 ### miles
 
 - [`miles-001-dsamla-tilelang-npu-port-pattern.md`](miles-001-dsamla-tilelang-npu-port-pattern.md) — **P-API-3**. miles 4 个 DSAMLA tilelang 算子(lighting_indexer_fwd/bwd、sparse_mla_fwd/bwd)在 NPU 上的 port 模式:dispatcher hook + per-op layout(head split, block_size, UB cap, R-KA-16 mitigation)。PR radixark/miles#1246。
+- [`miles-002-v4-training-ops-cann-native-first.md`](miles-002-v4-training-ops-cann-native-first.md) — **(V4)**. 核心纠正:V4 训练侧核心算子 CANN-native(sparse-MLA→`npu_nsa_select_attention`、indexer→`npu_sparse_lightning_indexer_grad_kl_loss`、compressor→`npu_nsa_compress_attention`、MLA→`npu_mla_prolog_v3`、rms→`npu_rms_norm`),只有 hash-coding sinkhorn + act_quant 真缺 native 需 op-gen。op-gen 前先 `probe dir(torch_npu)` 查 nsa/mla/sparse/lightning。推翻"6 个 tilelang kernel 都要手写"的早期误判(5 CANN-native + 2 op-gen)。
+- [`miles-003-v4-megatron-layer-on-npu-integration.md`](miles-003-v4-megatron-layer-on-npu-integration.md) — **(V4)**. 真 `DeepSeekV4Attention` megatron layer(+ 减层 1-2 层 TransformerBlock)在 NPU 上 fwd+bwd+optimizer.step 的集成 walkaround:MindSpeed `core_r0.16.0`(import adaptor 优先)、`npu_rms_norm` shim(match gamma dtype + drop args)、`(output,None)` TransformerLayer 契约、`all_reduce_grad_fp32` 未提交 patch、full miles pkg 依赖;production-worthy 的 `sparse_attn_torch` all-masked-row softmax 稳定化(nan 282→7→0)。单 61GB 芯片显存墙:1 层+AdamW 完整迭代 / 2 层 fwd+bwd / 更深要 TP/PP(分布式工程非算子问题)。减层是验证基线。
