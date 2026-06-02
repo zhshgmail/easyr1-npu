@@ -122,7 +122,7 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 说明三点,避免歧义:
 
 1. 五个核心算子使用 CANN 原生算子(经 `torch_npu` 调用),已真实接入运行中的训练层。
-2. CANN 无原生对应的两个算子(sinkhorn、act_quant)运行层中以 **torch 组合**实现 —— **但两者都有 op-gen harness 生成的 AscendC kernel 作为后备方案(backup)**:精度已对齐(见下表),性能相对 pytorch 版本(sinkhorn 实测 5.34×;act_quant **shape 相关**:小张量 9.26× 但大张量 0.36× 反而更慢,见 §4.3 表)。当前运行层用 torch 组合是因为接入受阻(act_quant 的 fp8 接入被 torch_npu 限制挡住,见第 4 点;sinkhorn 待 `torch_npu` 自定义算子注册)——**AscendC 后备已就绪、验过精度,接入即可替换 torch 版以提速**。
+2. CANN 无原生对应的两个算子(sinkhorn、act_quant)运行层中以 **torch 组合**实现 —— **但两者都有 op-gen harness 生成的 AscendC kernel 作为后备方案(backup)**:精度已对齐(见下表),性能相对 pytorch 版本(统一格式,见 §4.3 表:sinkhorn 5.34× mean(min 4.02);act_quant 3.85× mean **但 min 0.38×——大张量反而更慢**)。当前运行层用 torch 组合是因为接入受阻(act_quant 的 fp8 接入被 torch_npu 限制挡住,见第 4 点;sinkhorn 待 `torch_npu` 自定义算子注册)——**AscendC 后备已就绪、验过精度,接入即可替换 torch 版以提速**。
 3. **tilelang-ascend 后端在运行层中未被使用**。miles 的 sparse_mla 等源算子为 `@tilelang.jit`(CUDA 目标),其 tilelang API 与昇腾 tilelang 构建不兼容,因此调用被替换为上述 CANN 原生算子。
 4. **关于 FP8(重要):A3 无 FP8 硬件,本工作全程不跑真 FP8。** 硬件能力矩阵确认 A3/a5/a2 的 VEC 单元均无 fp8 cast(无 `vconv` to/from fp8,SDK 仅有 fp8 解码无编码)。V4 设计中 act_quant 是激活的 fp8 量化优化;在无 fp8 硬件的 A3 上,运行层用 `_fp8_e4m3_round` **在 fp32 下模拟 fp8 量化网格**(把数值 round 到 fp8 可表示的网格,但 dtype 保持 fp32/bf16,从不以 fp8 存储或计算)。推理侧同理走 bf16,`SGLANG_OPT_FP8_*` 全关。§4.3 那个 op-gen act_quant kernel 产出的 fp8 字节是 kernel 内**软件 RNE 编码器**(scalar pipe 逐元素)生成的,用于精度 bit-match 参考,**不使用任何 fp8 硬件单元,也未接入训练层**。结论:训练与 rollout 在 A3 上是 **bf16/fp32**,fp8 仅作为被模拟的量化网格存在。
 
@@ -142,14 +142,16 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 
 运行层这两个算子用 torch 实现,但 op-gen harness 各生成了一个 AscendC kernel 作为**后备方案**,精度已对齐参考;性能相对 pytorch 版本的实测如下:
 
-| 算子 | 精度对齐 | 相对 pytorch 版性能 | 测量方法 |
-|---|---|---|---|
-| `hc_split_sinkhorn` | PASS — pass_a 28/28 + pass_b 28/28 T1_STRICT(max_abs 2.38e-7) | **5.34× mean**(median 5.42,min 4.02,max 7.05,n=6) | SYMMETRIC same-wrapper(`utils/performance.py`,warmup=5/repeats=5,两侧同 wrapper 同 sync;**注意**:这是 honest 对称重测值,早先 worker 自报的 51× 已被 P0ee 方法学门撤回) |
-| `act_quant` | PASS — pass_a 24/24 + pass_b 24/24,byte-exact fp8 + bit-exact fp32 scale | **shape-dependent,不是单一数**:(4,256) 9.26× · (32,2048) 1.88× · **(128,4096) 0.36×(反而更慢)** | A3 实测对称(2026-06-02),same-wrapper warmup=5/repeats=20,两侧均 on NPU,ratio = torch-fp32-sim / AscendC |
+统一用 `mean (median, min, max, n)` 格式(AscendC vs pytorch,SYMMETRIC same-wrapper,两侧同 sync,ratio>1 = AscendC 更快):
 
-> 诚实口径(act_quant perf 已于 2026-06-01 在 A3 补测——之前的 N/A 是 phase_o5 harness 跑在缺 torch_npu 的 env 才失败,不是测不了):
-> - **act_quant 的 AscendC 替换性能是 shape 相关、且不是一律更快**:小张量(4,256)快 9.26×(torch sim 在小张量上 per-op 开销大),中等(32,2048)快 1.88×,**大张量(128,4096)反而慢到 0.36×(约慢 2.8×)**——torch 的向量化 op 在大张量上反超 AscendC kernel。**不能拿 9.26× 当头条**;真实结论是"小张量赢、大张量输",取决于 act_quant 实际跑的 block 规模。
-> - sinkhorn 是 5.34× mean(对称),act_quant 见上(shape 相关)。两者**精度都对齐**;但 act_quant 的 AscendC 替换**只在小/中张量有性能收益,大张量是负收益**——这点必须如实给客户,否则会误导。
+| 算子 | 精度对齐 | 相对 pytorch 性能(统一格式) |
+|---|---|---|
+| `hc_split_sinkhorn` | PASS(pass_a 28/28 + pass_b 28/28 T1_STRICT,max_abs 2.38e-7) | **5.34× mean(median 5.42,min 4.02,max 7.05,n=6)** |
+| `act_quant` | PASS(pass_a 24/24 + pass_b 24/24,byte-exact fp8 + bit-exact fp32 scale) | **3.85× mean(median 2.42,min 0.38,max 8.73,n=6)** |
+
+> **读这两行的关键区别(诚实)**:sinkhorn 的分布很窄(4.02–7.05),各 shape 都正收益,mean 5.34× 有代表性。**act_quant 的分布极宽(0.38–8.73)**:小张量快(max 8.73×),**大张量反而慢(min 0.38× ≈ 慢 2.6×)**。所以 act_quant 的 **mean 3.85× 不具代表性**——它跨了正收益和负收益两个区间;真正该看的是 **min 0.38×**:V4 production 跑大张量,act_quant 的 AscendC 替换很可能落在**负收益**区。统一格式没问题,但 act_quant 必须连着 min 一起看,不能只报 mean。
+>
+> 测量:sinkhorn `utils/performance.py` warmup=5/active=5;act_quant A3 直测 warmup=5/repeats=20,6 个 shape (4,256)→(128,4096)。sinkhorn 早先 worker 自报的 51× 是不对称测量,已被 P0ee 方法学门撤回,5.34× 才是对称真值。
 
 ### 4.4 集成层适配项
 
