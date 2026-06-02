@@ -116,3 +116,18 @@ Fix direction: store pre-softmax scores in fp32 (workspace_1 should be accum_dty
 workspace-dtype-contract change (workspace_1 is a function-param tensor the caller allocates), so it's
 more involved than the sparse_mla bounds fix. Attempting; will file as issue if the fix can't be
 verified confidently.
+
+### flash_attn bf16 — my root-cause hypothesis DISPROVEN (2026-06-02, honest correction)
+
+I hypothesized the bf16 error came from storing pre-softmax scores in the bf16 workspace_1, and that
+making workspace_1 fp32 would fix it. **TESTED: it did NOT.** Making workspace_1 (+ caller alloc) fp32 and
+loading scores directly into the fp32 UB buffer left the mismatch UNCHANGED at 73.5% / abs 0.345
+(identical to before). So the scores-workspace bf16 truncation is **NOT the (primary) cause** — my
+localization was wrong, retracted.
+
+The bug is still REAL (confirmed: bf16 73.5% vs fp32 ref, fp16 passes), but the root cause is elsewhere
+(candidates not yet eliminated: bf16 Q/K/V GEMM accumulation, workspace_2 probability roundtrip,
+workspace_3 / P@V output-accumulation path). One hypothesis tried + disproven; I do NOT have a confident
+fix. Per the mandate's "file as issue if not confidently fixable" → filing an upstream issue with the
+confirmed repro + the disproven-hypothesis narrowing, rather than guessing further at a deep bf16
+numerical bug.
