@@ -102,3 +102,17 @@ exposed via --dtype bfloat16 and computes wrong output in bf16 while correct in 
 fp16-specific assumption in the kernel (hardcoded fp16 cast/const, or the online-softmax exp/scale path).
 **Matters for V4: bf16 is V4's working dtype.** Bug #2 found in the suite (after sparse_mla heads<16).
 Root-cause + fix: in progress.
+
+### flash_attn bf16 — root cause LOCALIZED (2026-06-02)
+
+Confirmed root cause: the Q@K GEMM result `l0_c` (accum_dtype=fp32) is copied to `workspace_1` which is
+typed `dtype` (= bf16 when --dtype bfloat16) — line ~112-119. So the **raw pre-softmax attention scores
+are truncated to bf16** (8-bit mantissa) BEFORE the softmax max-subtract+exp. Q@K scores have magnitude
+~O(scale·values) that fp16's 10-bit mantissa holds adequately but bf16's 8-bit truncates badly →
+softmax is computed on garbage-truncated scores → 73.5% output divergence. (workspace_2 holds post-softmax
+probabilities in 0..1 range which round-trip bf16-safely; only the raw-scores workspace_1 is the problem.)
+
+Fix direction: store pre-softmax scores in fp32 (workspace_1 should be accum_dtype, not dtype). This is a
+workspace-dtype-contract change (workspace_1 is a function-param tensor the caller allocates), so it's
+more involved than the sparse_mla bounds fix. Attempting; will file as issue if the fix can't be
+verified confidently.
