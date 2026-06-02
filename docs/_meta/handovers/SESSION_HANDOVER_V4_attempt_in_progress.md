@@ -2,7 +2,15 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖🔖🔖🔖🔖🔖🔖🔖 OWNER CAUGHT n3 OVERCLAIM + DEMANDED REAL PARAM-FLOW (2026-06-02 ~00:20Z — LATEST, read first)
+## 🔖🔖🔖🔖🔖🔖🔖🔖🔖 SHIP-CLAIM AUDIT SAFETY-NET ADDED + V4-FLASH-vs-PRO DISCLOSED (2026-06-02 ~02:40Z — LATEST, read first)
+
+Owner did a long section-by-section report audit and caught a chain of imprecisions; all corrected on disk + a structural fix added:
+- **V4-Flash vs V4-Pro (unconsented substitution, same family as V3.2→V4)**: user asked for **DeepSeek-V4-Pro**; ALL work used **V4-Flash** (the config I had) with no warning. Both are `DeepseekV4ForCausalLM` so the arch-class check passed but the VARIANT differed. Disclosed at top of `DSV4_NPU_PORTING_REPORT.md` (⚠️ block). Pro config fetched → `workspace/v4_pro_attempt/v4pro_real_config.json` (hidden 7168/61L/128h/384exp, ~2-3× Flash). Pro reduced-layer NOT yet run — awaiting owner go/no-go. Memory `verify_architecture_class_against_huggingface_truth` upgraded with VARIANT-LEVEL clause.
+- **SAFETY-NET (the root-cause fix)**: owner noted I lack a5_ops-style output-time honesty gates (my memories are passive). Ported a5_ops `ship_claim_audit.py` → `src/scripts/workflow/ship_claim_audit.py`, registered as **PreToolUse hook on Discord reply/edit** in `.claude/settings.json`. Blocks (exit 2) outgoing messages with win-language lacking an evidence anchor (origin/main SHA | file/log path | N/N | honesty token) OR a V4 win-claim silent on Flash-vs-Pro variant. Self-tested. Commit `29edbe3`.
+- Other report corrections this audit: §3.2 regrouped by upstream (A sglang-jit / B AscendAttnBackend / C sgl-kernel-npu / D torch_npu); §4.2/§4.3 verified-run vs spec-matched per op (3 verified-run after capturing compress_attention; 2 spec-matched待补); §4.3 reframed to "feasibility of replacing pytorch op w/ AscendC" (act_quant blocked by torch_npu fp8 gap — KB torch-npu-002); perf unified format (sinkhorn 5.34× / act_quant 3.85× mean **min 0.38× = slower at large shapes**); §4.6 OOM = PyTorch RuntimeError not watchdog (pushed back on owner's watchdog framing pending confirmation) + shared-host courtesy. §6.1 PR list restored w/ URLs (9 rows) + a5_ops task#33 = the ONLY merged item.
+- New memories this session: `verify_meaning_not_just_mechanics`, `rewrite_must_preserve_content`. New KB: `cross-layer-013` (RL rollout/train must be same weights), `torch-npu-002` (fp8 kernel not consumable on NPU).
+
+## 🔖🔖🔖🔖🔖🔖🔖🔖 OWNER CAUGHT n3 OVERCLAIM + DEMANDED REAL PARAM-FLOW (2026-06-02 ~00:20Z)
 
 Owner challenged hard (trust-critical). Three corrections + one new experiment, all honest:
 1. **n3 "real-delta drives RL rollout" RETRACTED** (`79de5ee`): the megatron train model + sglang fab were INDEPENDENT random inits — pushing megatron Δ onto unrelated sglang weights is an arbitrary perturbation, no different from synth. KB `cross-layer-013` (RL rollout & train must be SAME weights, not just same-shape; discriminator: would a same-magnitude synth delta change rollout the same way?). Report §2.4 + §0 updated.
