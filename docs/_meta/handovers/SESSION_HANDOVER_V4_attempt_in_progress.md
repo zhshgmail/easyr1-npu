@@ -2,7 +2,17 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖🔖🔖🔖🔖🔖🔖🔖🔖 SHIP-CLAIM AUDIT SAFETY-NET ADDED + V4-FLASH-vs-PRO DISCLOSED (2026-06-02 ~02:40Z — LATEST, read first)
+## 🔖🔖🔖🔖🔖🔖🔖🔖🔖🔖 TILELANG-vs-CANN COMPARISON + sparse_mla BUG FIXED (2026-06-02 ~04:50Z — LATEST, read first)
+
+Owner directed a tilelang-ascend precision/perf investigation, then "还要修复" (fix bugs, not just find). Results, all in report Appendix A.3/A.4 + KB:
+- **REAL bug found AND FIXED**: `tilelang-mlir-ascend examples/sparse_mla_fwd.py` silently wrong at heads<16 (44%/36% mismatch; heads≥16 OK). Root cause: final output store wrote `block_H_half` rows per subid regardless of actual head count → over-wrote adjacent (batch,seq) positions (padding rows compute harmlessly; only the write-back over-ran). **Fix = 6-line bounded store** `_valid_h=max(0,min(block_H_half, heads-block_h_offset))`. Verified heads=4/8/16/32 PASS, no regression. **Fork branch `blue/fix/sparse-mla-heads-lt-block-h` commit `a19acd5`** (in tlrescue's `/home/z00637938/workspace/tilelang-mlir-ascend`; fork origin is tile-ai upstream clone). KB `tilelang-003` + issue draft `workspace/task-dag-realdelta/UPSTREAM_ISSUE_tilelang_sparse_mla_heads_lt16.md` (fix attached, ready to PR — owner files).
+- **FALSE bug RETRACTED (caught myself)**: earlier "indexer fp8_lighting_indexer h<32 fails" was MY test-harness error — that example's `__main__` HARDCODES H=32 ignoring `--h`, so the sweep compared a h≠32 kernel vs h=32 data. Harness-fixed → indexer PASSES h=4/8/16/32. No indexer bug. Retracted in A.3 + issue draft. Memory `verify_harness_propagates_swept_param`.
+- **tilelang-vs-CANN perf (heads=32, both valid)**: tilelang sparse_mla 297.9us vs CANN nsa_select 148.7us → CANN ~2× faster (caveat: not bit-identical workload, token-topk vs block-select). Gives "chose CANN" a perf basis. Earlier CANN-NaN was ALSO my harness error (Tkv<sbs*sbc), not a CANN defect.
+- **robustness sweep (A.4)**: sparse_mla tile/shape combos (top_k/block_i/block_k/seq_kv/dim) all PASS; `kv_group>1` FAILs but flagged as likely-unsupported-config (example comment: H-padding auto-handle is kv_group==1-only), NOT claimed as bug; dtype fp16-hardcoded so bf16 untested.
+- Fork working tree: only PRE-EXISTING T32 mods (tolerance bumps etc.), my only change is the committed sparse_mla fix. Don't mistake those for my edits.
+- Open owner-decisions: PR the sparse_mla fix / investigate kv_group>1 / test bf16 / V4-Pro run / §4.6 watchdog confirm.
+
+## 🔖🔖🔖🔖🔖🔖🔖🔖🔖 SHIP-CLAIM AUDIT SAFETY-NET ADDED + V4-FLASH-vs-PRO DISCLOSED (2026-06-02 ~02:40Z)
 
 Owner did a long section-by-section report audit and caught a chain of imprecisions; all corrected on disk + a structural fix added:
 - **V4-Flash vs V4-Pro (unconsented substitution, same family as V3.2→V4)**: user asked for **DeepSeek-V4-Pro**; ALL work used **V4-Flash** (the config I had) with no warning. Both are `DeepseekV4ForCausalLM` so the arch-class check passed but the VARIANT differed. Disclosed at top of `DSV4_NPU_PORTING_REPORT.md` (⚠️ block). Pro config fetched → `workspace/v4_pro_attempt/v4pro_real_config.json` (hidden 7168/61L/128h/384exp, ~2-3× Flash). Pro reduced-layer NOT yet run — awaiting owner go/no-go. Memory `verify_architecture_class_against_huggingface_truth` upgraded with VARIANT-LEVEL clause.
