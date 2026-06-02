@@ -89,3 +89,16 @@ Triaged the remaining examples — all PASS at default:
 Net: the tilelang-ascend example suite is broadly HEALTHY on Ascend A3. The one genuine kernel
 correctness bug (sparse_mla heads<16) is fixed and ready to PR. Remaining mandate work: open the
 sparse_mla PR; optionally fix the 2 harness nits (lower value).
+
+## flash_attn_npuir bf16 — CONFIRMED real kernel bug (2026-06-02)
+
+After fixing the harness dtype-compare, tested kernel output vs a PURE fp32 reference (the true math):
+- **fp16 kernel vs fp32 ref: PASS** (within rtol/atol 2e-2) → fp32 ref is correct.
+- **bf16 kernel vs fp32 ref: FAIL 73.5% mismatch, greatest abs diff 0.345** → bf16 genuinely diverges.
+
+This is a **real bf16-specific correctness bug** in flash_attn_npuir — NOT harness/tolerance/noise (fp16
+passes the same fp32-ref check; the 73.5%/0.345 is far beyond bf16's ~0.4% expected error). The kernel is
+exposed via --dtype bfloat16 and computes wrong output in bf16 while correct in fp16. Likely root cause: an
+fp16-specific assumption in the kernel (hardcoded fp16 cast/const, or the online-softmax exp/scale path).
+**Matters for V4: bf16 is V4's working dtype.** Bug #2 found in the suite (after sparse_mla heads<16).
+Root-cause + fix: in progress.
