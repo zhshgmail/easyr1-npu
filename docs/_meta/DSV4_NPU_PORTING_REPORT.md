@@ -180,6 +180,10 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 
 更深层数需张量/流水并行或激活重计算。256 专家 MoE 在 4096 隐藏维下每层占用巨大,这是大模型常规的显存工程,非昇腾或算子层面的问题。
 
+**关于"显存溢出"的两点说明**:
+- **共享 host courtesy(有意的限制)**:A3 是多人共享主机,本工作**主动**遵循 chip-economy 纪律——只占用验证目标所需的最小芯片数、`mem_fraction_static` 设上限,**以免影响同机其他训练任务**。所以"减层到 1–2 层"既是单卡显存的客观上限,也是不挤占同机资源的主动选择。
+- **OOM 的性质(以实测为准)**:本工作捕获到的是 PyTorch caching allocator 在 `opt.step()` 主动 raise 的 `RuntimeError: NPU out of memory`(进程内分配失败),**不是被外部 watchdog 强杀**。即它是一个可捕获的 runtime 错误、不会留下半死进程。
+
 ---
 
 ## 五、验证边界与限制
