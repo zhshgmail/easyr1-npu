@@ -35,7 +35,7 @@ evidence:
   - "workspace/v4_attempt_2026_06_01/V4_TRAINING_SIDE_OP_GAP.md (early misjudgment: '6 TileLang kernel 要 NPU path' — corrected here)"
   - "workspace/v4_attempt_2026_06_01/npu_native_shims/PROTECTED_flash_attention_npu_RESULT.md (single DeepSeekV4Attention megatron layer fwd+bwd PASS on A3 via CANN-native shims; commit a577cc0)"
   - "v4_sparse_attn_nsa_shim.py / v4_indexer_lightning_shim.py / v4_npu_native_dispatch.py (the verified CANN-native dispatch shims)"
-  - "sinkhorn AscendC op-gen: 28/28+28/28, perf 5.34x symmetric (miles op-gen #311). act_quant: 24/24+24/24 byte-exact fp8 + bit-exact fp32 (#315)"
+  - "sinkhorn AscendC op-gen: 28/28+28/28, perf 5.34x symmetric (miles op-gen #311). act_quant: 24/24+24/24 byte-exact fp8 + bit-exact fp32 (#315); act_quant perf is SHAPE-DEPENDENT (A3 symmetric 2026-06-02): (4,256) 9.26x / (32,2048) 1.88x / (128,4096) 0.36x i.e. SLOWER at large shapes — don't headline the 9.26x"
   - "Owner correction memory: feedback_cann_has_basic_ops_dont_hand_gen.md, project_v4_ops_cann_native_mapping.md (2026-06-01)"
 applies_to:
   - "miles DeepSeek-V4-Flash training-side ops on Ascend A3 NPU @ 2026-06-01"
