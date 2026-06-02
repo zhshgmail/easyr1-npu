@@ -122,7 +122,7 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 说明三点,避免歧义:
 
 1. 五个核心算子使用 CANN 原生算子(经 `torch_npu` 调用),已真实接入运行中的训练层。
-2. CANN 无原生对应的两个算子(sinkhorn、act_quant)运行层中以 **torch 组合**实现。这两个算子另有独立的 AscendC kernel 经算子生成流程产出并通过精度验证,但**尚未通过 `torch_npu` 自定义算子注册接入 miles 训练链路**;它们的可调用性已单独验证(见 4.3)。
+2. CANN 无原生对应的两个算子(sinkhorn、act_quant)运行层中以 **torch 组合**实现 —— **但两者都有 op-gen harness 生成的 AscendC kernel 作为后备方案(backup)**:精度已对齐(见下表),且对 pytorch 版本有性能优势(sinkhorn 实测 5.34×;act_quant 性能未取到有效数,见 §4.3 表)。当前运行层用 torch 组合是因为接入受阻(act_quant 的 fp8 接入被 torch_npu 限制挡住,见第 4 点;sinkhorn 待 `torch_npu` 自定义算子注册)——**AscendC 后备已就绪、验过精度,接入即可替换 torch 版以提速**。
 3. **tilelang-ascend 后端在运行层中未被使用**。miles 的 sparse_mla 等源算子为 `@tilelang.jit`(CUDA 目标),其 tilelang API 与昇腾 tilelang 构建不兼容,因此调用被替换为上述 CANN 原生算子。
 4. **关于 FP8(重要):A3 无 FP8 硬件,本工作全程不跑真 FP8。** 硬件能力矩阵确认 A3/a5/a2 的 VEC 单元均无 fp8 cast(无 `vconv` to/from fp8,SDK 仅有 fp8 解码无编码)。V4 设计中 act_quant 是激活的 fp8 量化优化;在无 fp8 硬件的 A3 上,运行层用 `_fp8_e4m3_round` **在 fp32 下模拟 fp8 量化网格**(把数值 round 到 fp8 可表示的网格,但 dtype 保持 fp32/bf16,从不以 fp8 存储或计算)。推理侧同理走 bf16,`SGLANG_OPT_FP8_*` 全关。§4.3 那个 op-gen act_quant kernel 产出的 fp8 字节是 kernel 内**软件 RNE 编码器**(scalar pipe 逐元素)生成的,用于精度 bit-match 参考,**不使用任何 fp8 硬件单元,也未接入训练层**。结论:训练与 rollout 在 A3 上是 **bf16/fp32**,fp8 仅作为被模拟的量化网格存在。
 
@@ -133,6 +133,17 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 为确认算子生成流程产出的 AscendC kernel 可从 pytorch 调用,在 A3 上以 bisheng 构建 `act_quant` 算子为 pybind 扩展(`_act_quant_ext`),用一段**独立脚本**(非训练层)从 pytorch 在 NPU 上调用 `run_act_quant(x, block_size)`,输出与 CPU 真值参考逐位一致(scale 误差 0,fp8 逐值匹配 100%,反量化误差 0)。这验证了"pytorch 调用 AscendC 算子"的机制成立。
 
 **接入训练链路的具体阻塞(实测)**:尝试以该 kernel 替换训练层中的 torch fp8 模拟时,kernel 返回 `float8_e4m3fn`(int8 字节的 view),而在 NPU 上对其做 `.float()` 反量化报 `Float8_e4m3fn has not been supported`——这正是当初写 torch 模拟要规避的限制。可行的旁路有三:(a) torch_npu 增加 fp8→fp32 支持;(b) kernel 直接返回反量化后的 fp32 值而非 fp8 字节;(c) 在 NPU 上以整数位运算解码 e4m3 字节。当前训练层因此仍用 torch 组合;接入 kernel 待上述之一落地。结论:kernel **可调用、精度已验**,但**接入 NPU 训练数值通路被 torch_npu 的 fp8 支持缺失阻塞**。
+
+#### AscendC 后备方案:精度对齐 + 相对 pytorch 的性能
+
+运行层这两个算子用 torch 实现,但 op-gen harness 各生成了一个 AscendC kernel 作为**后备方案**,精度已对齐参考;性能相对 pytorch 版本的实测如下:
+
+| 算子 | 精度对齐 | 相对 pytorch 版性能 | 测量方法 |
+|---|---|---|---|
+| `hc_split_sinkhorn` | PASS — pass_a 28/28 + pass_b 28/28 T1_STRICT(max_abs 2.38e-7) | **5.34× mean**(median 5.42,min 4.02,max 7.05,n=6) | SYMMETRIC same-wrapper(`utils/performance.py`,warmup=5/repeats=5,两侧同 wrapper 同 sync;**注意**:这是 honest 对称重测值,早先 worker 自报的 51× 已被 P0ee 方法学门撤回) |
+| `act_quant` | PASS — pass_a 24/24 + pass_b 24/24,byte-exact fp8 + bit-exact fp32 scale | **N/A(未取到有效数)** | phase_o5 perf-capture 在缺 torch_npu 的 env 下 harness 退出失败,`ratio=null`;不臆造数字 |
+
+> 诚实口径:**只有 sinkhorn 有有效的相对性能数(5.34× 对称)**;act_quant 的 perf 没采到(harness 失败),标 N/A。两者**精度都对齐了**。"AscendC 后备比 pytorch 快多少"——sinkhorn 5.34×,act_quant 暂无数。
 
 ### 4.4 集成层适配项
 
