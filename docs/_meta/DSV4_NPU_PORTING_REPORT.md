@@ -92,13 +92,13 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 |---|---|---|
 | 稀疏 MLA(前向/反向) | `npu_nsa_select_attention`(D_qk=192/D_v=128,select_block=64,count=16,返回 attn 及 softmax max/sum 供反向) | **verified-run**(A3 捕获:attn (128,4,128) finite, 94.9us) |
 | rms_norm | `npu_rms_norm` | **verified-run**(逐位等价 0.000e+00) |
-| C4 indexer | `npu_sparse_lightning_indexer_grad_kl_loss`(带 grad+KL,明确 Atlas A3 train) | spec-matched(签名对应,层 forward 调用;未单独捕获 run-log) |
-| compressor | `npu_nsa_compress_attention` | spec-matched(未单独捕获 run-log) |
-| MLA 预处理 | `npu_mla_prolog_v3` | coverage-confirmed(dispatch 命中;未单独捕获 run-log) |
+| compressor | `npu_nsa_compress_attention` | **verified-run**(2026-06-02 A3 捕获:q(128,4,192)→out(128,4,128) finite, 57.3ms) |
+| C4 indexer | `npu_sparse_lightning_indexer_grad_kl_loss`(带 grad+KL,明确 Atlas A3 train) | spec-matched(签名对应,层 forward 调用;独立 run-log 待补 —— 该反向算子需上游 fwd 的 softmax_max/sum 状态做输入,standalone setup 较重) |
+| MLA 预处理 | `npu_mla_prolog_v3` | coverage-confirmed(dispatch 命中;独立 run-log 待补 —— 该算子需 10+ 个权重 tensor 全套,standalone setup 较重) |
 | hash-coding sinkhorn | torch 组合 `_hc_split_sinkhorn_npu`(CANN 无对应原生算子) | 已接入运行层 |
 | act_quant(fp8) | torch fp8-grid 模拟 `_fp8_e4m3_round`(CANN 无对应原生算子) | 已接入运行层 |
 
-> 三个 spec-matched/coverage-confirmed 的算子要升到 verified-run,需各跑一个独立 case 捕获 run-log 做数值等价(待办)。它们在减层层的 fwd+bwd 整体跑通里被调用过(层级 PASS),但单算子级数值等价只对 select_attention + rms_norm 捕获了证据。
+> 现状:3 个 verified-run(`npu_nsa_select_attention` / `npu_rms_norm` / `npu_nsa_compress_attention`)+ 2 个待补独立 run-log(`npu_sparse_lightning_indexer_grad_kl_loss` 需上游 fwd 状态、`npu_mla_prolog_v3` 需全套权重,standalone 捕获较重)。这 5 个在减层层的 fwd+bwd 整体跑通里都被调用过(层级 PASS)。
 
 说明三点,避免歧义:
 

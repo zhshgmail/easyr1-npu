@@ -25,7 +25,7 @@ correction:
   - "Map first, op-gen only the genuine gaps. CANN-native mapping (verified-run vs spec-matched noted per op — capture a log before claiming numeric equivalence for the spec-matched ones):"
   - "  - sparse-MLA fwd/bwd -> npu_nsa_select_attention (D_qk=192, D_v=128, select_block=64, count=16; returns attn + softmax max/sum for bwd) [VERIFIED-RUN on A3: attn (128,4,128) finite, 94.9us]"
   - "  - C4 indexer -> npu_lightning_indexer / npu_sparse_lightning_indexer_grad_kl_loss [grad+KL variant used in training; verified in the layer fwd+bwd run]"
-  - "  - compressor -> npu_nsa_compress_attention [SPEC-MATCHED to V4; capture a standalone run-log before claiming numeric equivalence]"
+  - "  - compressor -> npu_nsa_compress_attention [VERIFIED-RUN on A3 2026-06-02: q(128,4,192)->out(128,4,128) finite, 57.3ms]"
   - "  - MLA prep -> npu_mla_prolog_v3 [COVERAGE-CONFIRMED in dispatch; no standalone verified-run log captured yet]"
   - "  - rms_norm -> npu_rms_norm (bit-exact, 0.000e+00) [VERIFIED-RUN]"
   - "Only hand-write AscendC for primitives CANN genuinely lacks. Two such gaps existed: hash-coding sinkhorn (hc_split_sinkhorn) and fp8 act_quant — both op-gen'd and precision-verified."
