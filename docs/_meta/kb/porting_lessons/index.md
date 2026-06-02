@@ -102,6 +102,7 @@ Worker / 用户先 grep 这一节按关键词找到 cookbook ID,然后跳到 [§
 
 - [`tilelang-001-check-ub-budget-early-fail.md`](tilelang-001-check-ub-budget-early-fail.md) — **P-COMP-2**. bishengir 30s 后才报 UB overflow + 无 alloc breakdown;Python pass `CheckUBBudget` 在 npuir 阶段 <1s 给 per-alloc breakdown + 建议 `block_M`。PR tile-ai/tilelang-mlir-ascend#80。
 - [`tilelang-002-vbrc-needs-bound-local.md`](tilelang-002-vbrc-needs-bound-local.md) — **P-CONF-1**. `T.vbrc(0, buf)` 在 raw int 上 rank check 失败;先 `zero = T.constant(0, dtype=buf.dtype)` 再传。
+- [`tilelang-003-sparse-mla-silent-wrong-heads-lt-16.md`](tilelang-003-sparse-mla-silent-wrong-heads-lt-16.md) — **(V4)**. tilelang-mlir-ascend `sparse_mla_fwd` 在 **heads<16 静默输出错误**(heads=4 错 44%、8 错 36%,16/32 PASS);根因 `padded_H=max(...,16)` 的 H-padding 分支 Q-copy/output mask 算错、不报错。silent wrong output。消费侧 heads<16 别信 tilelang sparse_mla,用 heads≥16 或 CANN。待提 issue。
 
 ### miles
 
