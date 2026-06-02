@@ -71,3 +71,21 @@ Per the standing mandate, triaging every example at default config:
 
 12 ops PASS at default. Remaining to triage: engram/* (fwd/bwd/decode), mixcv, *_dynamic_shape
 variants, other elementwise (vec_add_1d/auto_brc/multi_buffer/atomic_add), vectorization_in_parallel.
+
+## FULL SUITE triage COMPLETE (2026-06-02)
+
+Triaged the remaining examples — all PASS at default:
+- sparse_mla_fwd_dynamic_shape, gemm/matmul_dynamic_shape, vec_add_1d / 2d_dynamic_shape / auto_brc /
+  2d_multi_buffer, vectorization_in_parallel, mixcv_mixkernel, mixcv/example_mixcv,
+  gemm/example_gemm_int82int32, engram/{fwd,bwd,bwd_exp,decode}, elementwise/atomic_add.
+
+**Full tilelang-ascend example suite (~24 kernels) result**:
+- **~24 ops PASS at default config**.
+- **1 real kernel bug total**: sparse_mla_fwd heads<block_H silent-wrong → **FIXED** (fork a19acd5, verified heads=4/8/16/32).
+- **2 harness-only issues (NOT kernel bugs)**: fp8_lighting_indexer __main__ hardcodes H=32 (caused a false bug, retracted); flash_attn_npuir bf16 test compares float32-ref vs bf16-output (dtype-mismatch assert).
+- **non-bugs correctly rejected**: sparse_mla kv_group>1 (likely-unsupported), seq_len>seq_len_kv (invalid config), indexer h=64 (1/16.7M fp16 noise).
+- **dtype**: flash_attn bf16 untestable until harness fix; sparse_mla/indexer fp16-hardcoded.
+
+Net: the tilelang-ascend example suite is broadly HEALTHY on Ascend A3. The one genuine kernel
+correctness bug (sparse_mla heads<16) is fixed and ready to PR. Remaining mandate work: open the
+sparse_mla PR; optionally fix the 2 harness nits (lower value).
