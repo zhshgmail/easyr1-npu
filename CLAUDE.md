@@ -174,7 +174,7 @@ Memorize this index — these are the entry points that always live in tree (not
 |---|---|---|---|---|
 | `radixark/miles` | `zhshgmail/miles npu-tilelang-ops` | `d03db2c` | audit-clean, T11 valid (MindSpeed unsupported at Mcore 0.16), PR body at `/tmp/miles_pr_body.md` | awaiting user `gh pr create -R radixark/miles --head zhshgmail:npu-tilelang-ops` |
 | `radixark/Megatron-LM` (via miles vendored copy) | local `Megatron-LM-miles fix/te_general_gemm_npu_fallback` | `6f3209b` | 8-line guard, cold-import verified | bundle into miles PR set rather than separate Megatron PR (per user direction) |
-| `Ascend/AscendNPU-IR` issue #251 | n/a (issue comment, not PR) | comment ID `1.73358592e+08` | landed | Huawei compiler team owns the C++ patch |
+| `Ascend/AscendNPU-IR` issue #251 | n/a (issue comment, not PR) | comment ID `1.73358592e+08` | comment POSTED (issue still OPEN, triage-review, no owner/ETA — "landed" only means the bisect report comment is posted, NOT that the issue is resolved or a fix merged) | Huawei compiler team owns the C++ patch |
 | `tile-ai/tilelang-mlir-ascend` PR #80 | `zhshgmail/tilelang-mlir-ascend npuir-check-ub-budget` | `df7431e` | CI all green, MERGEABLE, awaits tile-ai maintainer review | external |
 
 If any of the above migrates / lands / closes, update this table AND `ROADMAP.md` T12 in the same commit. Never let this table go stale.

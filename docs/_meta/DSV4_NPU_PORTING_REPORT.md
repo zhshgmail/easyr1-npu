@@ -172,8 +172,11 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 | 7 | `sgl-project/sglang` | Issue — `/update_weights_from_disk` FusedMoE `_load_w13` narrow regression(#26794) | OPEN;等 maintainer 回复 | https://github.com/sgl-project/sglang/issues/26794 |
 | 8 | `radixark/miles`(本次新增,训练侧 V4 ops NPU path) | 分支 `zhshgmail/miles npu-tilelang-ops` `d03db2c` | 审计通过,待 `gh pr create` | (待开 PR 后补 URL) |
 | 9 | `radixark/Megatron-LM`(miles vendored) | 分支 `Megatron-LM-miles fix/te_general_gemm_npu_fallback` `6f3209b` | 冷导入验证,随 #8 miles PR 一并提交 | (随 #8) |
+| 10 | `a5_ops`(工具链,非 NPU 上游) | perf-capture canonical N/A + FA-gate 修复 `eefeaeca`(task#33) | **已合入(MERGED)** | (内部仓) |
 
-> 条目 1–7 沿用自 miles-dsv4-flash PoC(`output/miles-dsv4-flash-poc/docs/REPORT.md` §上游 PR 列表,以该处为权威实时状态)。8–9 为本次 V4 训练侧工作新增、尚未开 PR 的已准备分支。
+> **唯一已合入(MERGED)的是条目 10**(a5_ops 工具链内部修复)。其余上游条目状态:1/3/6 OPEN 等 human maintainer;2/4/7 OPEN;5 CLOSED(not-planned,已 reframe 成 KB);8/9 尚未开 PR。
+> **注意 #251 不是"已合入"**:它是 OPEN issue,只是我把 311-pass bisect **报告作为评论 posted 上去了**(评论 landed ≠ issue resolved ≠ fix merged);真修由华为编译器组负责,尚未开始。
+> 条目 1–7 的实时 reviewer 反馈细节以 `output/miles-dsv4-flash-poc/docs/REPORT.md` §上游 PR 列表为权威;8–9 为本次 V4 训练侧新增的已准备分支。
 
 ### 6.2 本报告新识别的候选(待真实端到端后批量提交)
 
