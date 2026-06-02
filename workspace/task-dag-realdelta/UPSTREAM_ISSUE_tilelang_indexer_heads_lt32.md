@@ -41,3 +41,18 @@ head-padding / tiling paths rather than one shared bug.
 
 Investigate the h<32 tiling / head-padding path; either correct the output for h<32 or assert-refuse
 unsupported head dims rather than computing a wrong (assert-failing) result.
+
+---
+
+## Diagnostic update (2026-06-02) — NOT yet fixed; root cause harder than sparse_mla
+
+Unlike sparse_mla (clean output-store over-write, fixed), the indexer's failure is **strongly
+shape-dependent**, which rules out a simple per-head error:
+- h=16, m=2048/n=4096 (default): 24.7% mismatch
+- h=16, m=128/n=512: **99.1% mismatch**
+
+The fraction-wrong scaling with problem shape points at the kernel **work distribution**
+(`T.ceildiv(m_num*n_num, nums_kernel)` task assignment) and/or workspace aliasing interacting with H,
+rather than the head-reduction itself. Fewer logic-kernels (smaller shape) → more output wrong. This
+is a deeper tiling/work-assignment bug; a confident fix needs analysis of the cube/vector task split +
+workspace layout for H<32. Not fixed yet — partial diagnosis only.
