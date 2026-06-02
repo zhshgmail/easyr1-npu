@@ -100,9 +100,11 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 2. CANN 无原生对应的两个算子(sinkhorn、act_quant)运行层中以 **torch 组合**实现。这两个算子另有独立的 AscendC kernel 经算子生成流程产出并通过精度验证,但**尚未通过 `torch_npu` 自定义算子注册接入 miles 训练链路**;它们的可调用性已单独验证(见 4.3)。
 3. **tilelang-ascend 后端在运行层中未被使用**。miles 的 sparse_mla 等源算子为 `@tilelang.jit`(CUDA 目标),其 tilelang API 与昇腾 tilelang 构建不兼容,因此调用被替换为上述 CANN 原生算子。
 
-### 4.3 AscendC 算子可调用性验证
+### 4.3 AscendC 算子可调用性验证(独立测试,非运行层内)
 
-为确认算子生成流程产出的 AscendC kernel 可从 pytorch 调用,在 A3 上以 bisheng 构建 `act_quant` 算子为 pybind 扩展(`_act_quant_ext`),从 pytorch 在 NPU 上调用 `run_act_quant(x, block_size)`,输出与 CPU 真值参考逐位一致(scale 误差 0,fp8 逐值匹配 100%,反量化误差 0)。这验证了"pytorch 调用 AscendC 算子"的机制成立。
+> 与 §4.2 不矛盾,明确区分两件事:**运行中的训练层用的是 CANN 原生算子 + torch 组合(§4.2),没有调用 op-gen 的 AscendC kernel**;本节是一个**独立的旁路测试**,单独验证那个 op-gen kernel 能从 pytorch 调用,不在训练层的执行路径里。
+
+为确认算子生成流程产出的 AscendC kernel 可从 pytorch 调用,在 A3 上以 bisheng 构建 `act_quant` 算子为 pybind 扩展(`_act_quant_ext`),用一段**独立脚本**(非训练层)从 pytorch 在 NPU 上调用 `run_act_quant(x, block_size)`,输出与 CPU 真值参考逐位一致(scale 误差 0,fp8 逐值匹配 100%,反量化误差 0)。这验证了"pytorch 调用 AscendC 算子"的机制成立。
 
 **接入训练链路的具体阻塞(实测)**:尝试以该 kernel 替换训练层中的 torch fp8 模拟时,kernel 返回 `float8_e4m3fn`(int8 字节的 view),而在 NPU 上对其做 `.float()` 反量化报 `Float8_e4m3fn has not been supported`——这正是当初写 torch 模拟要规避的限制。可行的旁路有三:(a) torch_npu 增加 fp8→fp32 支持;(b) kernel 直接返回反量化后的 fp32 值而非 fp8 字节;(c) 在 NPU 上以整数位运算解码 e4m3 字节。当前训练层因此仍用 torch 组合;接入 kernel 待上述之一落地。结论:kernel **可调用、精度已验**,但**接入 NPU 训练数值通路被 torch_npu 的 fp8 支持缺失阻塞**。
 
@@ -157,15 +159,21 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 
 ## 六、上游提交计划
 
-### 6.1 已准备 / 已合入
+### 6.1 已开 / 已沉淀的上游 PR / Issue(含链接)
 
-| 目标仓 | 分支 / 引用 | Commit / ID | 状态 |
-|---|---|---|---|
-| `radixark/miles` | `zhshgmail/miles npu-tilelang-ops` | `d03db2c` | 审计通过,待提交 |
-| `radixark/Megatron-LM`(miles vendored) | `Megatron-LM-miles fix/te_general_gemm_npu_fallback` | `6f3209b` | 冷导入验证,随 miles PR 一并提交 |
-| `Ascend/AscendNPU-IR` issue #251 | issue 评论 | — | 已合入(bishengir HIVM pass 累加器 bug) |
-| `tile-ai/tilelang-mlir-ascend` PR #80 | `zhshgmail/... npuir-check-ub-budget` | `df7431e` | CI 全绿,待 maintainer review |
-| `a5_ops`(工具链) | task#33 | `eefeaeca` | 已合入 |
+| # | 目标仓 | 类型 | 状态 | 链接 |
+|---|---|---|---|---|
+| 1 | `tile-ai/tilelang-mlir-ascend` | PR — `CheckUBBudget` 早失败诊断 pass + UT | reviewer feedback addressed,CI 待重跑,REVIEW_REQUIRED | https://github.com/tile-ai/tilelang-mlir-ascend/pull/80 |
+| 2 | `Ascend/AscendNPU-IR` | Issue — R-KA-16 罪魁定位 + 311-pass bisect 报告 + 3 patch 方向 | open;Huawei 编译器组已加 `triage-review` label | https://gitcode.com/Ascend/AscendNPU-IR/issues/251 |
+| 3 | `radixark/miles` | PR — `_npu/` 子包(4 NPU 算子 + dispatcher + head-split + UB cap + R-KA-16 mitigation) | reviewer feedback addressed,REVIEW_REQUIRED | https://github.com/radixark/miles/pull/1246 |
+| 4 | `Ascend/MindSpeed` | PR — `apex.transformer.functional.fused_apply_rotary_pos_emb_thd` shim | ready(无 human reviewer 反馈) | https://gitcode.com/Ascend/MindSpeed/merge_requests/3509 |
+| 5 | `triton-lang/triton-ascend` | Issue — triton vs triton-ascend coexistence | closed not-planned + KB `triton-ascend-002` | https://github.com/triton-lang/triton-ascend/issues/306 |
+| 6 | `sgl-project/sgl-kernel-npu` | PR — `fused_split_qk_norm` RMSNorm `.bias` getattr fix | OPEN, REVIEW_REQUIRED | https://github.com/sgl-project/sgl-kernel-npu/pull/531 |
+| 7 | `sgl-project/sglang` | Issue — `/update_weights_from_disk` FusedMoE `_load_w13` narrow regression(#26794) | OPEN;等 maintainer 回复 | https://github.com/sgl-project/sglang/issues/26794 |
+| 8 | `radixark/miles`(本次新增,训练侧 V4 ops NPU path) | 分支 `zhshgmail/miles npu-tilelang-ops` `d03db2c` | 审计通过,待 `gh pr create` | (待开 PR 后补 URL) |
+| 9 | `radixark/Megatron-LM`(miles vendored) | 分支 `Megatron-LM-miles fix/te_general_gemm_npu_fallback` `6f3209b` | 冷导入验证,随 #8 miles PR 一并提交 | (随 #8) |
+
+> 条目 1–7 沿用自 miles-dsv4-flash PoC(`output/miles-dsv4-flash-poc/docs/REPORT.md` §上游 PR 列表,以该处为权威实时状态)。8–9 为本次 V4 训练侧工作新增、尚未开 PR 的已准备分支。
 
 ### 6.2 本报告新识别的候选(待真实端到端后批量提交)
 

@@ -2,7 +2,7 @@
 
 把 [`hiyouga/EasyR1`](https://github.com/hiyouga/EasyR1) 适配到 Ascend 910C (A3) NPU，并沉淀一套针对 4 个 NPU 上游（vllm-ascend / torch-npu / transformers / triton-ascend）的可复用版本升级工具链。
 
-最后更新：2026-06-02（DeepSeek-V4-Flash 在 A3 NPU,减层基线:推理侧真 V4 model class `generate()` + 推理-权重同步-再推理循环闭合;训练侧真 DSV4 config 减层 1 层完整训练迭代 + 2 层 fwd+bwd;**两层共享权重下训练→推理参数流动经判别实验验证为训练特异性**;op-gen AscendC 算子(act_quant)已在 NPU 上从 pytorch 真实调用(逐位等价)。统一移植报告已重写为正式中文文书(见下)。新增 7 条 V4 cookbook(共 32 条)+ `/task-dag-planner` skill。)
+最后更新：2026-06-02（DeepSeek-V4-Flash 在 A3 NPU,减层基线:推理侧真 V4 model class `generate()` + 推理-权重同步-再推理循环闭合;训练侧真 DSV4 config 减层 1 层完整训练迭代 + 2 层 fwd+bwd;**两层共享权重下训练→推理参数流动经判别实验验证为训练特异性**;op-gen AscendC 算子(act_quant)已在 NPU 上从 pytorch 真实调用(逐位等价,**独立测试,未接入训练层** —— 接入被 torch_npu 缺 fp8 支持阻塞)。统一移植报告已重写为正式中文文书(见下)。新增 7 条 V4 cookbook(共 32 条)+ `/task-dag-planner` skill。)
 
 > **想看 DeepSeek-V4-Flash NPU 移植报告（重点：SGLang 推理 + Megatron/miles 训练两侧的坑 / 解法 / walkaround-vs-production 分类）→ [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md)**
 >
