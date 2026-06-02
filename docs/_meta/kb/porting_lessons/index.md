@@ -39,6 +39,7 @@ Worker / 用户先 grep 这一节按关键词找到 cookbook ID,然后跳到 [§
 | V4 training ops CANN-native, npu_nsa_select_attention, npu_lightning_indexer, npu_nsa_compress_attention, npu_mla_prolog_v3, probe dir(torch_npu) before op-gen, DeepSeek-family sparse-MLA native | `miles-002` | (V4) |
 | DeepSeekV4Attention megatron layer fwd+bwd NPU, MindSpeed core_r0.16.0, npu_rms_norm shim too-many-args, (output,None) TransformerLayer contract, all_reduce_grad_fp32 patch, sparse_attn_torch all-masked-row softmax NaN, single-chip OOM TP/PP | `miles-003` | (V4) |
 | V4 RL loop NPU, update_weights_from_tensor attention-only, update_weights_from_disk #26794 narrow, dense fab gate_up_proj KeyError, synth-delta not real gradient, weight-sync changes rollout | `cross-layer-012` | (V4) |
+| Float8_e4m3fn has not been supported, fp8 kernel output NPU, act_quant AscendC wire, torch_npu no fp8 cast, op-gen kernel not consumable, fp8.float() NPU raise | `torch-npu-002` | (V4) |
 | LLVM version mismatch, libtriton.so bishengir-compile, MLIR text format diverges, "custom op X unknown" binary boundary | `triton-ascend-001` | (legacy) |
 | `_TORCH_VERSION_BUILT_FOR`, vllm-ascend torch ABI guard, C++ side never set, 14 iters silent | `vllm-ascend-001` | (legacy) |
 | fixc image tag, image rebuild proof, `.so` torch ABI verification, `ldd` + symbol + native op call | `vllm-ascend-002` | (legacy) |
@@ -69,6 +70,10 @@ Worker / 用户先 grep 这一节按关键词找到 cookbook ID,然后跳到 [§
 
 - [`triton-ascend-001-llvm-version-must-match-bishengir.md`](triton-ascend-001-llvm-version-must-match-bishengir.md) — triton-ascend libtriton.so and bishengir-compile must be built against the same LLVM source; MLIR text format diverges across major LLVM versions and produces misleading "custom op X unknown" parse errors at the binary boundary.
 - [`triton-ascend-002-packaging-conflict-with-mainline-triton.md`](triton-ascend-002-packaging-conflict-with-mainline-triton.md) — **P-ENV-1**. triton-ascend and mainline triton both register-overwrite `triton/backends/compiler.py`; only the later install is functional. Workaround on NPU hosts is `pip uninstall -y triton && pip install --force-reinstall --no-deps triton-ascend`. Don't file at triton-lang/triton-ascend (closed not-planned 2026-05-29) — the conflict belongs upstream of triton-ascend.
+
+### torch-npu
+
+- [`torch-npu-002-fp8-kernel-output-not-consumable-on-npu.md`](torch-npu-002-fp8-kernel-output-not-consumable-on-npu.md) — **(V4)**. op-gen 的 fp8(`Float8_e4m3fn`)AscendC 算子能 build + 调用 + 精度逐位验,但其 fp8 输出在 NPU 上 `.float()` 反量化报 `Float8_e4m3fn has not been supported`(torch_npu @ CANN 8.5.2 无 fp8 device 支持)。**可调用+精度对 ≠ 可接入 NPU 数值通路**;消费侧 dtype 支持是独立的门。这就是 miles 训练层用 torch fp8 模拟而非真 kernel 的原因。判别器:接入前先在 NPU 上 `.float()` 它的输出。
 
 ### vllm-ascend
 

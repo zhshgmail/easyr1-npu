@@ -14,6 +14,8 @@
 
 全模型(43 层)、数值正确性、真实 RL 奖励训练尚未完成,原因与边界见**第五节**。
 
+> 术语:本报告中"减层权重 / 减层 checkpoint"(代码与文件名中简写为 *fab*,即 fabricate)指**按 DeepSeek-V4-Flash 真实架构与 config 字段构造、但层数缩小、权重随机初始化**的合成 checkpoint。其用途是验证链路可运行性(模型能否加载、前反向/推理能否跑通),不验证数值或文本质量——随机权重的输出本就是乱码。
+
 ---
 
 ## 二、移植对象
@@ -100,7 +102,9 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 
 ### 4.3 AscendC 算子可调用性验证
 
-为确认算子生成流程产出的 AscendC kernel 可从 pytorch 调用,在 A3 上以 bisheng 构建 `act_quant` 算子为 pybind 扩展(`_act_quant_ext`),从 pytorch 在 NPU 上调用 `run_act_quant(x, block_size)`,输出与 CPU 真值参考逐位一致(scale 误差 0,fp8 逐值匹配 100%,反量化误差 0)。这验证了"pytorch 调用 AscendC 算子"的机制成立;将其接入 miles 训练链路为后续工作。
+为确认算子生成流程产出的 AscendC kernel 可从 pytorch 调用,在 A3 上以 bisheng 构建 `act_quant` 算子为 pybind 扩展(`_act_quant_ext`),从 pytorch 在 NPU 上调用 `run_act_quant(x, block_size)`,输出与 CPU 真值参考逐位一致(scale 误差 0,fp8 逐值匹配 100%,反量化误差 0)。这验证了"pytorch 调用 AscendC 算子"的机制成立。
+
+**接入训练链路的具体阻塞(实测)**:尝试以该 kernel 替换训练层中的 torch fp8 模拟时,kernel 返回 `float8_e4m3fn`(int8 字节的 view),而在 NPU 上对其做 `.float()` 反量化报 `Float8_e4m3fn has not been supported`——这正是当初写 torch 模拟要规避的限制。可行的旁路有三:(a) torch_npu 增加 fp8→fp32 支持;(b) kernel 直接返回反量化后的 fp32 值而非 fp8 字节;(c) 在 NPU 上以整数位运算解码 e4m3 字节。当前训练层因此仍用 torch 组合;接入 kernel 待上述之一落地。结论:kernel **可调用、精度已验**,但**接入 NPU 训练数值通路被 torch_npu 的 fp8 支持缺失阻塞**。
 
 ### 4.4 集成层适配项
 

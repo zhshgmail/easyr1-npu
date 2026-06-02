@@ -54,7 +54,7 @@
 | 想看 open work / 技术债 / 下一步做什么 | [`docs/_meta/ROADMAP.md`](docs/_meta/ROADMAP.md)（**唯一权威 backlog**） |
 | 想接手项目（continuing agent / 新 session） | [`docs/_meta/handovers/`](docs/_meta/handovers/) + [`ROADMAP.md`](docs/_meta/ROADMAP.md) + [`ARCHITECTURE.md`](docs/_meta/ARCHITECTURE.md) |
 | 想查 NPU 操作模式与已知 bug（29 stable IDs） | [`knowledge/npu-patterns.md`](knowledge/npu-patterns.md) |
-| 想查跨层移植教训（lessons learned，31 条 NPU 适配 cookbook） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/)（顶部有 keyword grep 表） |
+| 想查跨层移植教训（lessons learned，32 条 NPU 适配 cookbook） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/)（顶部有 keyword grep 表） |
 | 想看 DeepSeek-V4-Flash NPU 移植统一报告（推理+训练两侧坑/解法/walkaround-vs-production） | [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md) |
 | 想根据 error trace 自动找匹配的 cookbook | `/npu-adapt-assist <paste-trace>`，详见 [`src/skills/npu-adapt-assist/`](src/skills/npu-adapt-assist/README.md)（启动会自动跑 preflight） |
 | 想看 miles + DSv4-Flash PoC（一句话 + 状态表 + 上游 PR 列表） | [`output/miles-dsv4-flash-poc/`](output/miles-dsv4-flash-poc/) |
