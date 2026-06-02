@@ -1,58 +1,18 @@
-# [DRAFT — held for owner to file at tile-ai/tilelang-mlir-ascend; no agent signature]
+# RETRACTED 2026-06-02 — NOT a real bug. Do NOT file.
 
-**Title**: `fp8_lighting_indexer` produces wrong output for head dim `h < 32` (assert_close fails)
+My earlier "fp8_lighting_indexer fails at h<32" finding was a **TEST-HARNESS error, not a tilelang bug**.
 
-## Description
+Root cause of the false finding: `examples/fp8_lighting_indexer.py` `__main__` HARDCODES
+`B=2, M=2048, H=32, K=64, N=4096, BLOCK_SIZE_N=64` as literals, **ignoring `--h`**. So `--h 4`
+compiled the kernel for h=4 but built the test data + reference with H=32 → the comparison was between
+a heads≠32 kernel and heads=32 data = meaningless mismatch (24.7% / 99%, shape-dependent — the tell).
 
-`examples/fp8_lighting_indexer.py` fails its own precision check (`assert_close` vs the PyTorch
-reference) when the head dim `--h` is below 32. It passes at the default `h=32`. The mismatch is a
-consistent ~24.7% of elements across `h ∈ {4, 8, 16}`.
+When the harness is fixed to honor `--h` (use args.h for the test tensors + reference too), the
+indexer **PASSES at h=4/8/16/32** (exit 0, no assert failure). So there is no indexer head-count
+kernel bug.
 
-## Reproduction
-
-Environment: MLIR/bishengir backend (`target='npuir'`), Ascend A3 (Ascend910_9382), CANN 8.5.2,
-tilelang-mlir-ascend v0.1.1.030. Defaults: b=2, m=2048, n=4096, k=64, bs=64.
-
-```
-python examples/fp8_lighting_indexer.py          # h=32 default -> PASS
-python examples/fp8_lighting_indexer.py --h 16   # FAIL: ~24.7% elements mismatch
-python examples/fp8_lighting_indexer.py --h 8    # FAIL: ~24.7%
-python examples/fp8_lighting_indexer.py --h 4    # FAIL: ~24.8%
-```
-
-The pass/fail boundary is between h=16 (fail) and h=32 (pass). The mismatch fraction is roughly
-constant (~24.7%) for all tested h<32, which suggests a fixed block of output lanes is mis-handled
-rather than a magnitude-scaling error.
-
-## Impact
-
-Any indexer use with head dim < 32 returns incorrect output. Unlike a silent-wrong case, the example's
-own `assert_close` catches this — so a consumer using the example's validation will at least see the
-failure rather than trusting bad output.
-
-## Note
-
-A sibling head-count-dependent correctness issue exists in `sparse_mla_fwd` (wrong for heads<16,
-silently — separate issue). The two have different thresholds (sparse_mla: <16; indexer: <32) and
-different severity (sparse_mla is silent), suggesting independent root causes in their respective
-head-padding / tiling paths rather than one shared bug.
-
-## Suggested fix
-
-Investigate the h<32 tiling / head-padding path; either correct the output for h<32 or assert-refuse
-unsupported head dims rather than computing a wrong (assert-failing) result.
-
----
-
-## Diagnostic update (2026-06-02) — NOT yet fixed; root cause harder than sparse_mla
-
-Unlike sparse_mla (clean output-store over-write, fixed), the indexer's failure is **strongly
-shape-dependent**, which rules out a simple per-head error:
-- h=16, m=2048/n=4096 (default): 24.7% mismatch
-- h=16, m=128/n=512: **99.1% mismatch**
-
-The fraction-wrong scaling with problem shape points at the kernel **work distribution**
-(`T.ceildiv(m_num*n_num, nums_kernel)` task assignment) and/or workspace aliasing interacting with H,
-rather than the head-reduction itself. Fewer logic-kernels (smaller shape) → more output wrong. This
-is a deeper tiling/work-assignment bug; a confident fix needs analysis of the cube/vector task split +
-workspace layout for H<32. Not fixed yet — partial diagnosis only.
+Lesson: I swept `--h` without verifying the example's `__main__` actually propagates `--h` to BOTH
+the kernel AND the data/reference. sparse_mla_fwd does (its fix is real); fp8_lighting_indexer does
+NOT — and I should have checked that before reporting a "bug". The only real artifact here is the
+example harness inconsistency (hardcoded shapes), which is a minor example-quality nit, not a kernel
+correctness bug.
