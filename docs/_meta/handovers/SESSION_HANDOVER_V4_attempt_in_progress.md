@@ -2,7 +2,17 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖🔖🔖🔖🔖🔖🔖 KB + AUTOMATION SKILL + WORKFLOW LANDED (2026-06-01 ~21:45Z — LATEST, read first)
+## 🔖🔖🔖🔖🔖🔖🔖🔖 OWNER CAUGHT n3 OVERCLAIM + DEMANDED REAL PARAM-FLOW (2026-06-02 ~00:20Z — LATEST, read first)
+
+Owner challenged hard (trust-critical). Three corrections + one new experiment, all honest:
+1. **n3 "real-delta drives RL rollout" RETRACTED** (`79de5ee`): the megatron train model + sglang fab were INDEPENDENT random inits — pushing megatron Δ onto unrelated sglang weights is an arbitrary perturbation, no different from synth. KB `cross-layer-013` (RL rollout & train must be SAME weights, not just same-shape; discriminator: would a same-magnitude synth delta change rollout the same way?). Report §2.4 + §0 updated.
+2. **tilelang/AscendC/CANN-native conflation CORRECTED** (`e850fcf`): the running megatron layer uses CANN-native torch_npu ops (5, really wired) + torch compositions (sinkhorn/act_quant — the op-gen AscendC kernels were NEVER wired into miles); tilelang-ascend NOT used at all. "训练侧算子无盲区" was wrong.
+3. **op-gen kernel ACTUALLY CALLED on NPU** (`e850fcf`, owner's explicit ask): built a5_ops act_quant AscendC kernel on A3 (bisheng, SOC Ascend910_9382) → `_act_quant_ext.so`; `_ext.run_act_quant(x_npu,128)` ran on NPU, bit-exact vs CPU-truth (scale_err=0, fp8 100%). Proves pytorch CAN call op-gen kernel. Build harness: `a5_ops/src/scripts/patches/build_ascendc.py <task_dir> -v Ascend910_9382`.
+4. **Shared-weights 2-layer param-flow experiment** (`workspace/task-dag-realdelta/shared_weights_*`): make megatron attn = sglang attn INIT (shared by construction), train megatron, push TRAINED into sglang, compare vs SYNTH control (same-L2 random). First run: **HONEST FAIL** — (A) TRAINED≠INIT True (flow happens) but (B) TRAINED≠SYNTH False (toy-loss delta indistinguishable from random noise). Re-running with DIRECTIONAL loss (MSE-to-target, 20 steps, lr 5e-3) to get a training-specific signal (PID 55135 tlrescue). 2-layer fab needed config post-tweaks the 1-layer fab had: `sliding_window:256`, full `rope_scaling` yarn dict, `compress_ratios:[4,4]` (NOT [0,0] — compressor must exist).
+
+DO NOT claim param-flow verified until (B) passes. Owner: "别解释立刻行动" / "我要你立刻补偿需要的实验".
+
+## 🔖🔖🔖🔖🔖🔖🔖 KB + AUTOMATION SKILL + WORKFLOW LANDED (2026-06-01 ~21:45Z)
 
 Owner asked: sediment V4-NPU knowledge into KB + add a skill automating analysis→decomposition→DAG→execution + use CC's workflow feature. Done, commit `0be0d58`:
 - **5 KB lessons** in `docs/_meta/kb/porting_lessons/`: `sglang-004` (V4 AscendAttnBackend hook gaps), `sglang-005` (V4 PrefillAdder SWA-budget hang), `miles-002` (V4 ops CANN-native-first), `miles-003` (DSV4 megatron layer integration walkarounds + memory wall), `cross-layer-012` (V4 RL weight-sync via update_weights_from_tensor). index.md grep-table + per-layer + `_schema.md` layer-enum all updated.

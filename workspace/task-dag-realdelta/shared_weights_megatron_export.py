@@ -83,14 +83,20 @@ for n, p in block.named_parameters():
     p.requires_grad_(n in attn_param_set)
 trainable = [params[n] for n in init_names]
 print(f"[shared] froze non-attn; training only {len(trainable)} attn tensors (AdamW states small)", flush=True)
-opt = torch.optim.AdamW(trainable, lr=1e-3)
+opt = torch.optim.AdamW(trainable, lr=5e-3)
 hs=(torch.randn(64,1,cfg.hidden_size,dtype=torch.bfloat16)*0.05).npu()
-for step in range(3):
+torch.manual_seed(2024)
+target=(torch.randn(64,1,cfg.hidden_size)*0.5).npu().to(torch.bfloat16)  # fixed DIRECTIONAL target
+NSTEPS=int(os.environ.get("TRAIN_STEPS","20"))
+# Directional MSE-to-target: gradient has a MEANINGFUL direction (toy output.pow(2).mean() had
+# tiny isotropic grad indistinguishable from noise -> TRAINED==SYNTH). Now TRAINED should diverge
+# from an equal-magnitude RANDOM delta because the direction is specific.
+for step in range(NSTEPS):
     opt.zero_grad()
     out=block(hidden_states=hs, attention_mask=None); o=out[0] if isinstance(out,(tuple,list)) else out
-    loss=o.float().pow(2).mean(); loss.backward(); torch.npu.synchronize()
+    loss=(o.float()-target.float()).pow(2).mean(); loss.backward(); torch.npu.synchronize()
     opt.step(); torch.npu.synchronize()
-    print(f"[shared] train step{step} loss={loss.item():.5f}", flush=True)
+    if step%5==0 or step==NSTEPS-1: print(f"[shared] train step{step} loss={loss.item():.5f}", flush=True)
 
 attn_TRAINED = {n: params[n].detach().float().cpu().clone() for n in init_names}
 # per-tensor trained delta L2
