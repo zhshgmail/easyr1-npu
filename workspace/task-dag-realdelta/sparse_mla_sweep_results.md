@@ -147,3 +147,26 @@ Decisive isolation (instrumented kernel, bf16):
 - **[SM] w2 (post-softmax probs) vs fp32 softmax: max_abs = 0.996, 93% mismatch** → the **softmax output is badly wrong in bf16** (0.996 is structural, not rounding).
 
 So the bf16 bug is in the SOFTMAX, not the GEMMs (Q@K correct; and workspace_1-fp32 didn't help precisely because the scores going IN are already correct). The online-softmax (vsub max / vexp / running max+logsum) diverges in bf16 despite fp32 accumulators. Next: examine the exact vexp/vsub/scale/cast sequence for a bf16-specific error (likely the prob cast to bf16 cross_kernel buffer, or an exp-domain issue).
+
+### flash_attn bf16 — ROOT CAUSE is in AscendNPU-IR (HIVM dialect), NOT tilelang-ascend (2026-06-02)
+
+Owner asked: is the bf16 bug in tilelang-ascend or in AscendNPU-IR? **Answer: AscendNPU-IR (HIVM).**
+
+Probe: adapted `examples/exp2.py` to bf16 → compile FAILS with
+`error: 'hivm.hir.vmul' op failed to verify that operand at idx 0 and 1 should have element type
+16-bit ... float ...` (i.e. F16/F32, not BF16).
+
+Confirmed in the IR dialect source (`3rdparty/AscendNPU-IR` = gitcode.com/Ascend/AscendNPU-IR, the
+Huawei compiler repo — same as R-KA-16):
+`bishengir/include/bishengir/Dialect/HIVM/IR/HIVMVectorOps.td`:
+- line 120: vector-mul `OperElemTypeConstraints<[0, 1], [F16, F32]>` — **F16/F32 only, NO BF16**.
+- most vector arith ops (lines 187/253/286/367): same `[F16, F32]` constraint.
+- BF16 IS allowed for some cast ops (line 401, 449-457) — so bf16 is PARTIALLY supported (casts) but the
+  HIVM **elementwise vector arithmetic ops exclude bf16**.
+
+So the flash_attn bf16 softmax (vmul/vsub/vexp on probs+scale) is wrong because the HIVM vector arith
+ops don't support bf16 at the IR level — it's an **AscendNPU-IR / bishengir limitation**, not a
+tilelang-ascend example bug. exp2-bf16 rejects at compile; flash_attn-bf16 (whatever path it compiles
+through) miscomputes. This is the same responsible-layer as R-KA-16 (Ascend/AscendNPU-IR). Issue #97
+updated to reflect this; the real fix belongs at Ascend/AscendNPU-IR (add bf16 to HIVM vector-op type
+constraints + the lowering), not tilelang-mlir-ascend.
