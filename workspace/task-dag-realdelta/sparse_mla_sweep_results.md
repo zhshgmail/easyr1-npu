@@ -36,3 +36,16 @@ whole investigation: heads<16 silent-wrong (FIXED, a19acd5).
 **Net**: indexer is robust across head counts (h=4..64) and m/n/bs/k. The h=64 "FAIL" is 1/16.7M elements
 (0.0%) = fp16 numerical noise, not a defect. This CONFIRMS the earlier "indexer h<32 bug" was entirely my
 hardcoded-H=32 harness error (now retracted). No indexer kernel bug exists.
+
+## flash_attn_npuir sweep (2026-06-02)
+
+| combo | verdict | note |
+|---|---|---|
+| default (fp16) | PASS | |
+| --seq_len 1024 / 2048 / dim 64 / dim 256 / block_m128 n128 | PASS | fp16 shape/block robust |
+| --dtype bfloat16 (any shape) | FAIL → **harness dtype-compare bug, NOT a kernel bug** | assert_close fails with "dtype do not match: torch.float32 != torch.bfloat16" — ref_output = `softmax(...).to(bf16) @ v` yields float32 (torch bf16 matmul upcast) while kernel output `o` is bf16. Comparison refuses on dtype attribute before comparing values. Fix is harness-side (cast both to same dtype). Kernel bf16 correctness UNDETERMINED (can't compare), not proven broken. |
+
+**Net**: flash_attn_npuir robust in fp16 (shape/block). bf16 path's test is broken (float32-ref vs
+bf16-output dtype mismatch) — harness nit, not a kernel bug; kernel bf16 correctness not assessable
+without fixing the harness compare. Third harness issue caught this investigation (after indexer-H32,
+CANN-NaN).
