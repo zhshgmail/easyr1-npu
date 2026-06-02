@@ -139,3 +139,11 @@ repro + narrowing (workspace_1-fp32 alone doesn't fix; all-workspace-fp32 hits "
 element type casting" compile error → needs cast-point rework). Honest: I confirmed + narrowed but did
 NOT produce a confident fix; per the mandate's fallback, filed the issue rather than guess at a deep
 numerical bug. flash_attn fp16 remains robust.
+
+### flash_attn bf16 — isolated to the SOFTMAX (2026-06-02, real progress)
+
+Decisive isolation (instrumented kernel, bf16):
+- **[QK] w1 (Q@K scores) vs fp32 q@k: max_abs = 0.0000** → the Q@K GEMM is PERFECT in bf16.
+- **[SM] w2 (post-softmax probs) vs fp32 softmax: max_abs = 0.996, 93% mismatch** → the **softmax output is badly wrong in bf16** (0.996 is structural, not rounding).
+
+So the bf16 bug is in the SOFTMAX, not the GEMMs (Q@K correct; and workspace_1-fp32 didn't help precisely because the scores going IN are already correct). The online-softmax (vsub max / vexp / running max+logsum) diverges in bf16 despite fp32 accumulators. Next: examine the exact vexp/vsub/scale/cast sequence for a bf16-specific error (likely the prob cast to bf16 cross_kernel buffer, or an exp-domain issue).
