@@ -49,3 +49,25 @@ hardcoded-H=32 harness error (now retracted). No indexer kernel bug exists.
 bf16-output dtype mismatch) — harness nit, not a kernel bug; kernel bf16 correctness not assessable
 without fixing the harness compare. Third harness issue caught this investigation (after indexer-H32,
 CANN-NaN).
+
+## tilelang-ascend example suite — default-config triage (2026-06-02)
+
+Per the standing mandate, triaging every example at default config:
+
+| op | default verdict |
+|---|---|
+| sparse_mla_fwd | PASS (after heads<16 fix a19acd5) |
+| fp8_lighting_indexer | PASS |
+| flash_attn_npuir | PASS (fp16; bf16 = harness dtype-compare bug) |
+| norm/example_rms_norm | PASS |
+| norm/layer_norm | PASS |
+| gemm/example_gemm | PASS |
+| gemm/matmul | PASS |
+| gemv/example_gemv | PASS |
+| exp2 | PASS |
+| log2 | PASS |
+| elementwise/example_elementwise_add | PASS |
+| elementwise/vec_add_2d | PASS |
+
+12 ops PASS at default. Remaining to triage: engram/* (fwd/bwd/decode), mixcv, *_dynamic_shape
+variants, other elementwise (vec_add_1d/auto_brc/multi_buffer/atomic_add), vectorization_in_parallel.
