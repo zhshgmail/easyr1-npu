@@ -1,5 +1,30 @@
 # RESULTS — V4 real-delta RL-loop bridge (task-dag-planner cold-drive)
 
+> ## ⛔ CORRECTION 2026-06-02 (owner caught a fatal framing error — read FIRST)
+>
+> **The n3 "real delta" result below is OVERCLAIMED. The delta did NOT meaningfully
+> "move" between two models.** The megatron training model and the sglang fab are **two
+> INDEPENDENT random-initialized models**. Their `wq_a` etc. share the same shape (1024,4096…)
+> so `transform()` was identity and the applied L2 matched — but they are unrelated random
+> weights, NOT the same model in two formats.
+>
+> So n3 computed a real trained delta `Δ` relative to megatron's weights `W_meg`, then pushed
+> `W_sgl_base + Δ` where `W_sgl` is sglang's *unrelated* random weights. Adding `Δ` (a gradient
+> direction for `W_meg`) onto `W_sgl` is **mathematically just an arbitrary fixed perturbation —
+> no more meaningful than the synth delta it replaced.** It moved a correctly-shaped tensor, not
+> a meaningful trained update for that model.
+>
+> **What n3 actually proved:** the PLUMBING (you can push a megatron-derived tensor into the
+> sglang Engine via update_weights_from_tensor and it changes inference). **What it did NOT
+> prove:** that real training drives the RL loop. For a real RL loop the rollout model (sglang)
+> and the training model (megatron) must be the SAME model (shared/synced weights) — here they
+> are not. The honest status is: **plumbing-only; the cross-model delta transfer is not a
+> meaningful training signal.** See KB `cross-layer-013`. The per-node mechanics below are still
+> accurate; only the "real training drives rollout" interpretation is retracted.
+
+---
+
+
 > DAG `task_dag.json` executed to completion 2026-06-01. Goal: replace the V4 RL loop's
 > synth-delta with the REAL trained-weight delta from the megatron 1-layer training iteration
 > (reduced-layer basis). Also the first cold-drive of the new `/task-dag-planner` skill.

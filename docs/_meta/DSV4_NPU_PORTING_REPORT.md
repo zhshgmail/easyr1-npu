@@ -8,7 +8,7 @@
 
 ---
 
-## 0. TL;DR(给赶时间的人)
+## 0. TL;DR
 
 | 维度 | 推理侧 (SGLang) | 训练侧 (Megatron + miles) |
 |---|---|---|
@@ -16,7 +16,7 @@
 | **减层?** | 是(1 层 fab,gibberish 输出,形状正确非数值正确) | 是(真 config / 真 dims,层数减到 1–2,显存所限) |
 | **walkaround 数** | 14 个 PoC stub/fallback(已部分换成 native op) | 4 类(rms_norm shim / sparse-softmax 稳定化 / megatron fp32-grad patch / optimizer 显存) |
 | **production-ready 部分** | 2 处 native-op 替换(已实测等价,PR 形态)+ RL weight-sync plumbing | CANN-native 算子映射(NSA/indexer/compressor/MLA-prolog,全实测)+ sparse-softmax 稳定化补丁 |
-| **真 e2e 缺口** | 14 stub 中约 8 个要上游 sgl-kernel-npu 补 V4 hook | 真训练 delta 替换 synth-delta(已无算子缺口——CANN-native 全覆盖,只剩多芯片显存工程) |
+| **真 e2e 缺口** | 14 stub 中约 8 个要上游 sgl-kernel-npu 补 V4 hook | (1) **rollout 模型与训练模型必须是同一套权重**——当前 sglang fab 与 megatron 训练模型是两个独立 random-init,delta 跨无关模型传递无意义(2026-06-02 owner catch,见下 §2.4 + KB `cross-layer-013`);(2) 真训练 delta 替换 synth-delta;(3) 多芯片显存工程。算子侧已无缺口(CANN-native 全覆盖) |
 
 **一句话**:V4 在 NPU 上的**机制**(model class / KV pool / RL 闭环 / 单层训练迭代 / CANN-native 算子)已逐项实测跑通;
 剩下的是**两类工程**——推理侧的上游 sgl-kernel-npu V4 hook 补全、训练侧的多芯片显存(并行/重计算)。不是算法或算子盲区。
@@ -74,6 +74,14 @@ SGLang trunk 已有 `deepseek_v4.py`(2259 行)+ `EntryClass=[DeepseekV4ForCausal
 - ✅ **设计正确的保留**:#3/#4 RoPE 保留 fp32 torch 复数乘——native kernel 数值错(约定不符),fp32 反而更准,不是妥协。
 - ⚠️ **walkaround / PoC-only**(必须上游补,不能 ship):#1/#5/#6/#7/#8/#9/#11/#12——这 8 个是 `AscendAttnBackend` 缺的 V4 hook + V4 KV pool,no-op stub 只够让 1 层短序列 PoC 跑形状,**生产必须由 sgl-kernel-npu 真实现**。
 - RL loop 的 `update_weights_from_tensor`(attn-only)绕开 #26794 MoE reload bug——✅ plumbing production-ready,但 ⚠️ weight delta 当前是 synth(占位),真 e2e 要换 miles 训练梯度。
+
+### 2.4 跨栈"真 delta"bridge 尝试 + 纠正(2026-06-02,owner catch)
+
+为消除 §2.3 的 synth-delta 占位,尝试把 megatron 1 层训练迭代产生的真 attn-delta 跨栈喂进 sglang RL loop(`task-dag-realdelta` DAG,n1 导出→n2 remap→n3 bridge)。**机制层面**:`update_weights_from_tensor` 推送成功、applied L2 精确等于 megatron 真 delta L2、re-rollout 输出改变(1/5)。
+
+**但这是 plumbing-only,不构成有意义的训练传递(owner 抓出的致命缺陷)**:megatron 训练模型和 sglang fab 是**两个独立 random-init 的模型**,`wq_a` 等只是 shape 相同(都 1024×4096),不是"同一模型两种格式"。把相对 `W_meg` 的梯度方向 `Δ` 加到 sglang 无关权重 `W_sgl` 上,**数学上等于加一个任意固定扰动,和被它替换的 synth delta 没有本质区别**。n3 移动了"形状对的 tensor",没移动"对该模型有意义的训练更新"。
+
+**真 RL loop 的硬要求**:rollout 模型(sglang)与训练模型(megatron)**必须是同一套权重**(用同一真 ckpt 初始化两边,或做 megatron→sglang 真权重转换)。当前两边独立 random-init,所以"真 delta 驱动 rollout"的说法**已撤回**。详见 KB `cross-layer-013`。
 
 ---
 
