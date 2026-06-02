@@ -131,3 +131,11 @@ workspace_3 / P@V output-accumulation path). One hypothesis tried + disproven; I
 fix. Per the mandate's "file as issue if not confidently fixable" → filing an upstream issue with the
 confirmed repro + the disproven-hypothesis narrowing, rather than guessing further at a deep bf16
 numerical bug.
+
+### flash_attn bf16 — ISSUE FILED (not a confident fix)
+
+Filed https://github.com/tile-ai/tilelang-mlir-ascend/issues/97 — confirmed bf16 bug + clean fp32-ref
+repro + narrowing (workspace_1-fp32 alone doesn't fix; all-workspace-fp32 hits "T.copy does not support
+element type casting" compile error → needs cast-point rework). Honest: I confirmed + narrowed but did
+NOT produce a confident fix; per the mandate's fallback, filed the issue rather than guess at a deep
+numerical bug. flash_attn fp16 remains robust.
