@@ -66,21 +66,20 @@ designing FA-class TileLang-IL chains for ops the platform already had.
 
 ## The actual split (verified on A3, reduced-layer)
 
-5 of the V4 training core ops are **CANN-native** (all ran on A3):
+5 of the V4 training core ops are **CANN-native** (verification level per op — verified-run vs spec-matched):
 
-| V4 training op | CANN-native op | notes |
+| V4 training op | CANN-native op | verification level |
 |---|---|---|
-| sparse-MLA fwd/bwd | `npu_nsa_select_attention` | D_qk=192, D_v=128, select_block=64, count=16; returns attn + softmax max/sum for bwd |
-| C4 indexer | `npu_lightning_indexer` / `npu_sparse_lightning_indexer_grad_kl_loss` | fwd + grad+KL-loss for training |
-| compressor | `npu_nsa_compress_attention` | NSA-style compress attention |
-| MLA prep | `npu_mla_prolog_v3` | |
-| rms_norm | `npu_rms_norm` | bit-exact, 0.000e+00 |
+| sparse-MLA fwd/bwd | `npu_nsa_select_attention` | verified-run (attn (128,4,128) finite, 94.9us); D_qk=192/D_v=128/sel_blk=64/cnt=16, returns softmax max/sum for bwd |
+| compressor | `npu_nsa_compress_attention` | verified-run (q(128,4,192)→out(128,4,128) finite, 57.3ms, 2026-06-02) |
+| rms_norm | `npu_rms_norm` | verified-run (bit-exact 0.000e+00) |
+| C4 indexer | `npu_sparse_lightning_indexer_grad_kl_loss` | spec-matched (called in layer fwd+bwd; no standalone run-log — backward op needs upstream fwd state) |
+| MLA prep | `npu_mla_prolog_v3` | coverage-confirmed (dispatch hit; no standalone run-log — needs full 10+ weight set) |
 
-Only **2** ops genuinely lacked a native op and needed AscendC op-gen, both
-precision-verified:
+Only **2** ops genuinely lacked a native op and needed AscendC op-gen, both precision-verified:
 
-- **hash-coding sinkhorn** (`hc_split_sinkhorn`): 28/28 + 28/28, perf 5.34× symmetric (#311)
-- **fp8 act_quant**: 24/24 + 24/24, byte-exact fp8 + bit-exact fp32 (#315)
+- **hash-coding sinkhorn** (`hc_split_sinkhorn`): 28/28 + 28/28; perf 5.34× mean (median 5.42, min 4.02, max 7.05, n=6) symmetric — favorable across shapes (#311)
+- **fp8 act_quant**: 24/24 + 24/24, byte-exact fp8 + bit-exact fp32 (#315); perf 3.85× mean (median 2.42, **min 0.38**, max 8.73, n=6) — **SLOWER at large shapes**, wide spread, read the min not the mean
 
 So the real picture is **5 CANN-native + 2 op-gen**, not "6+ hand-written." The
 proof point: a single `DeepSeekV4Attention` megatron layer (MLA + sparse/flash
