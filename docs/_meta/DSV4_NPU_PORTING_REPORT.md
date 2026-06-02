@@ -99,6 +99,15 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 
 训练链路为真实 DeepSeek-V4 模型层(MLA + compressor + indexer + 稀疏注意力 + hash-coding MoE 路由),运行于昇腾化的 Megatron(MindSpeed `core_r0.16.0` 分支适配 Megatron-Core 0.16)。
 
+### 4.0 tilelang-ascend / bishengir 这条线(早期路线 + 为何转向 CANN + 何时仍必需)
+
+miles 的 6 个 V4 训练算子源码全是 `@tilelang.jit`(CUDA 目标)。项目早期(T32)的路线是**让它们经 tilelang-ascend(MLIR 后端)在 NPU 上跑**——这也是项目第一个任务("修 tilelang-ascend 的 bug")的由来。这条线做了什么、现在什么状态:
+
+- **跑通的(tilelang-ascend MLIR 后端,v0.1.1.030,tlrescue,A3 实测)**:`examples/sparse_mla_fwd.py` ✅(`All check passed!` rtol=5e-3,npu:0)、`examples/fp8_lighting_indexer.py` ✅。**注意**:跑通的是 tilelang-ascend **自带的 example 版本**(V4 同族算子),**不是 miles 源码原样**——直接编 miles 源码失败,用对了后端 API 的 example 能跑。其余(rms_norm/gemm/exp2)当时标"待确认"。
+- **上游贡献(这条线的真产出,与 V4 无关也成立)**:`tile-ai/tilelang-mlir-ascend` PR #80(CheckUBBudget 早失败诊断 pass)· `Ascend/AscendNPU-IR` issue #251(R-KA-16:bishengir ExtendedCanonicalizer 在多 iter online-softmax 丢跨迭代累加器,311-pass bisect 定位 + 3 patch 方向)· `radixark/miles` PR #1246(4 个 tilelang 算子 NPU port + R-KA-16 mitigation)。KB:`bishengir-001` / `tilelang-001/002` / `miles-001`。
+- **为何运行层转向 CANN**:后续发现 CANN 有 V4 核心算子的**直接 native 实现**(`npu_nsa_select_attention` 等,§4.2),比"把 miles 源码 adapt 到 tilelang DSL + 绕 bishengir R-KA-16 bug"更直接,故**运行层用 CANN native,不走 tilelang-ascend**。
+- **诚实定位**:对 **V4-Flash 运行层**这个窄目标,tilelang 路线**不在关键路径**(被 CANN 取代)。但它**不是废work**:(1) R-KA-16 是真 bishengir 编译器 bug,影响任何 tilelang flash-attention online-softmax on NPU;(2) CheckUBBudget 是通用诊断改进;(3) **tilelang-ascend 是 CANN 无 native 覆盖时的 fallback**——V4-Flash 恰好 CANN 覆盖了核心算子,但 V4-Pro / 其他模型 / 未来算子 CANN 不一定有,届时 tilelang-ascend(+ 修好的 bishengir)是退路。
+
 ### 4.1 已验证结果(均为真实配置、A3 实测)
 
 - 单个 `DeepSeekV4Attention` 层完成前向+反向训练步;
@@ -129,7 +138,7 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 
 1. 五个核心算子使用 CANN 原生算子(经 `torch_npu` 调用),已真实接入运行中的训练层。
 2. CANN 无原生对应的两个算子(sinkhorn、act_quant)运行层中以 **torch 组合**实现 —— **但两者都有 op-gen harness 生成的 AscendC kernel 作为后备方案(backup)**:精度已对齐(见下表),性能相对 pytorch 版本(统一格式,见 §4.3 表:sinkhorn 5.34× mean(min 4.02);act_quant 3.85× mean **但 min 0.38×——大张量反而更慢**)。当前运行层用 torch 组合是因为接入受阻(act_quant 的 fp8 接入被 torch_npu 限制挡住,见第 4 点;sinkhorn 待 `torch_npu` 自定义算子注册)——**AscendC 后备已就绪、验过精度,接入即可替换 torch 版以提速**。
-3. **tilelang-ascend 后端在运行层中未被使用**。miles 的 sparse_mla 等源算子为 `@tilelang.jit`(CUDA 目标),其 tilelang API 与昇腾 tilelang 构建不兼容,因此调用被替换为上述 CANN 原生算子。
+3. **tilelang-ascend 后端在运行层中未被使用**(详见 §4.0):早期在 tilelang-ascend 上跑通过 V4 同族算子的 example(sparse_mla_fwd / fp8_indexer),但运行层最终用 CANN native(更直接);tilelang-ascend 保留为 CANN 无覆盖时的 fallback。
 4. **关于 FP8(重要):A3 无 FP8 硬件,本工作全程不跑真 FP8。** 硬件能力矩阵确认 A3/a5/a2 的 VEC 单元均无 fp8 cast(无 `vconv` to/from fp8,SDK 仅有 fp8 解码无编码)。V4 设计中 act_quant 是激活的 fp8 量化优化;在无 fp8 硬件的 A3 上,运行层用 `_fp8_e4m3_round` **在 fp32 下模拟 fp8 量化网格**(把数值 round 到 fp8 可表示的网格,但 dtype 保持 fp32/bf16,从不以 fp8 存储或计算)。推理侧同理走 bf16,`SGLANG_OPT_FP8_*` 全关。§4.3 那个 op-gen act_quant kernel 产出的 fp8 字节是 kernel 内**软件 RNE 编码器**(scalar pipe 逐元素)生成的,用于精度 bit-match 参考,**不使用任何 fp8 硬件单元,也未接入训练层**。结论:训练与 rollout 在 A3 上是 **bf16/fp32**,fp8 仅作为被模拟的量化网格存在。
 
 ### 4.3 用自动生成的 AscendC 算子替代 pytorch 算子的可行性验证
