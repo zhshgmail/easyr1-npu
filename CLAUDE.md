@@ -178,6 +178,7 @@ Memorize this index — these are the entry points that always live in tree (not
 | `tile-ai/tilelang-mlir-ascend` PR #80 | `zhshgmail/tilelang-mlir-ascend npuir-check-ub-budget` | `df7431e` | CI all green, MERGEABLE, awaits tile-ai maintainer review | external |
 | `tile-ai/tilelang-mlir-ascend` PR #96 (NEW 2026-06-02) | `zhshgmail/tilelang-mlir-ascend fix/sparse-mla-heads-lt-block-h` | `479e2f4` | OPEN; sparse_mla_fwd heads<block_H silent-write-over-run fix (verified heads=4/8/16/32); builds green + MERGEABLE; `format` check fails on PRE-EXISTING file issues (whole-file not ruff-clean + pre-existing `automically` typo line 76 + pre-existing ruff-check), commented asking maintainer reformat-vs-minimal preference; gemini-code-assist review = no issues with the fix logic | external |
 | `tile-ai/tilelang-mlir-ascend` issue #97 (NEW 2026-06-02) | n/a (issue) | n/a | OPEN; flash_attn_npuir wrong output in bf16 (correct fp16, 73.5% vs fp32 ref); confirmed+narrowed (workspace_1-fp32 doesn't fix; all-ws-fp32 hits copy-cast compile err); filed not fixed (deep numerical bug) | external |
+| `Ascend/AscendNPU-IR` issue #253 (NEW 2026-06-02) | n/a (issue) | n/a | OPEN; ROOT CAUSE of #97 — HIVM vector-arith ops (vmul etc.) exclude bf16 (HIVMVectorOps.td:120 OperElemTypeConstraints [F16,F32]); bf16 kernels compile-fail or silently miscompute; 1-line repro (exp2->bf16). Huawei compiler repo, same as R-KA-16 #251 | external |
 
 If any of the above migrates / lands / closes, update this table AND `ROADMAP.md` T12 in the same commit. Never let this table go stale.
 

@@ -170,3 +170,13 @@ tilelang-ascend example bug. exp2-bf16 rejects at compile; flash_attn-bf16 (what
 through) miscomputes. This is the same responsible-layer as R-KA-16 (Ascend/AscendNPU-IR). Issue #97
 updated to reflect this; the real fix belongs at Ascend/AscendNPU-IR (add bf16 to HIVM vector-op type
 constraints + the lowering), not tilelang-mlir-ascend.
+
+### flash_attn bf16 — AscendNPU-IR issue FILED #253
+
+Filed https://gitcode.com/Ascend/AscendNPU-IR/issues/253 (the correct root-cause venue — Huawei compiler
+repo, same as R-KA-16 #251): HIVM vector-arith ops exclude bf16 (HIVMVectorOps.td:120), causing bf16
+kernels to compile-fail (exp2) or silently miscompute (flash_attn softmax). 1-line repro + exact source
+location + impact (bf16 is the V4 dtype). The flash_attn bf16 chain is now fully traced:
+confirmed (73.5% vs fp32) → isolated to softmax (QK perfect, w2 93% wrong) → root-caused to AscendNPU-IR
+HIVM bf16 gap → filed at Ascend/AscendNPU-IR #253 (real fix venue) + tile-ai #97 (surfacing venue,
+cross-linked).
