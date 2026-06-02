@@ -1,7 +1,18 @@
 {
   "$schema": "https://code.claude.com/schemas/settings.json",
-  "_comment": "Project-level Claude Code settings. Hooks below auto-trigger the porting-self-challenge critic at major step completion / session wrap-up. See docs/_meta/SKILLS-USAGE.md §Hooks for rationale and docs/_meta/kb/challenge_patterns/ for the 11 critic patterns.",
+  "_comment": "Project-level Claude Code settings. Hooks below auto-trigger the porting-self-challenge critic at major step completion / session wrap-up. PreToolUse ship_claim_audit.py is a MECHANICAL honesty gate on outbound Discord messages (adapted from a5_ops; added 2026-06-02 after the owner noted I lacked a5_ops-style safety-net). See docs/_meta/SKILLS-USAGE.md §Hooks.",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__plugin_discord_discord__reply|mcp__plugin_discord_discord__edit_message",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/src/scripts/workflow/ship_claim_audit.py"
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
