@@ -99,6 +99,7 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 1. 五个核心算子使用 CANN 原生算子(经 `torch_npu` 调用),已真实接入运行中的训练层。
 2. CANN 无原生对应的两个算子(sinkhorn、act_quant)运行层中以 **torch 组合**实现。这两个算子另有独立的 AscendC kernel 经算子生成流程产出并通过精度验证,但**尚未通过 `torch_npu` 自定义算子注册接入 miles 训练链路**;它们的可调用性已单独验证(见 4.3)。
 3. **tilelang-ascend 后端在运行层中未被使用**。miles 的 sparse_mla 等源算子为 `@tilelang.jit`(CUDA 目标),其 tilelang API 与昇腾 tilelang 构建不兼容,因此调用被替换为上述 CANN 原生算子。
+4. **关于 FP8(重要):A3 无 FP8 硬件,本工作全程不跑真 FP8。** 硬件能力矩阵确认 A3/a5/a2 的 VEC 单元均无 fp8 cast(无 `vconv` to/from fp8,SDK 仅有 fp8 解码无编码)。V4 设计中 act_quant 是激活的 fp8 量化优化;在无 fp8 硬件的 A3 上,运行层用 `_fp8_e4m3_round` **在 fp32 下模拟 fp8 量化网格**(把数值 round 到 fp8 可表示的网格,但 dtype 保持 fp32/bf16,从不以 fp8 存储或计算)。推理侧同理走 bf16,`SGLANG_OPT_FP8_*` 全关。§4.3 那个 op-gen act_quant kernel 产出的 fp8 字节是 kernel 内**软件 RNE 编码器**(scalar pipe 逐元素)生成的,用于精度 bit-match 参考,**不使用任何 fp8 硬件单元,也未接入训练层**。结论:训练与 rollout 在 A3 上是 **bf16/fp32**,fp8 仅作为被模拟的量化网格存在。
 
 ### 4.3 AscendC 算子可调用性验证(独立测试,非运行层内)
 
