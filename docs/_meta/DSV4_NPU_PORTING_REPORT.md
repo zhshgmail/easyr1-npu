@@ -45,17 +45,24 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 - **`generate()` 端到端执行**:真实 `DeepseekV4ForCausalLM` 配合减层权重,bfloat16,A3 NPU,0.9 秒返回非空输出。
 - **推理循环闭合**:推理 → 通过 `update_weights_from_tensor`(仅注意力权重)同步权重 → 再推理,权重同步可观测地改变了引擎输出。
 
-### 3.2 适配项分类
+### 3.2 适配项分类(按上游归属)
 
-下表的 14 个适配点中,标注 **production** 的为经数值实测等价、可直接向上游提交的实现;标注 **临时方案** 的仅满足短序列演示,生产环境须由上游 sgl-kernel-npu 提供真实实现。
+14 个适配点按**责任上游**分组。状态:**production** = 数值实测等价、可直接提交;**设计选择** = 故意保留、非妥协;**临时方案** = 仅满足短序列演示,生产须上游真实现。
+
+**A. `sgl-project/sglang`(主仓 jit_kernel/dsv4 —— 算子级,4 个 production + 1 设计选择)**
 
 | 适配点 | 处理方式 | 状态 |
 |---|---|---|
-| `fused_q_norm_rope` 的 RMSNorm 部分 → `npu_rms_norm` | 原生算子替换,逐位等价(误差 0.000e+00) | **production** |
-| `forward_extend/decode` 不接收 `compress_ratio` 参数 → `**kwargs` 吸收 | 向后兼容 | **production** |
-| `silu_and_mul_clamp` → `npu_clipped_swiglu` | 原生算子替换,相对误差 ≤0.77%,clamp 内逐位等价,经端到端验证 | **production** |
-| `linear_bf16_fp32` 的 `torch.mm(out_dtype=fp32)` 昇腾不支持 → 去 kwarg + `.float()` | 等价 | **production** |
-| RoPE 复数乘部分保留 fp32 torch 实现 | `npu_apply_rotary_pos_emb` 为 rotate-half 约定,与 V4 interleaved 复数乘不符(误差 4.22),fp32 实现精度更优 | **设计选择(非妥协)** |
+| `jit_kernel/dsv4` `fused_q_norm_rope` 的 RMSNorm 部分 → `npu_rms_norm` | 原生算子替换,逐位等价(0.000e+00) | **production** |
+| `jit_kernel/dsv4` `silu_and_mul_clamp` → `npu_clipped_swiglu` | 原生算子替换,相对误差 ≤0.77%,clamp 内逐位等价,端到端验证 | **production** |
+| `jit_kernel/dsv4` `linear_bf16_fp32` 的 `torch.mm(out_dtype=fp32)` 昇腾不支持 → 去 kwarg + `.float()` | 等价 | **production** |
+| `AscendAttnBackend.forward_extend/decode` 不接收 `compress_ratio` → `**kwargs` 吸收 | 向后兼容 | **production** |
+| `jit_kernel/dsv4` RoPE 复数乘部分保留 fp32 torch | `npu_apply_rotary_pos_emb` 为 rotate-half 约定,与 V4 interleaved 复数乘不符(误差 4.22),fp32 更优 | **设计选择(非妥协)** |
+
+**B. `sgl-project/sglang`(主仓 AscendAttnBackend —— V4 后端接口缺失,7 个临时方案)**
+
+| 适配点 | 处理方式 | 状态 |
+|---|---|---|
 | `_maybe_upgrade_forward_metadata` 缺失 | 空实现占位 | 临时方案 |
 | `forward_c4_indexer` 缺失 | 空实现占位 | 临时方案 |
 | `forward_core_compressor` 缺失 | 空实现占位 | 临时方案 |
@@ -63,8 +70,20 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 | `DeepSeekV4TokenToKVPool.get_key_buffer` 未实现 | V4 dense 短路 | 临时方案 |
 | `forward_decode` cache 读取不匹配 | 同上短路 | 临时方案 |
 | `fused_k_norm_rope_flashmla` 写 FP8 打包字节进 paged KV cache | 演示跳过 scatter(短序列足够) | 临时方案 |
-| NPU `aclnnIndex` 不支持 complex64 | 取实部后再 view-as-complex | 临时方案 |
-| `mhc.hc_split_sinkhorn` 依赖 tilelang/CUDA | torch 组合实现 | 临时方案 |
+
+**C. `sgl-project/sgl-kernel-npu`(kernel 库 —— 真实 NPU kernel,1 个临时方案)**
+
+| 适配点 | 处理方式 | 状态 |
+|---|---|---|
+| `mhc.hc_split_sinkhorn` 依赖 tilelang/CUDA,昇腾无 | torch 组合实现 | 临时方案(生产须 sgl-kernel-npu 提供真 kernel;另见训练侧 op-gen sinkhorn) |
+
+> 注:B 组的 7 个 AscendAttnBackend 接口,其"真实现"最终也落到 `sgl-kernel-npu` 提供底层 NPU kernel + `sglang` 主仓接好接口的协作——空实现占位在 `sglang` 主仓,底层算子在 `sgl-kernel-npu`。
+
+**D. `Ascend/pytorch`(torch_npu / CANN —— 平台算子缺口,1 个临时方案)**
+
+| 适配点 | 处理方式 | 状态 |
+|---|---|---|
+| NPU `aclnnIndex` 不支持 complex64 | 取实部后再 view-as-complex | 临时方案(提 torch_npu/CANN complex64 indexing issue) |
 
 **空实现占位为何能在演示中工作、代价是什么**:上述 `forward_c4_indexer` / `forward_core_compressor` / `store_cache` 等接口负责 V4 的多级 KV cache 压缩与稀疏 indexer 选择。在 1 层、序列极短(2 token)的演示中,cache 尚未被填满,跳过这些接口不影响前向能否走通。代价是**功能性而非性能**:跳过后该层注意力退化为不压缩、不稀疏选择,长序列会显存溢出或数值错误,且输出在数值上并非真实 V4(仅形状正确、能跑完)。将单个空实现升级为 torch 组合的 PoC 级实现约需半天到一天;涉及 KV cache 写入路径(FP8 打包 scatter)的约需 2–3 天;生产级(sgl-kernel-npu 真实 AscendC 实现)为上游工作,单项周级。
 
