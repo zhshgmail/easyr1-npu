@@ -107,11 +107,15 @@ SGLang trunk 已有 `deepseek_v4.py`(2259 行)+ `EntryClass=[DeepseekV4ForCausal
 | compressor | `npu_nsa_compress_attention` | ✅ 实测 | ✅ production |
 | MLA prep | `npu_mla_prolog_v3` | ✅ 实测 | ✅ production |
 | rms_norm | `npu_rms_norm` | ✅ 实测(bit-exact) | ✅ production |
-| **hash-coding sinkhorn** | 无 native 对应 | ✅ AscendC op-gen 完成(28/28+28/28,perf 5.34× symmetric,honesty-gate 纠正后) | ✅ production(精度验过) |
-| **act_quant (fp8)** | 无 native 对应 | ✅ AscendC op-gen 完成(24/24+24/24 byte-exact fp8 + bit-exact fp32) | ✅ production |
+| **hash-coding sinkhorn** | 无 native 对应 | ⚠️ AscendC op-gen 完成(28/28+28/28,5.34× symmetric)**但未接进训练层**;层里跑的是 **torch 组合** `_hc_split_sinkhorn_npu` | ⚠️ kernel 验了精度,**未 wire 进 miles** |
+| **act_quant (fp8)** | 无 native 对应 | ⚠️ AscendC op-gen 完成(24/24+24/24)**但未接进训练层**;层里跑的是 **torch fp8-grid 模拟** `_fp8_e4m3_round` | ⚠️ kernel 验了精度,**未 wire 进 miles** |
 
-**结论**:训练侧算子**已无盲区** —— 核心 5 个走 CANN-native(全实测),CANN 真没有的 2 个(sinkhorn/act_quant)
-已用 op-gen 生成且精度验过。这推翻了"V4 ops 都要手写 op-gen kernel"的早期误判。
+**结论(2026-06-02 更正,owner 第二次 catch)**:
+- ⚠️ **"训练侧算子已无盲区"是错的说法**。正确分两类:
+  - **5 个走 CANN-native(`npu_nsa_select_attention` 等),真接进了正在跑的层**(pytorch 调 torch_npu 算子),✅ 实测。
+  - **2 个(sinkhorn / act_quant)op-gen 出了 AscendC kernel 且过了精度门,但未 wire 进 miles 训练链路** —— 接 AscendC kernel 到 pytorch 需要 `torch_npu` custom-op(aclnn→torch op)注册,这层没做。正在跑的层用 **torch 组合**顶替这 2 个。
+- ⚠️ **tilelang-ascend 在正在跑的层完全没用**。miles 的 sparse_mla 等是 `@tilelang.jit` CUDA-target,其 tilelang API 与 Ascend tilelang build 不兼容,所以调用被**替换成 CANN-native 算子**,没走 tilelang-ascend 后端。
+- 所以正在跑的 megatron 层 = **CANN-native 算子(5)+ torch 组合(2)**,既不是 tilelang,也没接 AscendC kernel。早期"6 个都要手写 op-gen"的判断是错的,但"CANN 全覆盖 + 2 个 op-gen 都接好了"也是错的 —— 真相在中间。
 
 ### 3.3 集成层的坑(让 megatron layer 在 NPU 上 fwd+bwd 跑起来)
 
