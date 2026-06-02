@@ -1,204 +1,184 @@
-# DeepSeek-V4-Flash 在 Ascend A3 NPU 上的移植报告
+# DeepSeek-V4-Flash 昇腾 A3 NPU 移植报告
 
-> 状态汇总 2026-06-01。本报告以 **DSv4-Flash** 为重点,记录推理(SGLang)与训练(Megatron/miles)
-> 两侧在 NPU 上遇到的坑、如何解决、以及**每个修复是 walkaround 还是 production-ready**。
->
-> 诚实纪律:本报告区分"已实测跑通"与"已声明",凡 walkaround 一律标 ⚠️ 并写明上游真修在哪。
-> 不把 PoC 减层 / no-op stub / synth-delta 说成 production。
+**版本**:2026-06-02 ·  **目标平台**:Ascend 910C(A3,SOC `Ascend910_9382`,CANN 8.5.2) ·  **基线**:减层(1–2 层)
 
 ---
 
-## 0. TL;DR
+## 一、摘要
 
-| 维度 | 推理侧 (SGLang) | 训练侧 (Megatron + miles) |
+本报告记录 DeepSeek-V4-Flash 在昇腾 A3 NPU 上的移植工作,覆盖**推理(SGLang)**与**训练(Megatron + miles)**两条链路。结论分两个层面陈述,严格区分**已实测**与**待完成**:
+
+- **推理链路**:SGLang 主线的 `DeepseekV4ForCausalLM` 模型类在 A3 NPU(bfloat16)上完成 `generate()` 端到端执行,并闭合一个推理-权重同步-再推理的循环。模型类本身在上游已具备;移植工作集中在补齐昇腾后端(`AscendAttnBackend` / sgl-kernel-npu)缺失的 V4 专用算子接口。
+- **训练链路**:DeepSeek-V4-Flash 真实配置(4096 隐藏维、64 注意力头、256 专家 MoE)减层后,单层完成完整训练迭代(前向+反向+优化器更新),两层完成前向+反向。五个核心算子经 CANN 原生算子实测打通。
+- **训练→推理参数流动**:在两层减层、共享权重的设定下,经判别实验确认 megatron 训练得到的注意力权重传入 SGLang 推理引擎后,引擎输出发生**训练特异性**改变(与等幅随机扰动可区分)。
+
+全模型(43 层)、数值正确性、真实 RL 奖励训练尚未完成,原因与边界见**第五节**。
+
+---
+
+## 二、移植对象
+
+DeepSeek-V4-Flash 真实配置(来源 `workspace/T32_tilelang_rescue/v4_real_truth/v4_real_config.json`):
+
+| 维度 | 取值 |
+|---|---|
+| 隐藏维 / 层数 / 注意力头 | 4096 / 43 / 64 |
+| MLA | `q_lora_rank=1024`、`kv_lora_rank=512`、`qk_rope_head_dim=64`、`v_head_dim=128` |
+| 输出侧 LoRA | `o_lora_rank=1024`、`o_groups=8` |
+| Hash-coding 路由 | `hc_mult=4`、`hc_sinkhorn_iters=20` |
+| C4 indexer | `index_n_heads=64`、`index_topk=512` |
+| MoE | 256 专家、`moe_intermediate_size=2048`、每 token 6 专家、1 共享专家 |
+| RoPE(yarn) | `factor=16`、`original_max_position_embeddings=65536`、`beta_fast=32`、`beta_slow=1` |
+
+相对 V2/V3,V4 的新增结构决定了昇腾适配的主要难点:**hash-coding sinkhorn 路由**、**C4 多级压缩 KV(c4/c128)**、**lightning indexer(稀疏 topk)**、**o_lora 分组输出投影**、**compressor(NSA 风格压缩注意力)**。
+
+---
+
+## 三、推理链路(SGLang)
+
+SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`,模型定义完整。移植的全部工作量在于昇腾后端缺失的 V4 专用接口与算子。
+
+### 3.1 已验证结果
+
+- **`generate()` 端到端执行**:真实 `DeepseekV4ForCausalLM` 配合减层权重,bfloat16,A3 NPU,0.9 秒返回非空输出。
+- **推理循环闭合**:推理 → 通过 `update_weights_from_tensor`(仅注意力权重)同步权重 → 再推理,权重同步可观测地改变了引擎输出。
+
+### 3.2 适配项分类
+
+下表的 14 个适配点中,标注 **production** 的为经数值实测等价、可直接向上游提交的实现;标注 **临时方案** 的仅满足短序列演示,生产环境须由上游 sgl-kernel-npu 提供真实实现。
+
+| 适配点 | 处理方式 | 状态 |
 |---|---|---|
-| **最高已验证里程碑** | 真 V4 model class `generate()` + RL loop 闭环(rollout→weight-sync→re-rollout)在 A3 NPU bf16 跑通 | 真 DSV4 config 减层(256-expert MoE)1 层**完整训练迭代**(fwd+bwd+AdamW.step)+ 2 层 fwd+bwd 跑通 |
-| **减层?** | 是(1 层 fab,gibberish 输出,形状正确非数值正确) | 是(真 config / 真 dims,层数减到 1–2,显存所限) |
-| **walkaround 数** | 14 个 PoC stub/fallback(已部分换成 native op) | 4 类(rms_norm shim / sparse-softmax 稳定化 / megatron fp32-grad patch / optimizer 显存) |
-| **production-ready 部分** | 2 处 native-op 替换(已实测等价,PR 形态)+ RL weight-sync plumbing | CANN-native 算子映射(NSA/indexer/compressor/MLA-prolog,全实测)+ sparse-softmax 稳定化补丁 |
-| **真 e2e 缺口** | 14 stub 中约 8 个要上游 sgl-kernel-npu 补 V4 hook | (1) **rollout 模型与训练模型必须是同一套权重**——当前 sglang fab 与 megatron 训练模型是两个独立 random-init,delta 跨无关模型传递无意义(2026-06-02 owner catch,见下 §2.4 + KB `cross-layer-013`);(2) 真训练 delta 替换 synth-delta;(3) 多芯片显存工程。算子侧已无缺口(CANN-native 全覆盖) |
+| `fused_q_norm_rope` 的 RMSNorm 部分 → `npu_rms_norm` | 原生算子替换,逐位等价(误差 0.000e+00) | **production** |
+| `forward_extend/decode` 不接收 `compress_ratio` 参数 → `**kwargs` 吸收 | 向后兼容 | **production** |
+| `silu_and_mul_clamp` → `npu_clipped_swiglu` | 原生算子替换,相对误差 ≤0.77%,clamp 内逐位等价,经端到端验证 | **production** |
+| `linear_bf16_fp32` 的 `torch.mm(out_dtype=fp32)` 昇腾不支持 → 去 kwarg + `.float()` | 等价 | **production** |
+| RoPE 复数乘部分保留 fp32 torch 实现 | `npu_apply_rotary_pos_emb` 为 rotate-half 约定,与 V4 interleaved 复数乘不符(误差 4.22),fp32 实现精度更优 | **设计选择(非妥协)** |
+| `_maybe_upgrade_forward_metadata` 缺失 | 空实现占位 | 临时方案 |
+| `forward_c4_indexer` 缺失 | 空实现占位 | 临时方案 |
+| `forward_core_compressor` 缺失 | 空实现占位 | 临时方案 |
+| `store_cache` / `forward_compress` / `init_forward_metadata_indexer` 缺失 | 空实现占位 | 临时方案 |
+| `DeepSeekV4TokenToKVPool.get_key_buffer` 未实现 | V4 dense 短路 | 临时方案 |
+| `forward_decode` cache 读取不匹配 | 同上短路 | 临时方案 |
+| `fused_k_norm_rope_flashmla` 写 FP8 打包字节进 paged KV cache | 演示跳过 scatter(短序列足够) | 临时方案 |
+| NPU `aclnnIndex` 不支持 complex64 | 取实部后再 view-as-complex | 临时方案 |
+| `mhc.hc_split_sinkhorn` 依赖 tilelang/CUDA | torch 组合实现 | 临时方案 |
 
-**一句话**:V4 在 NPU 上的**机制**(model class / KV pool / RL 闭环 / 单层训练迭代 / CANN-native 算子)已逐项实测跑通;
-剩下的是**两类工程**——推理侧的上游 sgl-kernel-npu V4 hook 补全、训练侧的多芯片显存(并行/重计算)。不是算法或算子盲区。
-
----
-
-## 1. DSv4-Flash 真 config(移植对象)
-
-`deepseek-ai/DeepSeek-V4-Flash` HF config(`workspace/T32_tilelang_rescue/v4_real_truth/v4_real_config.json`):
-
-- `hidden_size=4096`, `num_hidden_layers=43`, `num_attention_heads=64`
-- MLA: `q_lora_rank=1024`, `kv_lora_rank=512`, `qk_rope_head_dim=64`, `v_head_dim=128`
-- o_lora: `o_lora_rank=1024`, `o_groups=8`
-- hash-coding: `hc_mult=4`, `hc_sinkhorn_iters=20`
-- C4 indexer: `index_n_heads=64`, `index_topk=512`
-- MoE: 256 experts, `moe_intermediate_size=2048`, `num_experts_per_tok=6`, `n_shared_experts=1`
-- RoPE yarn: `factor=16`, `original_max_position_embeddings=65536`, `beta_fast=32`, `beta_slow=1`
-- 每层 `compress_ratios`:44 元素 per-layer list `[0,0,4,128,...]`
-
-V4 相对 V3/V2 的**新增结构**(决定了 NPU 适配的新坑):**hash-coding sinkhorn 路由**、**C4 多级压缩 KV(c4/c128)**、
-**lightning indexer(稀疏 topk)**、**o_lora 分组输出投影**、**compressor(NSA 风格压缩注意力)**。
+**空实现占位为何能在演示中工作、代价是什么**:上述 `forward_c4_indexer` / `forward_core_compressor` / `store_cache` 等接口负责 V4 的多级 KV cache 压缩与稀疏 indexer 选择。在 1 层、序列极短(2 token)的演示中,cache 尚未被填满,跳过这些接口不影响前向能否走通。代价是**功能性而非性能**:跳过后该层注意力退化为不压缩、不稀疏选择,长序列会显存溢出或数值错误,且输出在数值上并非真实 V4(仅形状正确、能跑完)。将单个空实现升级为 torch 组合的 PoC 级实现约需半天到一天;涉及 KV cache 写入路径(FP8 打包 scatter)的约需 2–3 天;生产级(sgl-kernel-npu 真实 AscendC 实现)为上游工作,单项周级。
 
 ---
 
-## 2. 推理侧 (SGLang) — 坑 + 解法 + walkaround/production 分类
+## 四、训练链路(Megatron + miles)
 
-SGLang trunk 已有 `deepseek_v4.py`(2259 行)+ `EntryClass=[DeepseekV4ForCausalLM]`,**模型类本身存在**;
-坑全在 **NPU 后端(sgl-kernel-npu / AscendAttnBackend)缺 V4-specific 的 hook 和 op**。
+训练链路为真实 DeepSeek-V4 模型层(MLA + compressor + indexer + 稀疏注意力 + hash-coding MoE 路由),运行于昇腾化的 Megatron(MindSpeed `core_r0.16.0` 分支适配 Megatron-Core 0.16)。
 
-### 2.1 已验证里程碑
-- **generate() PASS**:真 `DeepseekV4ForCausalLM` + 真 V4 减层 fab,bf16,A3 NPU,0.9s 返回非空。
-- **RL loop PASS**:rollout→`update_weights_from_tensor`(attn-only)→re-rollout,5/5 步 weight-sync 都改变了输出。
+### 4.1 已验证结果(均为真实配置、A3 实测)
 
-### 2.2 坑分类表(14 gap)
+- 单个 `DeepSeekV4Attention` 层完成前向+反向训练步;
+- 真实配置减层至 1 层,完成完整训练迭代(前向+损失+反向+AdamW 优化器更新,4.42B 参数,梯度全有限);
+- 真实配置减层至 2 层,完成前向+反向(8.84B 参数,梯度全有限)。
 
-| # | 坑 | 当前解法 | 分类 | 上游真修 |
-|---|---|---|---|---|
-| 1 | `AscendAttnBackend._maybe_upgrade_forward_metadata` 缺失 | no-op stub | ⚠️ **walkaround** | sgl-kernel-npu 补 V4 metadata 升级 |
-| 2 | `mhc.hc_split_sinkhorn` 要 tilelang/CUDA | torch fallback | ⚠️ walkaround(推理侧)/ ✅ 训练侧已有 AscendC kernel | 见 §3 sinkhorn |
-| 3 | `jit_kernel/dsv4/elementwise.fused_q_norm_rope` JIT CUDA | RMSNorm 部分→`npu_rms_norm`(**bit-exact**),RoPE 部分→fp32 torch 复数乘 | ✅ **production**(RMSNorm native 替换,已实测 0.000e+00) + ⚠️ RoPE 保留 fp32 torch(见说明) | RoPE 不换是**正确选择**:`npu_apply_rotary_pos_emb` 是 rotate-half 约定,≠ V4 interleaved 复数乘,差 4.22 |
-| 4 | `fused_rope_inplace` / `fused_norm_rope_inplace` 同上 | 同 #3 | 同 #3 | 同 #3 |
-| 5 | NPU `aclnnIndex` 不支持 complex64 | index 实部,view-as-complex 之后 | ⚠️ walkaround | 提 NPU complex64 aclnnIndex issue |
-| 6 | `fused_k_norm_rope_flashmla` 写 FP8-packed 字节进 paged kvcache | PoC 跳过 scatter(1 层 max_tokens=2 够短) | ⚠️ **walkaround(PoC-only)** | sgl-kernel-npu 补 FP8 packed kvcache scatter |
-| 7 | `forward_c4_indexer` 缺失 | no-op stub | ⚠️ walkaround | sgl-kernel-npu 补 c4 indexer |
-| 8 | `forward_core_compressor` 缺失 | no-op stub | ⚠️ walkaround | sgl-kernel-npu 补 compressor |
-| 9 | `store_cache`/`forward_compress`/`init_forward_metadata_indexer` 缺失 | no-op stub | ⚠️ walkaround | sgl-kernel-npu 补 |
-| 10 | V4 传 `compress_ratio` kwarg,NPU `forward_extend` 不收 | `**kwargs` 吸收 | ✅ **production**(back-compat,安全) | PR `**kwargs` 到 forward_extend/decode |
-| 11 | `DeepSeekV4TokenToKVPool.get_key_buffer` raise NotImplementedError | V4 dense short-circuit | ⚠️ walkaround | sgl-kernel-npu 实现 V4 KV pool get_key_buffer |
-| 12 | `forward_decode` 同 compress_ratio + cache-read mismatch | 同 V4 dense short-circuit | ⚠️ walkaround | 同 #11 |
-| 13 | `jit_kernel/dsv4/moe.silu_and_mul_clamp` JIT CUDA | `npu_clipped_swiglu`(实测 ≤0.77% rel,clamp 内 bit-exact) | ✅ **production**(native op 已替换 + e2e gate 验过) | PR native-first + torch-fallback 守卫 |
-| 14 | `jit_kernel/dsv4/gemm.linear_bf16_fp32` 用 `torch.mm(out_dtype=fp32)` NPU 不支持 | drop kwarg + `.float()` cast | ✅ **production**(等价) | PR NPU-path `.float()` |
+### 4.2 算子实现路径
 
-### 2.3 production vs walkaround 小结(推理侧)
-- ✅ **production-ready**(已实测等价 + e2e gate):#3 RMSNorm(bit-exact)、#10 kwargs back-compat、#13 swiglu native、#14 gemm cast。这 4 个适合直接 PR。
-- ✅ **设计正确的保留**:#3/#4 RoPE 保留 fp32 torch 复数乘——native kernel 数值错(约定不符),fp32 反而更准,不是妥协。
-- ⚠️ **walkaround / PoC-only**(必须上游补,不能 ship):#1/#5/#6/#7/#8/#9/#11/#12——这 8 个是 `AscendAttnBackend` 缺的 V4 hook + V4 KV pool,no-op stub 只够让 1 层短序列 PoC 跑形状,**生产必须由 sgl-kernel-npu 真实现**。
-- RL loop 的 `update_weights_from_tensor`(attn-only)绕开 #26794 MoE reload bug——✅ plumbing production-ready,但 ⚠️ weight delta 当前是 synth(占位),真 e2e 要换 miles 训练梯度。
+正在运行的训练层由两类实现构成,均经 pytorch 调用:
 
-### 2.4 跨栈"真 delta"bridge 尝试 + 纠正(2026-06-02,owner catch)
+| V4 训练算子 | 实现 | 状态 |
+|---|---|---|
+| 稀疏 MLA(前向/反向) | `npu_nsa_select_attention`(D_qk=192/D_v=128,select_block=64,count=16,返回 attn 及 softmax max/sum 供反向) | CANN 原生,已接入,实测 |
+| C4 indexer | `npu_lightning_indexer` / `npu_sparse_lightning_indexer_grad_kl_loss` | CANN 原生,已接入,实测 |
+| compressor | `npu_nsa_compress_attention` | CANN 原生,已接入,实测 |
+| MLA 预处理 | `npu_mla_prolog_v3` | CANN 原生,已接入,实测 |
+| rms_norm | `npu_rms_norm` | CANN 原生,已接入,逐位等价 |
+| hash-coding sinkhorn | torch 组合 `_hc_split_sinkhorn_npu`(CANN 无对应原生算子) | 已接入运行层 |
+| act_quant(fp8) | torch fp8-grid 模拟 `_fp8_e4m3_round`(CANN 无对应原生算子) | 已接入运行层 |
 
-为消除 §2.3 的 synth-delta 占位,尝试把 megatron 1 层训练迭代产生的真 attn-delta 跨栈喂进 sglang RL loop(`task-dag-realdelta` DAG,n1 导出→n2 remap→n3 bridge)。**机制层面**:`update_weights_from_tensor` 推送成功、applied L2 精确等于 megatron 真 delta L2、re-rollout 输出改变(1/5)。
+说明三点,避免歧义:
 
-**但这是 plumbing-only,不构成有意义的训练传递(owner 抓出的致命缺陷)**:megatron 训练模型和 sglang fab 是**两个独立 random-init 的模型**,`wq_a` 等只是 shape 相同(都 1024×4096),不是"同一模型两种格式"。把相对 `W_meg` 的梯度方向 `Δ` 加到 sglang 无关权重 `W_sgl` 上,**数学上等于加一个任意固定扰动,和被它替换的 synth delta 没有本质区别**。n3 移动了"形状对的 tensor",没移动"对该模型有意义的训练更新"。
+1. 五个核心算子使用 CANN 原生算子(经 `torch_npu` 调用),已真实接入运行中的训练层。
+2. CANN 无原生对应的两个算子(sinkhorn、act_quant)运行层中以 **torch 组合**实现。这两个算子另有独立的 AscendC kernel 经算子生成流程产出并通过精度验证,但**尚未通过 `torch_npu` 自定义算子注册接入 miles 训练链路**;它们的可调用性已单独验证(见 4.3)。
+3. **tilelang-ascend 后端在运行层中未被使用**。miles 的 sparse_mla 等源算子为 `@tilelang.jit`(CUDA 目标),其 tilelang API 与昇腾 tilelang 构建不兼容,因此调用被替换为上述 CANN 原生算子。
 
-**真 RL loop 的硬要求**:rollout 模型(sglang)与训练模型(megatron)**必须是同一套权重**(用同一真 ckpt 初始化两边,或做 megatron→sglang 真权重转换)。当前两边独立 random-init,所以"真 delta 驱动 rollout"的说法**已撤回**。详见 KB `cross-layer-013`。
+### 4.3 AscendC 算子可调用性验证
 
----
+为确认算子生成流程产出的 AscendC kernel 可从 pytorch 调用,在 A3 上以 bisheng 构建 `act_quant` 算子为 pybind 扩展(`_act_quant_ext`),从 pytorch 在 NPU 上调用 `run_act_quant(x, block_size)`,输出与 CPU 真值参考逐位一致(scale 误差 0,fp8 逐值匹配 100%,反量化误差 0)。这验证了"pytorch 调用 AscendC 算子"的机制成立;将其接入 miles 训练链路为后续工作。
 
-## 3. 训练侧 (Megatron + miles) — 坑 + 解法 + walkaround/production 分类
+### 4.4 集成层适配项
 
-训练侧 = 真 DSV4 model layer(MLA + compressor + indexer + sparse attention + hash-coding MoE 路由)
-在 **Megatron-on-NPU**(MindSpeed `core_r0.16.0` 适配)上做 fwd+bwd+optimizer。
+| 适配点 | 处理方式 | 状态 |
+|---|---|---|
+| MindSpeed 适配 Megatron-Core 0.16 | 使用 `core_r0.16.0` 分支(commit 8bf0959,含 dsa TND 支持) | **production**(官方分支) |
+| 两层反向 NaN(全掩码行 softmax 不稳定) | `sparse_attn_torch` 加 `nan_to_num(scores_max,neginf=0)` + `clamp(exp 参数,max=30)`,NaN 数 282→7→0 | **production**(标准 masked-softmax 守卫,可提交 miles) |
+| `npu_rms_norm` 参数签名不匹配 | shim:匹配 gamma dtype + 丢弃多余参数 | 临时方案(待 MindSpeed 适配签名) |
+| TransformerLayer 返回契约 | 将 `DeepSeekV4Attention.forward` 改为返回 `(output, None)` | 临时方案(miles 侧契约对齐) |
+| `all_reduce_grad_fp32` 参数偏移 | Megatron-LM-miles fork 补丁(`_CopyToModelParallelRegion` 接收 + fp32 梯度 all-reduce) | 临时方案→已可提交 |
+| MoE 路由依赖 `miles.utils` | 安装完整 miles 包 | 环境依赖(非代码) |
+| MoE 路由 fp8_simulate(torch_npu 缺 Float8_e4m3fn cast) | fp32 下做 fp8-grid 模拟 | 临时方案(待 torch_npu 补 cast,或接入 act_quant AscendC kernel) |
 
-### 3.1 已验证里程碑(全部真 config,实测 NPU)
-- ✅ 单 `DeepSeekV4Attention` megatron layer **fwd+bwd 训练步**(MLA+稀疏注意力+indexer+compressor)— **protected/tagged**
-- ✅ 真 DSV4 config 减层 **1 层完整训练迭代**(forward+loss+backward+**AdamW.step**,4.42B,grad finite 526/526)
-- ✅ 真 DSV4 config **2 层 fwd+bwd**(8.84B,grad_norm=0.043,1051/1051 finite)
+### 4.5 训练→推理参数流动验证
 
-### 3.2 算子映射 —— 关键纠正:CANN 已覆盖,**不需要手写 op-gen**
+为验证训练得到的权重能真实驱动推理(RL 循环的核心前提),在两层减层下做共享权重实验:将 megatron 模型的注意力权重作为 SGLang 推理权重的初始值(**两侧共享同一初始权重**),megatron 以定向损失训练这些权重,再将训练后权重传入 SGLang 推理引擎,与一个等幅随机扰动对照组比较。
 
-> 本 session 的核心纠正(owner 指出):V4 训练侧这些是**基本算子,CANN 已提供**。
-> 先查 CANN-native / tilelang-ascend 覆盖,查不到再 op-gen。实测结果:**核心算子 CANN 全有**。
+判别结果:
 
-| V4 训练算子 | CANN-native 对应 | 状态 | 分类 |
-|---|---|---|---|
-| sparse-MLA fwd/bwd | `npu_nsa_select_attention`(D_qk=192/D_v=128,select_block=64,count=16,返回 attn+softmax max/sum 供 bwd) | ✅ 实测 | ✅ **production**(CANN-native) |
-| C4 indexer | `npu_lightning_indexer` / `npu_sparse_lightning_indexer_grad_kl_loss` | ✅ 实测 | ✅ production |
-| compressor | `npu_nsa_compress_attention` | ✅ 实测 | ✅ production |
-| MLA prep | `npu_mla_prolog_v3` | ✅ 实测 | ✅ production |
-| rms_norm | `npu_rms_norm` | ✅ 实测(bit-exact) | ✅ production |
-| **hash-coding sinkhorn** | 无 native 对应 | ⚠️ AscendC op-gen 完成(28/28+28/28,5.34× symmetric)**但未接进训练层**;层里跑的是 **torch 组合** `_hc_split_sinkhorn_npu` | ⚠️ kernel 验了精度,**未 wire 进 miles** |
-| **act_quant (fp8)** | 无 native 对应 | ⚠️ AscendC op-gen 完成(24/24+24/24)**但未接进训练层**;层里跑的是 **torch fp8-grid 模拟** `_fp8_e4m3_round` | ⚠️ kernel 验了精度,**未 wire 进 miles** |
+- 训练后权重使推理输出相对初始值发生改变(参数流动成立);
+- 且该改变**不能被等幅随机扰动复现**——即改变是该次训练**特异性**的,而非任意扰动的结果。
 
-**结论(2026-06-02 更正,owner 第二次 catch)**:
-- ⚠️ **"训练侧算子已无盲区"是错的说法**。正确分两类:
-  - **5 个走 CANN-native(`npu_nsa_select_attention` 等),真接进了正在跑的层**(pytorch 调 torch_npu 算子),✅ 实测。
-  - **2 个(sinkhorn / act_quant)op-gen 出了 AscendC kernel 且过了精度门,但未 wire 进 miles 训练链路** —— 接 AscendC kernel 到 pytorch 需要 `torch_npu` custom-op(aclnn→torch op)注册,这层没做。正在跑的层用 **torch 组合**顶替这 2 个。
-- ⚠️ **tilelang-ascend 在正在跑的层完全没用**。miles 的 sparse_mla 等是 `@tilelang.jit` CUDA-target,其 tilelang API 与 Ascend tilelang build 不兼容,所以调用被**替换成 CANN-native 算子**,没走 tilelang-ascend 后端。
-- 所以正在跑的 megatron 层 = **CANN-native 算子(5)+ torch 组合(2)**,既不是 tilelang,也没接 AscendC kernel。早期"6 个都要手写 op-gen"的判断是错的,但"CANN 全覆盖 + 2 个 op-gen 都接好了"也是错的 —— 真相在中间。
+> 判别器设计说明:首次以平凡损失(`output.pow(2).mean()`)训练时,得到的 delta 过小且各向同性,推理输出的改变与随机扰动不可区分(判别为否)——此为真实的不通过,如实记录。改用定向损失后,delta 具备足够幅度与特定方向,判别通过。
 
-### 3.3 集成层的坑(让 megatron layer 在 NPU 上 fwd+bwd 跑起来)
+边界:此处训练目标为定向 MSE-to-target(对真实 RL 奖励的受控替身),层数为 2(减层)。但它是**在共享权重上经真实梯度训练得到的 delta**,且推理对该训练特异性响应。替换为真实 miles RL 奖励目标即可推进到真实 RL;参数流动机制已验证。
 
-| 坑 | 解法 | 分类 | 上游真修 |
-|---|---|---|---|
-| `import mindspeed.megatron_adaptor` 适配 Mcore 0.16 | 用 `core_r0.16.0` 分支(commit 8bf0959,dsa TND support) | ✅ **production**(官方分支已支持) | 已是 MindSpeed 官方路径 |
-| `npu_rms_norm` "too many args" + dtype mismatch | rms shim:match gamma dtype + drop 多余 args | ⚠️ **walkaround**(driver shim) | MindSpeed 补 rms_norm 签名适配 |
-| TransformerLayer 契约 `return output` vs `(output, None)` | patch `DeepSeekV4Attention.forward` 返回 `(output, None)` | ⚠️ walkaround(miles 侧契约对齐) | miles PR |
-| `all_reduce_grad_fp32` kwarg skew(megatron-fork) | Megatron-LM-miles fork patch(`_CopyToModelParallelRegion` 收 + fp32 grad all-reduce) | ⚠️ walkaround → ✅ PR-ready | Megatron-LM-miles PR(已 cold-import 验证) |
-| **2 层 backward nan** | `sparse_attn_torch` all-masked-row softmax 稳定化:`nan_to_num(scores_max,neginf=0)` + `clamp(exp args,max=30)`(nan 282→7→0) | ✅ **production**(标准 masked-softmax guard,PR-worthy) | miles PR |
-| `miles.utils` ModuleNotFoundError(MoE router) | 装全量 miles pkg `/opt/miles_full` | ⚠️ env(非代码) | 文档化依赖 |
-| MoE 路由用 fp8_simulate(torch_npu 缺 Float8_e4m3fn cast) | fp8-grid sim in fp32(`_fp8_e4m3_round`) | ⚠️ walkaround | torch_npu 补 Float8_e4m3fn cast(或 act_quant AscendC kernel 替) |
-
-### 3.4 显存边界(单张 61GB 芯片,实测)
+### 4.6 显存边界(单张 61GB 芯片,实测)
 
 | 规模 | 结果 |
 |---|---|
-| 1 层(4.42B)+ AdamW | ✅ fwd+bwd+optim **全跑通**(完整训练迭代) |
-| 2 层(8.84B) | ✅ fwd+bwd 跑通;⚠️ +AdamW states 就 **OOM**(8.84B + Adam m/v ~70GB) |
-| 4 层(17.68B) | forward OK;⚠️ backward **OOM** |
+| 1 层(4.42B)+ AdamW | 前向+反向+优化器全通过(完整训练迭代) |
+| 2 层(8.84B) | 前向+反向通过;叠加 AdamW 优化器状态后显存溢出 |
+| 4 层(17.68B) | 前向通过;反向显存溢出 |
 
-更深 = **张量/流水并行 或 activation checkpointing**(256-expert MoE 在 4096 hidden 每层巨大,标准大模型显存现实)。
-这是**分布式工程,不是 NPU/算子问题**。
-
-### 3.5 production vs walkaround 小结(训练侧)
-- ✅ **production-ready**:CANN-native 5 算子映射(全实测)、sinkhorn/act_quant AscendC kernel(精度验过)、sparse-softmax 稳定化补丁、MindSpeed `core_r0.16.0`(官方分支)。
-- ⚠️ **walkaround / 待上游**:rms_norm shim(MindSpeed 签名)、`(output,None)` 契约、megatron fp32-grad patch(PR-ready)、fp8_simulate(torch_npu 缺 cast)。
-- 显存 OOM 不是 walkaround,是**还没做的分布式工程**。
+更深层数需张量/流水并行或激活重计算。256 专家 MoE 在 4096 隐藏维下每层占用巨大,这是大模型常规的显存工程,非昇腾或算子层面的问题。
 
 ---
 
-## 4. PR 列表(汇总)
+## 五、验证边界与限制
 
-### 4.1 已 prepared / 已 landed
+为避免误读,明确以下尚**未**达成的项及原因:
 
-| Target | Branch/Ref | Commit/ID | 状态 | 类型 |
-|---|---|---|---|---|
-| `radixark/miles` | `zhshgmail/miles npu-tilelang-ops` | `d03db2c` | audit-clean,待 user `gh pr create` | 训练侧 V4 ops NPU path |
-| `radixark/Megatron-LM`(via miles vendored) | `Megatron-LM-miles fix/te_general_gemm_npu_fallback` | `6f3209b` | cold-import 验证,bundle 进 miles PR set | megatron NPU fallback |
-| `Ascend/AscendNPU-IR` issue #251 | issue comment | comment `1.73358592e+08` | **landed** | bishengir HIVM pass softmax 累加器 bug(Huawei 补 C++) |
-| `tile-ai/tilelang-mlir-ascend` PR #80 | `zhshgmail/... npuir-check-ub-budget` | `df7431e` | CI 全绿,MERGEABLE,待 maintainer | tilelang-mlir UB budget check |
-| `a5_ops`(harness) | task#33 | `eefeaeca` | **merged** | perf-capture canonical N/A + FA-gate |
-
-### 4.2 本报告新识别的 PR 候选(批量 e2e 后开,per held-PR 纪律)
-
-**推理侧 → `sgl-project/sglang` + `sgl-project/sgl-kernel-npu`**:
-1. ✅ production 4 个直接可 PR:RMSNorm native(#3)、`**kwargs` back-compat(#10)、swiglu native(#13)、gemm `.float()`(#14)
-2. ⚠️ 一个 clean issue:"V4 (`DeepseekV4ForCausalLM`) on `device=npu` 缺 N 个 AscendAttnBackend V4 hook"(#1/#7/#8/#9/#11/#12,每个带 line-number + PoC-workaround 证据)
-3. NPU complex64 aclnnIndex issue(#5)
-4. FP8 packed kvcache scatter(#6)
-
-**训练侧 → `radixark/miles` + `Ascend/MindSpeed` + `Ascend/pytorch(torch_npu)`**:
-5. ✅ sparse-softmax 稳定化补丁(§3.3 nan fix)→ miles
-6. ⚠️ MindSpeed rms_norm 签名适配 + `core_r0.16.0` V4 layer 契约
-7. ⚠️ torch_npu Float8_e4m3fn cast 缺失(fp8_simulate 当前绕)
-
-> **纪律**:训练侧 PR 批量在**真 e2e**(真 miles 训练 delta,非 synth)之后一次开,不 piecemeal。
-> issue body 草稿:`workspace/v4_attempt_2026_06_01/UPSTREAM_ISSUE_sglang_v4_npu.md`。
+1. **非生产可用**:推理链路有 8 个空实现占位在执行路径上;训练链路止于 2 层前向+反向 / 1 层完整迭代(均为减层)。
+2. **未验证数值正确性**:推理演示输出为形状正确的乱码(减层 + 随机权重 + 占位实现)。
+3. **非全模型**:减层(1–2 层,对照全模型 43 层)。
+4. **非真实 RL 训练端到端**:4.5 的训练目标为受控替身损失,非 miles 真实 RL 奖励;参数流动机制已验证,真实奖励训练为后续工作。
+5. **两个 AscendC kernel 尚未接入训练链路**:sinkhorn / act_quant 的 AscendC kernel 已产出并验证精度与可调用性,但运行层当前使用 torch 组合,正式接入待 `torch_npu` 自定义算子注册。
 
 ---
 
-## 5. 诚实边界(不能对外说的话)
+## 六、上游提交计划
 
-- ❌ "DSv4-Flash 在 NPU 上 production-ready" —— 推理侧 8 个 no-op stub 在路径上;训练侧只到 2 层 fwd+bwd / 1 层完整迭代(减层)。
-- ❌ "数值正确性已验证" —— 推理 PoC 输出是形状正确的 gibberish(减层 + 随机权重 + stub)。
-- ❌ "全模型 PASS" —— 减层(1–2 层 vs 43 层)。
-- ❌ "真 RL 训练 e2e 跑通" —— RL loop 的 weight delta 当前是 synth 占位,不是 miles 真训练梯度。
+### 6.1 已准备 / 已合入
 
-## 6. 可以诚实说的话
+| 目标仓 | 分支 / 引用 | Commit / ID | 状态 |
+|---|---|---|---|
+| `radixark/miles` | `zhshgmail/miles npu-tilelang-ops` | `d03db2c` | 审计通过,待提交 |
+| `radixark/Megatron-LM`(miles vendored) | `Megatron-LM-miles fix/te_general_gemm_npu_fallback` | `6f3209b` | 冷导入验证,随 miles PR 一并提交 |
+| `Ascend/AscendNPU-IR` issue #251 | issue 评论 | — | 已合入(bishengir HIVM pass 累加器 bug) |
+| `tile-ai/tilelang-mlir-ascend` PR #80 | `zhshgmail/... npuir-check-ub-budget` | `df7431e` | CI 全绿,待 maintainer review |
+| `a5_ops`(工具链) | task#33 | `eefeaeca` | 已合入 |
 
-- ✅ "真 V4 model class(SGLang `DeepseekV4ForCausalLM`)在 A3 NPU bf16 端到端执行,1 层减层 fab + 14 个文档化 PoC workaround"。
-- ✅ "RL 循环 plumbing(rollout→weight-sync→re-rollout)闭环验证,weight-sync 真改变 inference"。
-- ✅ "真 DSV4 config 减层 1 层完整训练迭代(fwd+bwd+optimizer)+ 2 层 fwd+bwd 在 NPU 跑通,所有梯度 finite"。
-- ✅ "V4 训练侧算子在 NPU 上无盲区:核心 5 个 CANN-native(实测),CANN 缺的 2 个 AscendC kernel 精度验过"。
-- ✅ "每个 workaround 对应一个具体的 sgl-kernel-npu / MindSpeed / torch_npu 上游 gap;PoC 是上游 gap inventory 的 forcing function,不是交付物"。
+### 6.2 本报告新识别的候选(待真实端到端后批量提交)
+
+推理侧(`sgl-project/sglang` + `sgl-kernel-npu`):四个 production 适配项可直接提交(RMSNorm 原生、`**kwargs` 兼容、swiglu 原生、gemm cast);一个汇总 issue(缺失的 `AscendAttnBackend` V4 接口,逐项附行号与证据);NPU complex64 aclnnIndex issue;FP8 打包 KV cache scatter。
+
+训练侧(`radixark/miles` + `Ascend/MindSpeed` + `Ascend/pytorch`):sparse-softmax 稳定化补丁(miles);MindSpeed rms_norm 签名适配 + V4 层契约;torch_npu Float8_e4m3fn cast 缺失。
 
 ---
 
-## 7. 关键文件索引(disk ground truth)
+## 七、关键文件索引
 
-- 推理 PoC + 14 workaround:`workspace/v4_attempt_2026_06_01/README.md` + `_*_PASS.py`/`native_op_snapshots/`
-- 训练侧算子 gap:`workspace/v4_attempt_2026_06_01/V4_TRAINING_SIDE_OP_GAP.md`
-- 训练侧 NPU 集成 artifact:`workspace/v4_attempt_2026_06_01/npu_native_shims/`(含 protected flash result)
-- 真 config:`workspace/T32_tilelang_rescue/v4_real_truth/v4_real_config.json`
-- SGLang 上游 issue 草稿:`workspace/v4_attempt_2026_06_01/UPSTREAM_ISSUE_sglang_v4_npu.md`
-- git tags:`v4-flash-attention-npu-working`、`v4-real-config-1layer-training-step-npu`
+| 内容 | 路径 |
+|---|---|
+| 推理 PoC + 适配快照 | `workspace/v4_attempt_2026_06_01/README.md`、`_*_PASS.py`、`native_op_snapshots/` |
+| 训练侧算子清单 | `workspace/v4_attempt_2026_06_01/V4_TRAINING_SIDE_OP_GAP.md` |
+| 训练侧 NPU 集成产物 | `workspace/v4_attempt_2026_06_01/npu_native_shims/` |
+| 参数流动验证 | `workspace/task-dag-realdelta/`(`shared_weights_*`、`shared_verify2_RESULT.txt`、`RESULTS.md`) |
+| AscendC 算子调用验证 | `workspace/task-dag-realdelta/call_opgen_act_quant.py` |
+| 真实配置 | `workspace/T32_tilelang_rescue/v4_real_truth/v4_real_config.json` |
+| 相关经验沉淀 | `docs/_meta/kb/porting_lessons/`(`sglang-004/005`、`miles-002/003`、`cross-layer-012/013`) |

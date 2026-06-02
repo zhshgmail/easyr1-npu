@@ -2,7 +2,7 @@
 
 把 [`hiyouga/EasyR1`](https://github.com/hiyouga/EasyR1) 适配到 Ascend 910C (A3) NPU，并沉淀一套针对 4 个 NPU 上游（vllm-ascend / torch-npu / transformers / triton-ascend）的可复用版本升级工具链。
 
-最后更新：2026-06-02（DeepSeek-V4-Flash 在 A3 NPU：推理侧真 V4 model class `generate()` + RL loop **plumbing** 跑通（weight-sync 机制能改变 inference）、训练侧真 DSV4 config 减层 1 层完整训练迭代 + 2 层 fwd+bwd。**诚实更正**:跨栈"真 delta"bridge 只证明 plumbing —— rollout 与训练是两个独立 random-init 模型,delta 跨无关模型传递不构成有意义训练流动,真 RL e2e 要求 rollout/train 共享权重,见 KB `cross-layer-013` + 报告 §2.4。新增统一移植报告 + 6 条 V4 cookbook（共 31 条）+ `/task-dag-planner` skill）。
+最后更新：2026-06-02（DeepSeek-V4-Flash 在 A3 NPU,减层基线:推理侧真 V4 model class `generate()` + 推理-权重同步-再推理循环闭合;训练侧真 DSV4 config 减层 1 层完整训练迭代 + 2 层 fwd+bwd;**两层共享权重下训练→推理参数流动经判别实验验证为训练特异性**;op-gen AscendC 算子(act_quant)已在 NPU 上从 pytorch 真实调用(逐位等价)。统一移植报告已重写为正式中文文书(见下)。新增 6 条 V4 cookbook(共 31 条)+ `/task-dag-planner` skill。)
 
 > **想看 DeepSeek-V4-Flash NPU 移植报告（重点：SGLang 推理 + Megatron/miles 训练两侧的坑 / 解法 / walkaround-vs-production 分类）→ [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md)**
 >
@@ -33,7 +33,7 @@
 
 | Slug | Kind | Status | 一句话 |
 |---|---|---|---|
-| [`miles-dsv4-flash-poc`](output/miles-dsv4-flash-poc/) | poc | active | miles + DeepSeek-V4-Flash 在 A3 NPU 上 RL 后训练 PoC;5 PR + 2 Issue + KB cookbook + `/npu-adapt-assist` skill。**统一移植报告（推理+训练两侧、walkaround-vs-production）见 [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md)**;训练侧已达减层基线（1 层完整训练迭代 + 2 层 fwd+bwd + 跨栈真 delta RL bridge,见报告 §3 + KB `miles-002/003`、`cross-layer-012`) |
+| [`miles-dsv4-flash-poc`](output/miles-dsv4-flash-poc/) | poc | active | miles + DeepSeek-V4-Flash 在 A3 NPU 上 RL 后训练 PoC;5 PR + 2 Issue + KB cookbook + `/npu-adapt-assist` skill。**统一移植报告（推理+训练两侧、walkaround-vs-production）见 [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md)**;训练侧已达减层基线（1 层完整训练迭代 + 2 层 fwd+bwd + 两层共享权重下训练→推理参数流动验证,见报告 §四 + KB `miles-002/003`、`cross-layer-012/013`) |
 
 ---
 
