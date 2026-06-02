@@ -68,4 +68,4 @@ if _valid_h > 0:
 ```
 
 Verified on A3 (Ascend910_9382, CANN 8.5.2): heads=4 ✅ / heads=8 ✅ / heads=16 ✅ / heads=32 ✅ (was
-FAIL at 4 and 8; no regression at 16/32). Ready to PR.
+FAIL at 4 and 8; no regression at 16/32). Ready to PR. **PR OPENED: https://github.com/tile-ai/tilelang-mlir-ascend/pull/96**
