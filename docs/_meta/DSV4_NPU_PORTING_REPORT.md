@@ -126,13 +126,17 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 3. **tilelang-ascend 后端在运行层中未被使用**。miles 的 sparse_mla 等源算子为 `@tilelang.jit`(CUDA 目标),其 tilelang API 与昇腾 tilelang 构建不兼容,因此调用被替换为上述 CANN 原生算子。
 4. **关于 FP8(重要):A3 无 FP8 硬件,本工作全程不跑真 FP8。** 硬件能力矩阵确认 A3/a5/a2 的 VEC 单元均无 fp8 cast(无 `vconv` to/from fp8,SDK 仅有 fp8 解码无编码)。V4 设计中 act_quant 是激活的 fp8 量化优化;在无 fp8 硬件的 A3 上,运行层用 `_fp8_e4m3_round` **在 fp32 下模拟 fp8 量化网格**(把数值 round 到 fp8 可表示的网格,但 dtype 保持 fp32/bf16,从不以 fp8 存储或计算)。推理侧同理走 bf16,`SGLANG_OPT_FP8_*` 全关。§4.3 那个 op-gen act_quant kernel 产出的 fp8 字节是 kernel 内**软件 RNE 编码器**(scalar pipe 逐元素)生成的,用于精度 bit-match 参考,**不使用任何 fp8 硬件单元,也未接入训练层**。结论:训练与 rollout 在 A3 上是 **bf16/fp32**,fp8 仅作为被模拟的量化网格存在。
 
-### 4.3 AscendC 算子可调用性验证(独立测试,非运行层内)
+### 4.3 用自动生成的 AscendC 算子替代 pytorch 算子的可行性验证
 
-> 与 §4.2 不矛盾,明确区分两件事:**运行中的训练层用的是 CANN 原生算子 + torch 组合(§4.2),没有调用 op-gen 的 AscendC kernel**;本节是一个**独立的旁路测试**,单独验证那个 op-gen kernel 能从 pytorch 调用,不在训练层的执行路径里。
+本节的关键问题不是"kernel 能不能孤立地调一下",而是:**能否用 op-gen harness 自动生成的 AscendC 算子替换运行层里的 pytorch 实现?** 这才是有意义的目标——pytorch 版是临时的功能性实现,自动生成的 AscendC 版若可替换,就能在精度对齐的同时拿到性能(§4.3 后备表:sinkhorn 5.34×)。以 `act_quant` 为对象做可行性验证,分三步、得到一个明确(且诚实为"部分可行")的结论:
 
-为确认算子生成流程产出的 AscendC kernel 可从 pytorch 调用,在 A3 上以 bisheng 构建 `act_quant` 算子为 pybind 扩展(`_act_quant_ext`),用一段**独立脚本**(非训练层)从 pytorch 在 NPU 上调用 `run_act_quant(x, block_size)`,输出与 CPU 真值参考逐位一致(scale 误差 0,fp8 逐值匹配 100%,反量化误差 0)。这验证了"pytorch 调用 AscendC 算子"的机制成立。
+1. **生成 + 构建可行**:op-gen harness 产出 `act_quant` 的 AscendC 源码,在 A3 用 bisheng 构建成 pybind 扩展 `_act_quant_ext` 成功。
+2. **调用 + 精度可行**:从 pytorch 在 NPU 上调用 `run_act_quant(x, block_size)`,输出与 CPU 真值逐位一致(scale 误差 0,fp8 逐值匹配 100%,反量化误差 0)。**替换的"精度等价"前提成立。**
+3. **接入运行层——当前不可行(实测阻塞)**:把它接进训练层去真正替换 torch fp8 模拟时,kernel 返回 `float8_e4m3fn`,而 NPU 上对其 `.float()` 反量化报 `Float8_e4m3fn has not been supported`——torch_npu 无 fp8 device 支持(正是 torch 模拟要规避的限制)。
 
-**接入训练链路的具体阻塞(实测)**:尝试以该 kernel 替换训练层中的 torch fp8 模拟时,kernel 返回 `float8_e4m3fn`(int8 字节的 view),而在 NPU 上对其做 `.float()` 反量化报 `Float8_e4m3fn has not been supported`——这正是当初写 torch 模拟要规避的限制。可行的旁路有三:(a) torch_npu 增加 fp8→fp32 支持;(b) kernel 直接返回反量化后的 fp32 值而非 fp8 字节;(c) 在 NPU 上以整数位运算解码 e4m3 字节。当前训练层因此仍用 torch 组合;接入 kernel 待上述之一落地。结论:kernel **可调用、精度已验**,但**接入 NPU 训练数值通路被 torch_npu 的 fp8 支持缺失阻塞**。
+**可行性结论(诚实)**:`act_quant` 的 AscendC 替换 = **生成/构建/调用/精度 全部可行,但"接入运行层替换 pytorch"被 torch_npu 的 fp8 消费侧缺口挡住,当前不可行**。解阻塞的三条路:(a) torch_npu 增 fp8→fp32 支持;(b) kernel 直接返回 fp32 反量化值(改输出契约);(c) NPU 上整数位运算解码 e4m3。三者任一落地后该替换即可行。对比之下,**sinkhorn 的 AscendC 替换没有 fp8 这层阻塞**(纯 vector,输出 fp32),替换可行性更高,只待 `torch_npu` 自定义算子注册接线。
+
+> 一句话:**自动生成的 AscendC 算子替代 pytorch 的可行性,act_quant 卡在 fp8 消费侧(不可行),sinkhorn 无此阻塞(可行,待接线)**。这是比"能否孤立调用"更关键、也更难的结论。
 
 #### AscendC 后备方案:精度对齐 + 相对 pytorch 的性能
 
