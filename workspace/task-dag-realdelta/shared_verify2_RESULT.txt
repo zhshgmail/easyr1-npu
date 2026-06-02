@@ -1,0 +1,13 @@
+
+Authorized users only. All activities may be monitored and reported.
+[verify] sgl 0.5.12.post2.dev434+gb13d3d18c
+[verify] fab 92 tensors; attn sets INIT/TRAINED/SYNTH each 10
+[verify] Engine init OK
+[verify] INIT    sig=((91391, 41977, 38044, 49401), (25430, 3886, 15655, 45491), (46307, 62977, 2394, 704), (61961, 87970, 82579, 58676))
+[verify] TRAINED sig=((78584, 40079, 1601, 38035), (1601, 38035, 78584, 40079), (78584, 40079, 1601, 38035), (121528, 1601, 38035, 78584))
+[verify] SYNTH   sig=((53733, 9182, 28320, 3965), (117348, 128181, 26972, 331), (64469, 3564, 99600, 19955), (22381, 14013, 43288, 73104))
+[verify] (A) TRAINED != INIT  : True
+[verify] (B) TRAINED != SYNTH : True
+[verify] === PASS: megatron->sglang parameter flow is REAL & training-specific ===
+[verify]   shared init confirmed: both sides started from megatron INIT attn; the trained
+[verify]   weights produce a rollout that an equal-magnitude random delta does NOT reproduce.

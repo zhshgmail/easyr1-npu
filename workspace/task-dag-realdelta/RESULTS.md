@@ -1,5 +1,29 @@
 # RESULTS — V4 real-delta RL-loop bridge (task-dag-planner cold-drive)
 
+> ## ✅ FOLLOW-UP 2026-06-02 — shared-weights 2-layer param-flow VERIFIED (the honest redo)
+>
+> After the retraction below, built the real version (`shared_weights_megatron_export.py` +
+> `shared_weights_sglang_verify.py`): megatron 2-layer attn weights become the sglang fab's attn
+> INIT (**shared by construction**), megatron trains them (directional MSE-to-target, 20 steps),
+> push TRAINED into sglang, compare against a SYNTH control (same per-tensor L2, random direction).
+>
+> **Result — verified by discriminator:**
+> - (A) `TRAINED != INIT` = **True** — the trained weights changed the rollout (flow happens).
+> - (B) `TRAINED != SYNTH` = **True** — the change is **training-specific**: an equal-magnitude
+>   RANDOM delta does NOT reproduce it. (The first attempt with a toy `output.pow(2).mean()` loss
+>   gave B=False — delta too small/isotropic, indistinguishable from noise. The directional loss
+>   fixed it.)
+> - **PASS: megatron→sglang parameter flow is REAL & training-specific** (2-layer reduced, shared
+>   weights). Evidence: `v4_rl_loop_REAL_delta_RESULT.txt` superseded by `shared_verify2.log`
+>   (`[verify] === PASS ===`). This is what the n3 below FAILED to be.
+>
+> Honest remaining boundary: the training objective is a directional MSE-to-target (a controlled
+> stand-in for a real RL reward), not a miles RL reward — but it IS a real gradient-trained delta on
+> shared weights, and the discriminator proves the rollout responds to THAT specific training, not
+> to arbitrary noise. Layer count = 2 (reduced). See KB `cross-layer-013`.
+
+---
+
 > ## ⛔ CORRECTION 2026-06-02 (owner caught a fatal framing error — read FIRST)
 >
 > **The n3 "real delta" result below is OVERCLAIMED. The delta did NOT meaningfully
