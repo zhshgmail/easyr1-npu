@@ -2,7 +2,17 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖🔖🔖🔖🔖🔖🔖🔖🔖🔖 TILELANG-vs-CANN COMPARISON + sparse_mla BUG FIXED (2026-06-02 ~04:50Z — LATEST, read first)
+## 🔖×11 TILELANG MANDATE: full suite validated, 2 bugs → 3 upstream artifacts (2026-06-02 ~08:40Z — LATEST, read first)
+
+Owner standing mandate (memory `project_tilelang_validate_fix_pr_standing_mandate`): autonomously validate every tilelang-ascend op, fix bugs, open PRs. **Active phase COMPLETE**:
+- **~24 tilelang-ascend example kernels triaged** — broadly healthy at default config (sparse_mla/indexer/flash_attn-fp16/rms_norm/layer_norm/gemm×2/gemv/exp2/log2/elementwise×6/engram×4/mixcv×2/vectorization/atomic_add/dynamic_shape variants all PASS).
+- **Bug #1 — sparse_mla_fwd heads<block_H silent write-over-run**: FIXED (bound output store to valid rows) → **PR tile-ai/tilelang-mlir-ascend #96** (verified heads=4/8/16/32, gemini review clean, builds green; `format` check fails on PRE-EXISTING file issues — commented for maintainer; fork branch `fix/sparse-mla-heads-lt-block-h`).
+- **Bug #2 — flash_attn_npuir wrong in bf16**: confirmed (73.5% vs fp32 ref, fp16 OK) → isolated to softmax (QK GEMM bit-exact, w2 probs 93% wrong) → **ROOT CAUSE = AscendNPU-IR HIVM vector-arith ops exclude bf16** (`HIVMVectorOps.td:120` `OperElemTypeConstraints<[F16,F32]>`; exp2→bf16 is the 1-line repro) → **issue Ascend/AscendNPU-IR #253** (real fix venue, Huawei compiler, same as R-KA-16 #251) + **tile-ai issue #97** (surfacing, cross-linked).
+- **Zero false bugs**: every suspected issue correctly rejected (indexer-H32 harness / kv_group>1 unsupported / seq>seq_kv invalid / indexer-h64 fp16-noise / flash-bf16-harness-dtype) — INCLUDING retracting my own wrong sparse_mla-bf16-workspace root-cause hypothesis mid-fix.
+- Case manifest: `workspace/task-dag-realdelta/sparse_mla_sweep_results.md` (all verdicts). Harnesses: `tilelang_sweep_harness.py`, `indexer_sweep.py`, `flash_attn_sweep.py`. 3 upstream artifacts in CLAUDE.md ledger.
+- Remaining = maintainer-time (PR #96 + issues #97/#253). bf16 real fix is Huawei's (IR layer). This also re-validates V4's CANN-native choice (bf16 gap is in the tilelang/bishengir path).
+
+## 🔖🔖🔖🔖🔖🔖🔖🔖🔖🔖 TILELANG-vs-CANN COMPARISON + sparse_mla BUG FIXED (2026-06-02 ~04:50Z)
 
 Owner directed a tilelang-ascend precision/perf investigation, then "还要修复" (fix bugs, not just find). Results, all in report Appendix A.3/A.4 + KB:
 - **REAL bug found AND FIXED**: `tilelang-mlir-ascend examples/sparse_mla_fwd.py` silently wrong at heads<16 (44%/36% mismatch; heads≥16 OK). Root cause: final output store wrote `block_H_half` rows per subid regardless of actual head count → over-wrote adjacent (batch,seq) positions (padding rows compute harmlessly; only the write-back over-ran). **Fix = 6-line bounded store** `_valid_h=max(0,min(block_H_half, heads-block_h_offset))`. Verified heads=4/8/16/32 PASS, no regression. **Fork branch `blue/fix/sparse-mla-heads-lt-block-h` commit `a19acd5`** (in tlrescue's `/home/z00637938/workspace/tilelang-mlir-ascend`; fork origin is tile-ai upstream clone). KB `tilelang-003` + issue draft `workspace/task-dag-realdelta/UPSTREAM_ISSUE_tilelang_sparse_mla_heads_lt16.md` (fix attached, ready to PR — owner files).
