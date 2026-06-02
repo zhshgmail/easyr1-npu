@@ -80,19 +80,25 @@ SGLang 主线已包含 `deepseek_v4.py` 与 `EntryClass=[DeepseekV4ForCausalLM]`
 - 真实配置减层至 1 层,完成完整训练迭代(前向+损失+反向+AdamW 优化器更新,4.42B 参数,梯度全有限);
 - 真实配置减层至 2 层,完成前向+反向(8.84B 参数,梯度全有限)。
 
+> 证据级别:单层 flash 结果有冻结的 on-disk run-log(`PROTECTED_flash_attention_npu_RESULT.md`:out=(64,1,512)、loss=0.0353、grad_norm=0.173)。1 层/2 层的具体梯度计数(526/526、1051/1051)来自 commit message 里记录的 run-stdout,产出脚本在 disk(`v4_REAL_config_{1,2}layer_training_step_npu.py`),但**未把那次 PASS 的完整 stdout 单独提交为日志文件**。复现可重跑脚本。
+
 ### 4.2 算子实现路径
 
 正在运行的训练层由两类实现构成,均经 pytorch 调用:
 
-| V4 训练算子 | 实现 | 状态 |
+> 验证级别分两档,不混为一谈:**verified-run** = 有 A3 上捕获的独立 run-log;**spec-matched / coverage-confirmed** = API 签名与 V4 spec 对得上、在运行层 forward 路径上被调用,但**没有单独捕获 run-log 做数值等价**。
+
+| V4 训练算子 | 实现 | 验证级别 |
 |---|---|---|
-| 稀疏 MLA(前向/反向) | `npu_nsa_select_attention`(D_qk=192/D_v=128,select_block=64,count=16,返回 attn 及 softmax max/sum 供反向) | CANN 原生,已接入,实测 |
-| C4 indexer | `npu_lightning_indexer` / `npu_sparse_lightning_indexer_grad_kl_loss` | CANN 原生,已接入,实测 |
-| compressor | `npu_nsa_compress_attention` | CANN 原生,已接入,实测 |
-| MLA 预处理 | `npu_mla_prolog_v3` | CANN 原生,已接入,实测 |
-| rms_norm | `npu_rms_norm` | CANN 原生,已接入,逐位等价 |
+| 稀疏 MLA(前向/反向) | `npu_nsa_select_attention`(D_qk=192/D_v=128,select_block=64,count=16,返回 attn 及 softmax max/sum 供反向) | **verified-run**(A3 捕获:attn (128,4,128) finite, 94.9us) |
+| rms_norm | `npu_rms_norm` | **verified-run**(逐位等价 0.000e+00) |
+| C4 indexer | `npu_sparse_lightning_indexer_grad_kl_loss`(带 grad+KL,明确 Atlas A3 train) | spec-matched(签名对应,层 forward 调用;未单独捕获 run-log) |
+| compressor | `npu_nsa_compress_attention` | spec-matched(未单独捕获 run-log) |
+| MLA 预处理 | `npu_mla_prolog_v3` | coverage-confirmed(dispatch 命中;未单独捕获 run-log) |
 | hash-coding sinkhorn | torch 组合 `_hc_split_sinkhorn_npu`(CANN 无对应原生算子) | 已接入运行层 |
 | act_quant(fp8) | torch fp8-grid 模拟 `_fp8_e4m3_round`(CANN 无对应原生算子) | 已接入运行层 |
+
+> 三个 spec-matched/coverage-confirmed 的算子要升到 verified-run,需各跑一个独立 case 捕获 run-log 做数值等价(待办)。它们在减层层的 fwd+bwd 整体跑通里被调用过(层级 PASS),但单算子级数值等价只对 select_attention + rms_norm 捕获了证据。
 
 说明三点,避免歧义:
 
