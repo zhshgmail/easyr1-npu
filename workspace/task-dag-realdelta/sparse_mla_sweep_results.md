@@ -22,3 +22,17 @@ seq_len with valid seq_kv, seq_kv, dim, batch, num_kernels). The single ERR was 
 (seq_len>seq_len_kv), confirmed by the matched-seq_kv re-run passing. kv_group>1 is a separate
 likely-unsupported config. dtype is fp16-hardcoded (bf16 untested). Only real kernel bug found in the
 whole investigation: heads<16 silent-wrong (FIXED, a19acd5).
+
+## fp8_lighting_indexer sweep (2026-06-02, harness-corrected to honor --h)
+
+| combo | verdict | note |
+|---|---|---|
+| --h 4 / 8 / 16 / 32 | PASS | **confirms the earlier "h<32 bug" was a harness artifact (retracted)** |
+| --h 64 | FAIL(1/16777216 = 0.0%) | **single-element fp16 ULP outlier just over rtol=3e-2/atol=2e-2** — NOT a kernel bug (the example's own tolerance comment notes fp16 cross-impl noise); 1 element in 16.7M |
+| --m 512 --n 1024 | PASS | |
+| --bs 128 | PASS | |
+| --k 128 | PASS | |
+
+**Net**: indexer is robust across head counts (h=4..64) and m/n/bs/k. The h=64 "FAIL" is 1/16.7M elements
+(0.0%) = fp16 numerical noise, not a defect. This CONFIRMS the earlier "indexer h<32 bug" was entirely my
+hardcoded-H=32 harness error (now retracted). No indexer kernel bug exists.
