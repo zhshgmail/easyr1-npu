@@ -2,7 +2,14 @@
 
 把 [`hiyouga/EasyR1`](https://github.com/hiyouga/EasyR1) 适配到 Ascend 910C (A3) NPU，并沉淀一套针对 4 个 NPU 上游（vllm-ascend / torch-npu / transformers / triton-ascend）的可复用版本升级工具链。
 
-最后更新：2026-06-02（DeepSeek-V4-Flash 在 A3 NPU,减层基线:推理侧真 V4 model class `generate()` + 推理-权重同步-再推理循环闭合;训练侧真 DSV4 config 减层 1 层完整训练迭代 + 2 层 fwd+bwd;**两层共享权重下训练→推理参数流动经判别实验验证为训练特异性**;op-gen AscendC 算子(act_quant)已在 NPU 上从 pytorch 真实调用(逐位等价,**独立测试,未接入训练层** —— 接入被 torch_npu 缺 fp8 支持阻塞)。统一移植报告已重写为正式中文文书(见下)。新增 7 条 V4 cookbook(共 32 条)+ `/task-dag-planner` skill。)
+最后更新：2026-06-04（tilelang-on-A3 能力边界 + miles 训练精度厘清,详见报告 §三.3 末 + §八）。前次(2026-06-02):DeepSeek-V4-Flash 在 A3 NPU,减层基线:推理侧真 V4 model class `generate()` + 推理-权重同步-再推理循环闭合;训练侧真 DSV4 config 减层 1 层完整训练迭代 + 2 层 fwd+bwd;**两层共享权重下训练→推理参数流动经判别实验验证为训练特异性**;op-gen AscendC 算子(act_quant)已在 NPU 上从 pytorch 真实调用(逐位等价,**独立测试,未接入训练层** —— 接入被 torch_npu 缺 fp8 支持阻塞)。统一移植报告已重写为正式中文文书(见下)。新增 7 条 V4 cookbook(共 32 条)+ `/task-dag-planner` skill。
+
+> **2026-06-04 新增结论**(实测,详见 [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md) §三.3 + §八):
+> 1. **tilelang-on-A3 能力图**:vector(sinkhorn)+ gemm(matmul/sparse_mla)在 NPU 上均**能编 + 真 NPU run + 数值对**(API codegen 路径);perf:vector batched **0.17–1.15×** torch、gemm **0.13×** torch(未调优)——功能可行但未达 torch/CANN 速度。
+> 2. **fp8 = A3(V220)硬件墙**:开源软件栈(tilelang dtype + MLIR type)本 session 已打通并验证,但 9.1.0 bishengir 仍报 `hardware doesn't support fp8`——A3 跑 DSv4(原生 FP8)走 `fp8_cast_bf16` dequant→bf16,真 fp8 需 A5。
+> 3. **miles 训练精度**:训练真高精(bf16+fp32 累加),量化仅 rollout 侧(FP8-rollout-RL 范式),训练侧 fp8 是 env-gated QAT 假量化且默认关 → A3 上整链 bf16 可跑训练;无 PTQ。
+> 4. **CANN 9.1.0-beta.1 复用基座**:torch_npu ABI ✅,但 bishengir gemm 回归 ⚠️ 且不修 tilelang in-process PassManager segfault(issue #100)→ A3 gemm 暂留 8.5,9.1.0 价值在 A5/fp8。
+> 5. tilelang PassManager segfault 已提 [issue #100](https://github.com/tile-ai/tilelang-mlir-ascend/issues/100)。)
 
 > **想看 DeepSeek-V4-Flash NPU 移植报告（重点：SGLang 推理 + Megatron/miles 训练两侧的坑 / 解法 / walkaround-vs-production 分类）→ [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md)**
 >
@@ -33,7 +40,7 @@
 
 | Slug | Kind | Status | 一句话 |
 |---|---|---|---|
-| [`miles-dsv4-flash-poc`](output/miles-dsv4-flash-poc/) | poc | active | miles + DeepSeek-V4-Flash 在 A3 NPU 上 RL 后训练 PoC;5 PR + 2 Issue + KB cookbook + `/npu-adapt-assist` skill。**统一移植报告（推理+训练两侧、walkaround-vs-production）见 [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md)**;训练侧已达减层基线（1 层完整训练迭代 + 2 层 fwd+bwd + 两层共享权重下训练→推理参数流动验证,见报告 §四 + KB `miles-002/003`、`cross-layer-012/013`) |
+| [`miles-dsv4-flash-poc`](output/miles-dsv4-flash-poc/) | poc | active | miles + DeepSeek-V4-Flash 在 A3 NPU 上 RL 后训练 PoC;5 PR + 2 Issue + KB cookbook + `/npu-adapt-assist` skill。**统一移植报告（推理+训练两侧、walkaround-vs-production）见 [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md)**;训练侧已达减层基线（1 层完整训练迭代 + 2 层 fwd+bwd + 两层共享权重下训练→推理参数流动验证,见报告 §四 + KB `miles-002/003`、`cross-layer-012/013`)。**2026-06-04 补:tilelang-on-A3 能力图 + fp8=A3 硬件墙 + miles 训练精度厘清 + CANN 9.1.0 验证(报告 §三.3 + §八)** |
 
 ---
 
@@ -55,6 +62,8 @@
 | 想接手项目（continuing agent / 新 session） | [`docs/_meta/handovers/`](docs/_meta/handovers/) + [`ROADMAP.md`](docs/_meta/ROADMAP.md) + [`ARCHITECTURE.md`](docs/_meta/ARCHITECTURE.md) |
 | 想查 NPU 操作模式与已知 bug（29 stable IDs） | [`knowledge/npu-patterns.md`](knowledge/npu-patterns.md) |
 | 想查跨层移植教训（lessons learned，32 条 NPU 适配 cookbook） | [`docs/_meta/kb/porting_lessons/`](docs/_meta/kb/porting_lessons/)（顶部有 keyword grep 表） |
+| 想查 tilelang-on-Ascend 知识库（env / bug 分类 / cold-drive runbook / fp8=硬件墙 / #100） | [`workspace/T32_tilelang_rescue/KB_TILELANG_ASCEND.md`](workspace/T32_tilelang_rescue/KB_TILELANG_ASCEND.md)（§13 cold-drive 2026-06-03） |
+| 想复现 fp8 补丁后的 tilelang 构建（Dockerfile + 精确补丁 + 自检） | [`workspace/_fp8_dockerfile_2026_06_05/`](workspace/_fp8_dockerfile_2026_06_05/)（`Dockerfile.fp8patch` + 2 个 fp8 diff，补丁已 `git apply --check` 验证 clean） |
 | 想看 DeepSeek-V4-Flash NPU 移植统一报告（推理+训练两侧坑/解法/walkaround-vs-production） | [`docs/_meta/DSV4_NPU_PORTING_REPORT.md`](docs/_meta/DSV4_NPU_PORTING_REPORT.md) |
 | 想根据 error trace 自动找匹配的 cookbook | `/npu-adapt-assist <paste-trace>`，详见 [`src/skills/npu-adapt-assist/`](src/skills/npu-adapt-assist/README.md)（启动会自动跑 preflight） |
 | 想看 miles + DSv4-Flash PoC（一句话 + 状态表 + 上游 PR 列表） | [`output/miles-dsv4-flash-poc/`](output/miles-dsv4-flash-poc/) |

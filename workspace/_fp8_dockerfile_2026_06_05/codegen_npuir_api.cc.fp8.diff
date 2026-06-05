@@ -1,0 +1,20 @@
+diff --git a/src/target/codegen_npuir_api.cc b/src/target/codegen_npuir_api.cc
+--- a/src/target/codegen_npuir_api.cc
++++ b/src/target/codegen_npuir_api.cc
+@@ -500,6 +500,16 @@ mlir::Type CodeGenTileLangNPUIRAPI::DTypetoMLIRType(DataType t) { // NOLINT(*)
+     return builder.getNoneType();
+   }
+   bool fail = false;
++  // T32.11: FP8 (e4m3fn / e5m2) — map to MLIR float8 types. The fork's MLIR
++  // has no FP4 builder, so float4 is left unhandled (falls to FATAL below).
++  if (t.is_float8_e4m3fn()) {
++    if (t.is_scalar()) return builder.getFloat8E4M3FNType();
++    return mlir::NoneType();
++  }
++  if (t.is_float8_e5m2()) {
++    if (t.is_scalar()) return builder.getFloat8E5M2Type();
++    return mlir::NoneType();
++  }
+   if (t.is_float()) {
+     switch (t.bits()) {
+     case 16:

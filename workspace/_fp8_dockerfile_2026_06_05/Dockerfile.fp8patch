@@ -1,0 +1,200 @@
+# ============================================================
+# Dockerfile.fp8patch — tilelang-mlir-ascend + FP8 dtype patches
+# ============================================================
+# Purpose: reproduce, as scripted build steps, the patched tilelang
+# environment used for the DSv4 fp8 open-stack work on Ascend A3.
+#
+# What the patch does (the ONLY source change vs upstream fork):
+#   1) 3rdparty/tvm  include/tvm/runtime/data_type.h  — teach
+#      String2DLDataType() to parse float8_e4m3fn / float8_e4m3 /
+#      float8_e5m2 / float4_e2m1fn / float4_e2m1 dtype strings.
+#   2) src/target/codegen_npuir_api.cc — teach DTypetoMLIRType() to
+#      map fp8 (e4m3fn / e5m2) scalars to MLIR getFloat8E4M3FNType()
+#      / getFloat8E5M2Type().
+#
+# This unblocks the OPEN-SOURCE software layer (dtype string -> MLIR
+# float8 type) so fp8 tilelang kernels (act_quant / fp8_gemm) get past
+# tilelang's own dtype handling. NOTE (verified 2026-06-03): on A3
+# (Ascend V220) fp8 still hits a HARDWARE wall in bishengir
+# ("Current hardware doesn't support fp8 type"); this patch is the
+# software-layer prerequisite, valuable on A5 (arch35) + for letting
+# the fp8 dtype flow through the compiler front-end. It does NOT make
+# fp8 run on A3.
+#
+# Pinned baseline (the exact commits the work was done on):
+#   tilelang-mlir-ascend : a19acd548a066f519869acbe7b60b36e00cbbcc3
+#   3rdparty/tvm         : c2921fdaf795b1103d21abc962e83a209c7258d7
+#
+# Build (China mainland; uses tuna mirror for llvm submodule like the
+# fork's own docker/Dockerfile does):
+#   docker build -f Dockerfile.fp8patch -t tilelang-fp8patch:a3 .
+# Build elsewhere: add  --build-arg REGION=other
+#
+# WARNING: this is a COLD from-scratch build. It clones + compiles
+# LLVM/MLIR + AscendNPU-IR + TVM + TileLang. Expect a multi-hour build
+# and ~30GB. The heavy LLVM/AscendNPU-IR build is the FORK's own
+# established step (see docker/Dockerfile in the fork) — not added by
+# this patch.
+# ============================================================
+
+ARG CANN_VERSION=8.5.0
+ARG CHIP_TYPE=a3
+ARG OS=ubuntu
+ARG OS_VERSION=22.04
+ARG PY_VERSION=3.11
+
+FROM quay.io/ascend/cann:${CANN_VERSION}-${CHIP_TYPE}-${OS}${OS_VERSION}-py${PY_VERSION} AS base
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG PY_VERSION=3.11
+ARG REGION=ChinaMainland
+# Pinned baseline commits (override only if you know what you're doing)
+ARG TILELANG_COMMIT=a19acd548a066f519869acbe7b60b36e00cbbcc3
+ARG TVM_COMMIT=c2921fdaf795b1103d21abc962e83a209c7258d7
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ="Asia/Shanghai" \
+    http_proxy=${HTTP_PROXY} \
+    https_proxy=${HTTPS_PROXY} \
+    no_proxy=${NO_PROXY}
+
+# ------------------------------------------------------------
+# Layer 1: system toolchain (mirrors the fork's docker/Dockerfile)
+# ------------------------------------------------------------
+RUN apt update && \
+    apt install --yes --no-install-recommends --no-install-suggests \
+    bash ca-certificates curl git gnupg2 make sudo unzip vim wget && \
+    apt clean && rm -rf /var/lib/apt/lists/* && update-ca-certificates
+
+RUN apt update && \
+    apt install --yes --no-install-recommends --no-install-suggests \
+    ccache clang-15 clang-format cmake lld-15 zlib1g-dev patch && \
+    apt clean && rm -rf /var/lib/apt/lists/* && \
+    update-alternatives --install /usr/bin/clang clang /usr/bin/clang-15 100 \
+      --slave /usr/bin/clang++ clang++ /usr/bin/clang++-15 && \
+    update-alternatives --install /usr/bin/lld lld /usr/bin/lld-15 100 \
+      --slave /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-15
+
+# Latest cmake (Kitware) + libzstd-dev (tilelang link dep)
+RUN apt remove --purge --auto-remove --yes cmake && apt-get update && \
+    wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null \
+      | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg > /dev/null && \
+    echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main" \
+      | tee /etc/apt/sources.list.d/kitware.list && \
+    apt-get update && apt-get install -y cmake libzstd-dev && \
+    rm -rf /var/lib/apt/lists/* && echo "cmake: $(cmake --version | head -n1)"
+
+WORKDIR /root
+
+# ------------------------------------------------------------
+# Layer 2: clone the fork at the pinned commit
+# ------------------------------------------------------------
+RUN git clone https://github.com/tile-ai/tilelang-mlir-ascend.git tilelang-ascend && \
+    cd tilelang-ascend && \
+    git checkout ${TILELANG_COMMIT} && \
+    git config --global --add safe.directory /root/tilelang-ascend
+
+# ------------------------------------------------------------
+# Layer 3: python build deps
+# ------------------------------------------------------------
+RUN python${PY_VERSION} -m pip install "ninja>=1.12.0" && \
+    python${PY_VERSION} -m pip install "torch==2.7.1" --index-url https://download.pytorch.org/whl/cpu && \
+    python${PY_VERSION} -m pip install "torch_npu==2.7.1" && \
+    python${PY_VERSION} -m pip install -r tilelang-ascend/requirements-build.txt && \
+    python${PY_VERSION} -m pip install -r tilelang-ascend/requirements-dev.txt && \
+    python${PY_VERSION} -m pip install -r tilelang-ascend/requirements.txt && \
+    rm -rf /root/.cache/pip
+
+# ------------------------------------------------------------
+# Layer 4: AscendNPU-IR (bishengir) — the fork's own heavy build
+#          (clones + compiles llvm-project; tuna mirror for CN).
+# ------------------------------------------------------------
+RUN cd tilelang-ascend && \
+    git submodule init 3rdparty/AscendNPU-IR && \
+    git submodule update --init 3rdparty/AscendNPU-IR && \
+    if [ "$REGION" = "ChinaMainland" ]; then \
+      find 3rdparty/AscendNPU-IR -name ".gitmodules" -type f -exec \
+        sed -i 's|https://github.com/llvm/llvm-project.git|https://mirrors.tuna.tsinghua.edu.cn/git/llvm-project.git|g' {} + ; \
+    fi && \
+    cd 3rdparty/AscendNPU-IR && \
+    git submodule sync && \
+    git config --global http.postBuffer 524288000 && \
+    git config --global http.lowSpeedLimit 0 && \
+    git config --global http.lowSpeedTime 999999 && \
+    for i in $(seq 1 5); do git submodule update --init --jobs 1 && break || (echo "retry $i" && sleep 10); done && \
+    if [ "$REGION" = "ChinaMainland" ]; then \
+      find . -name ".gitmodules" -type f -exec \
+        sed -i 's|https://github.com/llvm/llvm-project.git|https://mirrors.tuna.tsinghua.edu.cn/git/llvm-project.git|g' {} + ; \
+    fi && \
+    git submodule sync && \
+    for i in $(seq 1 5); do git submodule update --init --jobs 1 && break || (echo "retry $i" && sleep 10); done && \
+    bash ./build-tools/apply_patches.sh && \
+    rm -rf ./build && \
+    ./build-tools/build.sh -o ./build --python-binding --c-compiler=clang --cxx-compiler=clang++ \
+      --add-cmake-options="-DCMAKE_LINKER=lld -DLLVM_ENABLE_LLD=ON -DLLVM_ENABLE_RTTI=ON -DCMAKE_C_FLAGS=-w -DCMAKE_CXX_FLAGS=-w" \
+      --apply-patches --bishengir-publish=off && \
+    mkdir -p /build/AscendNPU-IR/build && \
+    cp -r ./build/* /build/AscendNPU-IR/build/
+
+# ------------------------------------------------------------
+# Layer 5: clone TVM submodule at pinned commit
+# ------------------------------------------------------------
+RUN cd tilelang-ascend && \
+    git submodule update --init --recursive 3rdparty/tvm && \
+    cd 3rdparty/tvm && git checkout ${TVM_COMMIT} 2>/dev/null || true
+
+# ------------------------------------------------------------
+# Layer 6: *** THE FP8 PATCHES *** (the only source change vs fork)
+#          Applied after tvm + fork source are present, before build.
+# ------------------------------------------------------------
+COPY data_type.h.fp8.diff           /root/patches/data_type.h.fp8.diff
+COPY codegen_npuir_api.cc.fp8.diff  /root/patches/codegen_npuir_api.cc.fp8.diff
+RUN cd tilelang-ascend && \
+    echo ">>> applying FP8 dtype parse patch (tvm/data_type.h)" && \
+    git -C 3rdparty/tvm apply --verbose /root/patches/data_type.h.fp8.diff && \
+    echo ">>> applying FP8 MLIR-type mapping patch (codegen_npuir_api.cc)" && \
+    git apply --verbose /root/patches/codegen_npuir_api.cc.fp8.diff && \
+    echo ">>> verifying patches landed in source:" && \
+    grep -n "float8_e4m3fn" 3rdparty/tvm/include/tvm/runtime/data_type.h && \
+    grep -n "getFloat8E4M3FNType" src/target/codegen_npuir_api.cc
+
+# ------------------------------------------------------------
+# Layer 7: build TileLang (cmake + make), reusing the prebuilt
+#          AscendNPU-IR/bishengir from Layer 4.
+# ------------------------------------------------------------
+ARG BISHENGIR_PATH=/build/AscendNPU-IR/build/install
+RUN cd tilelang-ascend && \
+    rm -rf build && mkdir build && \
+    cp 3rdparty/tvm/cmake/config.cmake build/ && \
+    cd build && \
+    echo "set(USE_NPUIR ON)" >> config.cmake && \
+    echo "set(BISHENGIR_ROOT_PATH ${BISHENGIR_PATH})" >> config.cmake && \
+    cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPython3_EXECUTABLE="$(which python${PY_VERSION})" .. && \
+    CORES=$(nproc) && make -j$(( CORES * 75 / 100 )) && \
+    ls -la libtilelang_module.so libtilelang.so
+
+# ------------------------------------------------------------
+# Layer 8: env (PYTHONPATH = tilelang root + AscendNPU-IR python_packages).
+#   install_npuir.sh Step 11 sets EXACTLY these on PYTHONPATH; NPUIR mode
+#   requires bishengir's mlir_core + bishengir python_packages at runtime
+#   (the script hard-fails if mlir_core / bishengir dirs are absent).
+# ------------------------------------------------------------
+ENV PYTHONPATH=/root/tilelang-ascend:${BISHENGIR_PATH}/python_packages/mlir_core:${BISHENGIR_PATH}/python_packages/bishengir:${PYTHONPATH}
+ENV ASCEND_HOME=/usr/local/Ascend/ascend-toolkit/latest \
+    ASCEND_AICPU_PATH=/usr/local/Ascend/ascend-toolkit/latest
+RUN echo "source /usr/local/Ascend/cann/set_env.sh 2>/dev/null || true" >> /root/.bashrc && \
+    echo "export PYTHONPATH=/root/tilelang-ascend:${BISHENGIR_PATH}/python_packages/mlir_core:${BISHENGIR_PATH}/python_packages/bishengir:\$PYTHONPATH" >> /root/.bashrc
+
+# ------------------------------------------------------------
+# Layer 9: build-time self-check that the FP8 patch is functional
+#          (CPU-only; does NOT require an NPU device).
+# ------------------------------------------------------------
+COPY verify_fp8_patch.py /root/verify_fp8_patch.py
+RUN cd tilelang-ascend && python${PY_VERSION} /root/verify_fp8_patch.py
+
+WORKDIR /root/tilelang-ascend
+CMD ["/bin/bash"]

@@ -44,6 +44,8 @@ deprecated_after: ""
 
 # cross-layer-013 — RL rollout and train must be the SAME weights, not just same-shape
 
+> **2026-06-05 re-baseline (M2)**: 独立 agent 对最新 miles main 校对——纯机制级教训(delta 只在共享权重上有意义),无版本特定面,最新 main 不与之冲突。**仍适用,无需改**。
+
 ## Why this matters
 
 This lesson exists because I (the agent) shipped a misleading "PASS": a cross-stack bridge that

@@ -64,6 +64,28 @@ NSA (Native Sparse Attention), MLA, and the lightning indexer are precisely the 
 CANN has been adding. Probing first would have saved the effort of queuing op-gen and
 designing FA-class TileLang-IL chains for ops the platform already had.
 
+## 2026-06-05 re-baseline against latest upstream main (M1) — lesson re-confirmed + bwd ops verified
+
+Re-checked against **latest `radixark/miles` main `74198b45`** (115 commits newer than the
+2026-06-01 basis). The latest DSv4 plugin's wired ops (`sparse_attn_tilelang`,
+`V4Indexer`/`batched_indexer_fwd`, `DeepSeekV4Compressor`, `linear_bf16_fp32`,
+`fp8_simulate_qat`, `RMSNorm`) map to the **same** CANN-native ops — this lesson holds
+on the new baseline. **Independent agent verified (zero REFUTED, 2026-06-05)** that
+torch_npu (2.9.0) exposes the full set **fwd AND bwd**:
+
+| op | native fwd | native bwd (newly name-verified) |
+|---|---|---|
+| sparse MQA | `npu_nsa_select_attention` | `npu_nsa_select_attention_grad` |
+| compress | `npu_nsa_compress_attention` | `npu_nsa_compress_grad` |
+| lightning indexer | `npu_lightning_indexer` | `npu_lightning_indexer_grad` + `npu_sparse_lightning_indexer_grad_kl_loss` |
+| rms_norm | `npu_rms_norm` | `npu_rms_norm_backward` |
+| MLA prolog | `npu_mla_prolog_v3` | functional variant (name-level only; no bwd run-log) |
+
+Caveat (agent-flagged): symbol-presence ≠ A3 execution correctness — that is what M3's
+A3 e2e PoC settles. fp8 `act_quant` still has **no** native equivalent (A3 fp8 hardware
+wall; QAT-off path doesn't call it). Full map + evidence:
+`workspace/task-dag-realdelta/M1_LATEST_MILES_USECASE_UPSTREAM_MAP_2026-06-05.md`.
+
 ## The actual split (verified on A3, reduced-layer)
 
 5 of the V4 training core ops are **CANN-native** (verification level per op — verified-run vs spec-matched):

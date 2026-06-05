@@ -95,7 +95,7 @@ WINDOW_SIZE = 128
 COMPRESS_ROPE_THETA = 40000
 
 # ---- REDUCED for PoC (miles_local) ----
-NUM_LAYERS = 1
+NUM_LAYERS = int(os.environ.get("NUM_LAYERS", "1"))  # env-overridable for symmetric 2-layer basis
 INDEX_TOPK = 8  # production 512
 INTERMEDIATE = 4096  # dense MLP path (used when MOE_ACTIVE=0)
 N_ROUTED_EXPERTS = 4  # production 256
@@ -153,7 +153,7 @@ def build_config_dict() -> dict:
         "hc_sinkhorn_iters": HC_SINKHORN_ITERS,
         "hc_eps": HC_EPS,
         "compress_rope_theta": COMPRESS_ROPE_THETA,
-        "compress_ratios": [0],  # 1-layer PoC: no per-layer compression schedule
+        "compress_ratios": [0] * NUM_LAYERS,  # per-layer; reduced PoC uses no compression schedule
         # V4 MoE router (V4 NEW)
         "n_routed_experts": N_ROUTED_EXPERTS,
         "n_shared_experts": N_SHARED_EXPERTS,

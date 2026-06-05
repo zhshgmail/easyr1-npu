@@ -2,7 +2,33 @@
 
 > 本文件是 auto-compact 防丢失保险。任何时候 agent 被 compact 后接手,**先读这里**。
 
-## 🔖×11 TILELANG MANDATE: full suite validated, 2 bugs → 3 upstream artifacts (2026-06-02 ~08:40Z — LATEST, read first)
+## 🔖×12 BF16 ROOT-CAUSE FIXED+PR + FULL 21-OP RE-SWEEP + dk BUG (2026-06-02 ~10:50Z — LATEST, read first)
+
+Owner: "你要做修改验证" (do the fix AND verify, for the bf16 HIVM gap) → done end-to-end, then full op re-sweep.
+- **bf16 root cause FIXED at the layers I can reach + PR**: HIVM `VMulOp`/`VExpOp` type-constraints omit BF16
+  (`HIVMVectorOps.td` L120/L548). 3 verifier layers found (libtilelang*.so in-proc / standalone bishengir-compile
+  / CLOSED hivmc). Edited `.td` + rebuilt (recipe: `ninja bishengir-compile` → `ninja install` ← the missing step →
+  `make tilelang_module tilelang`) → layers ①② now ACCEPT bf16 (verified). Layer ③ = closed CANN hivmc 0.1.0 bakes
+  pre-fix verifier → WALL. → **PR Ascend/AscendNPU-IR #1199** (`9dee1c04`, fork branch blue/fix/hivm-vmul-vexp-bf16,
+  links #253). HONESTLY scoped: verifier-pass verified, bf16 backend NUMERICAL correctness NOT (closed hivmc).
+  Proved CANN upgrade NOT sufficient: BF16 omission across ALL AscendNPU-IR refs (master + v1.1.0-post2 + 0.1.0).
+  CANN 9.1.0-beta.1 exists (2026-05-15, login-gated) but won't help unless built from a fixed branch. Memory
+  `tilelang_bf16_three_verifier_layers`. Doc `workspace/task-dag-realdelta/BF16_VMUL_ROOTCAUSE.md`.
+- **Full 21-example re-sweep** (`workspace/task-dag-realdelta/TILELANG_OP_VALIDATION_TRACKER.md`): 14 PASS /
+  1 fixed (#96) / 2 bf16-blocked (#1199) / 1 partial (sparse_mla_bwd topk16 closed-bisheng) / 1 REAL BUG.
+  Notable: `lighting_indexer_bwd` NOW COMPILES (T33 P1.6 bishengir-compile failure resolved in current toolchain).
+- **NEW real bug — `miles_indexer_integration` dk garbage (8e33)**: ONLY in full fwd+topk+bwd integration;
+  8-hypothesis discriminator chain (index-order/inputs/repeat/sync/prior-bwd/fwd-exec/fwd-build/active-slot-prog)
+  ALL isolate CLEAN → cross-kernel NPU memory-state contamination, not open-layer fixable. → **issue tile-ai
+  #99** (GitHub, full evidence chain). **NOT a V4 blocker** (V4 prod uses CANN-native npu_sparse_lightning_indexer).
+  Memory `indexer_bwd_dk_cross_kernel_contamination`. Doc `workspace/task-dag-realdelta/DK_GARBAGE_BUG.md`.
+- A3 tlrescue has my rebuilt libtilelang*.so + bishengir-compile (bf16-verifier-widened) — harmless (fp16 path
+  unaffected, bf16 still hits closed hivmc). `.td` edits live in tlrescue submodule (not committed there; the PR
+  carries them on the fork).
+- **State**: tilelang validate-fix-PR mandate ACTIVE PHASE COMPLETE. Upstream artifacts: PR #96, PR #1199,
+  issues #97/#99/#253. Remaining = maintainer-time. V4 reduced-layer training loop already PASSES (below).
+
+## 🔖×11 TILELANG MANDATE: full suite validated, 2 bugs → 3 upstream artifacts (2026-06-02 ~08:40Z)
 
 Owner standing mandate (memory `project_tilelang_validate_fix_pr_standing_mandate`): autonomously validate every tilelang-ascend op, fix bugs, open PRs. **Active phase COMPLETE**:
 - **~24 tilelang-ascend example kernels triaged** — broadly healthy at default config (sparse_mla/indexer/flash_attn-fp16/rms_norm/layer_norm/gemm×2/gemv/exp2/log2/elementwise×6/engram×4/mixcv×2/vectorization/atomic_add/dynamic_shape variants all PASS).

@@ -52,6 +52,8 @@ deprecated_after: ""
 
 # cross-layer-012 — V4 RL weight-sync: tensor (attention-only), not disk
 
+> **2026-06-05 re-baseline (M2)**: 独立 agent 对最新 miles main 校对——本条引用的 `DeepseekV2MoE`/`first_k_dense_replace`/`update_weights_from_*` 均 **sglang-side**,机制级,最新 miles 未与之冲突。**仍适用,无需改**。
+
 ## Why this matters
 
 This is the single trick that turns "V4 generate() works on NPU" into "V4 RL

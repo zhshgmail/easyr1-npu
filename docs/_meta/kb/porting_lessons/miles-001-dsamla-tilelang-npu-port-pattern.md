@@ -41,11 +41,23 @@ evidence:
 
 # miles-001 — DSAMLA tilelang NPU port pattern
 
+> **⚠️ 2026-06-05 re-baseline (M1) — ROUTE DOWNGRADED TO FALLBACK.** This tilelang-port
+> route is **no longer the preferred path**. M1 verified (independent agent, zero REFUTED)
+> that **CANN-native (torch_npu) covers the full DSAMLA op family fwd+bwd**
+> (`npu_nsa_select_attention(+_grad)` / `npu_nsa_compress_attention(+_grad)` /
+> `npu_lightning_indexer(+_grad)` / `npu_rms_norm(+_backward)` / `npu_mla_prolog_v3`).
+> **Preferred route = `miles-002` (CANN-native-first).** Use THIS tilelang-port pattern
+> only as a **fallback** for ops CANN genuinely can't lower (none in the current core set).
+> The "only path" / "alternatives don't cover all 4 ops" framing below is **stale** —
+> kept for the technique (head-split / UB-cap / R-KA-16 mitigations) which remains valid
+> if tilelang-port is ever needed. See `M1_LATEST_MILES_USECASE_UPSTREAM_MAP_2026-06-05.md`.
+
 ## Why this matters
 
-This PR (#1246) is the only path for getting miles running on NPU as a tilelang-based stack. Without the port:
-- miles dispatcher falls back to CPU; no NPU acceleration
-- alternative routes (Huawei `npu_lightning_indexer.cpp` + `triton_indexer_bf16.py`) are still in development and don't cover all 4 ops
+This PR (#1246) was the tilelang-based route for getting miles running on NPU. As of the
+2026-06-05 re-baseline it is a **fallback**, not the only path (see banner above). Historical framing:
+- without an NPU backend, miles dispatcher falls back to CPU; no NPU acceleration
+- ~~alternative routes don't cover all 4 ops~~ — **superseded**: CANN-native now covers all of them fwd+bwd (M1/miles-002)
 
 ## Decision: tilelang port vs Huawei fused-op route
 

@@ -1,0 +1,66 @@
+diff --git a/src/target/codegen_npuir_api.cc b/src/target/codegen_npuir_api.cc
+index 065790d..45a3971 100644
+--- a/src/target/codegen_npuir_api.cc
++++ b/src/target/codegen_npuir_api.cc
+@@ -500,6 +500,16 @@ mlir::Type CodeGenTileLangNPUIRAPI::DTypetoMLIRType(DataType t) { // NOLINT(*)
+     return builder.getNoneType();
+   }
+   bool fail = false;
++  // T32.11: FP8 (e4m3fn / e5m2) — map to MLIR float8 types. The fork's MLIR
++  // has no FP4 builder, so float4 is left unhandled (falls to FATAL below).
++  if (t.is_float8_e4m3fn()) {
++    if (t.is_scalar()) return builder.getFloat8E4M3FNType();
++    return mlir::NoneType();
++  }
++  if (t.is_float8_e5m2()) {
++    if (t.is_scalar()) return builder.getFloat8E5M2Type();
++    return mlir::NoneType();
++  }
+   if (t.is_float()) {
+     switch (t.bits()) {
+     case 16:
+@@ -1368,8 +1378,16 @@ void CodeGenTileLangNPUIRAPI::AscendCopyCodegen(const CallNode *op) {
+     mlir::Value dst =
+         GenRankReducedSubviewFromRegion(npuirop.dst, npuirop.dst_range);
+     mlir::UnitAttr dst_continuous = builder.getUnitAttr();
+-    builder.create<mlir::hivm::ND2NZOp>(
+-        builder.getUnknownLoc(), mlir::TypeRange{}, src, dst, dst_continuous);
++    // T32.10 fix: tensor dst => value-semantics ND2NZOp + rebind (see Nd2NzCodegen).
++    if (dst.getType().isa<mlir::TensorType>()) {
++      auto nd2nzOp = builder.create<mlir::hivm::ND2NZOp>(
++          builder.getUnknownLoc(), mlir::TypeRange{dst.getType()}, src, dst,
++          dst_continuous);
++      var_map_[npuirop.dst->data.get()] = nd2nzOp->getResult(0);
++    } else {
++      builder.create<mlir::hivm::ND2NZOp>(
++          builder.getUnknownLoc(), mlir::TypeRange{}, src, dst, dst_continuous);
++    }
+     return;
+   }
+ 
+@@ -1780,11 +1798,22 @@ void CodeGenTileLangNPUIRAPI::Nd2NzCodegen(const CallNode *op) {
+ 
+   // gen hivm.hir.nd2nz
+   mlir::Location unknown_loc = builder.getUnknownLoc();
+-  mlir::TypeRange res = {};
+   mlir::UnitAttr dst_continuous =
+       npuirop.dst_continuous ? builder.getUnitAttr() : mlir::UnitAttr();
+-  builder.create<mlir::hivm::ND2NZOp>(unknown_loc, res, src, dst,
+-                                      dst_continuous);
++  // T32.10 fix: ND2NZOp is a DestinationStyleOpInterface op. When dst is a
++  // TENSOR (value semantics — the AllocateNode tensor::EmptyOp path), the
++  // verifier requires exactly 1 tensor result matching the tensor output
++  // operand. Emit the value-returning form and rebind dst in var_map_ so
++  // downstream (mmadL1) consumes the filled tensor. memref dst keeps 0-result.
++  if (dst.getType().isa<mlir::TensorType>()) {
++    auto nd2nzOp = builder.create<mlir::hivm::ND2NZOp>(
++        unknown_loc, mlir::TypeRange{dst.getType()}, src, dst, dst_continuous);
++    var_map_[npuirop.dst->data.get()] = nd2nzOp->getResult(0);
++  } else {
++    mlir::TypeRange res = {};
++    builder.create<mlir::hivm::ND2NZOp>(unknown_loc, res, src, dst,
++                                        dst_continuous);
++  }
+ }
+ 
+ void CodeGenTileLangNPUIRAPI::Nz2NdCodegen(const CallNode *op) {

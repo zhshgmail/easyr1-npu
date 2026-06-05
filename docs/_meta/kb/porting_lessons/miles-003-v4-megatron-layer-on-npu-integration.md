@@ -112,10 +112,16 @@ shim. (rms_norm itself is bit-exact native; the gap is purely the call signature
 
 ### (3) TransformerLayer contract needs `(output, None)` return ⚠️ walkaround (contract alignment)
 
+> **⚠️ 2026-06-05 re-baseline (M2, 独立 agent 验证) — STALE on latest main.** 此 wall 诊断于旧版 miles。
+> 最新 `radixark/miles` main 的 `DeepSeekV4Attention.forward`(`deepseek_v4.py:211`)直接 **return 裸 tensor**
+> (`:318`),且集成已改走 `experimental_attention_variant`/`get_dsv4_spec`(`:331-352`)——`return output, None`
+> 这个串 **在 main 历史里从未存在**(`git log -S` 实证)。本 patch recipe 对最新 main **不适用**;保留作旧版历史记录。
+> 最新版的层契约对接由 spec-provider 路处理,不需手 patch forward 返回 tuple。
+
 Megatron's `TransformerLayer` plumbing expects each attention submodule to return
 `(output, bias)`. V4's `DeepSeekV4Attention.forward` returned a bare tensor, so the surrounding
 layer crashed. Patch `DeepSeekV4Attention.forward` to return `(output, None)`. This is a
-miles-side contract alignment (miles PR target), not an NPU issue at all.
+miles-side contract alignment (miles PR target), not an NPU issue at all. *(历史:旧版 miles;见上方 re-baseline 注。)*
 
 ### (4) Megatron-LM-miles all_reduce_grad_fp32 kwarg-skew fork patch ⚠️ walkaround → PR-ready
 
@@ -142,10 +148,18 @@ workstream, not a flash/attention defect.
 
 ## The production-worthy fix: all-masked-row softmax stability ✅ production
 
+> **⚠️ 2026-06-05 re-baseline (M2, 独立 agent 验证) — patch 目标函数已不在最新 main 的 wired path。**
+> 此修复针对旧版的 `sparse_attn_torch`。最新 main **已无 `sparse_attn_torch`**(`git grep` 无匹配),
+> 改走 `sparse_attn_tilelang` → `DeepSeekV4SparseAttention` autograd Function → `sparse_mqa_fwd_interface`
+> (softmax 现在在 tilelang kernel 内部 `tilelang_sparse_mla_fwd.py`)。**all-masked-row 的数值稳定性
+> 教训本身仍有效**(任何 masked-softmax 都该防 `-inf - -inf = NaN`),但下面的 `sparse_attn_torch` 具体落点
+> 已过时;若最新版要在 NPU 复现,稳定性应落在 CANN-native `npu_nsa_select_attention` 的调用层或其等价路。
+> 这条 NaN 根因(282→7→0)是旧版减层 bwd 的真实发现,保留作记录 + 通用教训。
+
 This one is genuinely PR-worthy, not a walkaround. At layer count >= 2 the 2-layer backward
 produced NaN. Root cause: `sparse_attn_torch` masked softmax hits **all-masked rows** — every
 entry in the row is masked, so `scores_max` is `-inf`, and `scores - scores_max` becomes
-`-inf - (-inf) = NaN`; `exp` of large positive args also overflows.
+`-inf - (-inf) = NaN`; `exp` of large positive args also overflows. *(历史:旧版 `sparse_attn_torch`;见上方 re-baseline 注。)*
 
 Fix (standard masked-softmax guard, applied in `sparse_attn_torch`):
 

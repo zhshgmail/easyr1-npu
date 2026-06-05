@@ -35,7 +35,7 @@ verified_on:
 unverified_on:
   - "whether the same sub-16-head padding bug affects other tilelang-ascend attention examples (flash_attn_npuir / fp8_indexer) — only sparse_mla_fwd tested"
   - "whether a newer tilelang-mlir-ascend revision fixes it"
-deprecated_after: ""
+deprecated_after: ""  # FIXED 2026-06-02 (fork blue/fix/sparse-mla-heads-lt-block-h a19acd5): bound output store to valid head rows; heads=4/8/16/32 all PASS
 ---
 
 # tilelang-003 — sparse_mla_fwd silently wrong at heads < 16

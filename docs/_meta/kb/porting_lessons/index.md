@@ -33,7 +33,7 @@ Worker / 用户先 grep 这一节按关键词找到 cookbook ID,然后跳到 [§
 | `T.vbrc.*rank check`, vbrc raw int, tilelang vbrc literal, vbrc rank-0 mismatch | `tilelang-002` | P-CONF-1 |
 | container NPU invisible, host npu-smi OK container empty, `uda_occupy_dev_by_ns`, Ray raylet zombie, NPU ns lock | `cross-layer-011` | P-CONF-2 |
 | `ASCEND_RT_VISIBLE_DEVICES=1`, single chip filter, container device_count=0, davinci single mount, RT_VISIBLE id-vs-count confusion | `cross-layer-009` | P-ENV-3 |
-| miles DSAMLA, lighting_indexer port, sparse_mla port, NPU tilelang dispatcher, `q.is_npu`, miles 4 算子 NPU port | `miles-001` | P-API-3 |
+| miles DSAMLA, lighting_indexer port, sparse_mla port, NPU tilelang dispatcher, `q.is_npu`, miles 4 算子 NPU port | `miles-001` ⚠️**FALLBACK**(CANN-native 优先→`miles-002`;2026-06-05 M1 降级) | P-API-3 |
 | DeepseekV4ForCausalLM on NPU, AscendAttnBackend missing V4 hooks, forward_c4_indexer / forward_core_compressor / store_cache stub, V4 KV pool get_key_buffer NotImplementedError, npu_clipped_swiglu, V4 RoPE interleaved-complex vs rotate-half | `sglang-004` | (V4) |
 | V4 generate() hang, scheduler IPC hang, PrefillAdder NO_TOKEN, _swa_budget_for_req, swa_full_tokens_ratio, SWA pool 256 slots, [RR] vs [SCHED-LOOP] contradiction | `sglang-005` | (V4) |
 | V4 training ops CANN-native, npu_nsa_select_attention, npu_lightning_indexer, npu_nsa_compress_attention, npu_mla_prolog_v3, probe dir(torch_npu) before op-gen, DeepSeek-family sparse-MLA native | `miles-002` | (V4) |
@@ -106,6 +106,6 @@ Worker / 用户先 grep 这一节按关键词找到 cookbook ID,然后跳到 [§
 
 ### miles
 
-- [`miles-001-dsamla-tilelang-npu-port-pattern.md`](miles-001-dsamla-tilelang-npu-port-pattern.md) — **P-API-3**. miles 4 个 DSAMLA tilelang 算子(lighting_indexer_fwd/bwd、sparse_mla_fwd/bwd)在 NPU 上的 port 模式:dispatcher hook + per-op layout(head split, block_size, UB cap, R-KA-16 mitigation)。PR radixark/miles#1246。
+- [`miles-001-dsamla-tilelang-npu-port-pattern.md`](miles-001-dsamla-tilelang-npu-port-pattern.md) — **P-API-3**. ⚠️**2026-06-05 M1 降级为 FALLBACK**(CANN-native 全覆盖 fwd+bwd,优先走 `miles-002`;本条仅作 CANN 无 native 时的 tilelang-port 技术参考)。miles 4 个 DSAMLA tilelang 算子(lighting_indexer_fwd/bwd、sparse_mla_fwd/bwd)在 NPU 上的 port 模式:dispatcher hook + per-op layout(head split, block_size, UB cap, R-KA-16 mitigation)。PR radixark/miles#1246。
 - [`miles-002-v4-training-ops-cann-native-first.md`](miles-002-v4-training-ops-cann-native-first.md) — **(V4)**. 核心纠正:V4 训练侧核心算子 CANN-native(sparse-MLA→`npu_nsa_select_attention`、indexer→`npu_sparse_lightning_indexer_grad_kl_loss`、compressor→`npu_nsa_compress_attention`、MLA→`npu_mla_prolog_v3`、rms→`npu_rms_norm`),只有 hash-coding sinkhorn + act_quant 真缺 native 需 op-gen。op-gen 前先 `probe dir(torch_npu)` 查 nsa/mla/sparse/lightning。推翻"6 个 tilelang kernel 都要手写"的早期误判(5 CANN-native + 2 op-gen)。
 - [`miles-003-v4-megatron-layer-on-npu-integration.md`](miles-003-v4-megatron-layer-on-npu-integration.md) — **(V4)**. 真 `DeepSeekV4Attention` megatron layer(+ 减层 1-2 层 TransformerBlock)在 NPU 上 fwd+bwd+optimizer.step 的集成 walkaround:MindSpeed `core_r0.16.0`(import adaptor 优先)、`npu_rms_norm` shim(match gamma dtype + drop args)、`(output,None)` TransformerLayer 契约、`all_reduce_grad_fp32` 未提交 patch、full miles pkg 依赖;production-worthy 的 `sparse_attn_torch` all-masked-row softmax 稳定化(nan 282→7→0)。单 61GB 芯片显存墙:1 层+AdamW 完整迭代 / 2 层 fwd+bwd / 更深要 TP/PP(分布式工程非算子问题)。减层是验证基线。

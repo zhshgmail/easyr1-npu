@@ -43,6 +43,8 @@ deprecated_after: ""
 
 # sglang-005 — V4 "scheduler IPC hang" is PrefillAdder SWA-budget starvation
 
+> **2026-06-05 re-baseline (M2)**: 独立 agent 对最新 miles main 校对——本条是 **sglang 推理侧**(PrefillAdder/SWA pool,sglang-internal),不依赖 miles。**对最新 miles 仍适用,无需改**。
+
 ## Why this matters
 
 This single misdiagnosis burned ~4 hours of an attempt. The hang *looked* exactly

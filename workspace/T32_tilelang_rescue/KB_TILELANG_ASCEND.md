@@ -1066,7 +1066,7 @@ dims in the reference. Run with M ≠ N test shape to expose latent bugs.
 Rules to apply BEFORE adding new code or accepting new kernels. Each
 captures a bug class we already burned hours debugging.
 
-### 12.1 Codegen-side rules (tilelang-mlir-ascend contributors)
+### 13.1 Codegen-side rules (tilelang-mlir-ascend contributors)
 
 | Rule | Why | Enforce |
 |------|-----|---------|
@@ -1077,14 +1077,14 @@ captures a bug class we already burned hours debugging.
 | **R-CG-5: any `vmul/vadd/vsub/...` codegen that uses `srcTensorTy = src.getType().cast<TensorType>()` MUST first check if src is actually a tensor or could be a scalar/memref; provide a scalar-arith fallback path** | §10.3.5 v9 fix — when both srcs are scalars (post-F1+v6), emit arith.mulf + insert instead of vmul | helper: `tryEmitScalarBinary(op, src0, src1, ...)` returning success/fallback |
 | **R-CG-6: keep `codegen_npuir_dev.cc::processImm` Scalar acceptance list IDENTICAL to `src/op/ascend.cc::NpuirOperand::FromExpr` Scalar branch — both must accept the same `expr.as<XXNode>()` types** | T32.15 regression: F1.2 patched DEV only; engram_bwd_exp broke in API mode | static check: both files' Scalar branches should grep-match the same list of `as<TypeNode>` |
 
-### 12.2 Loop-vectorize-side rules (npu_loop_vectorize.cc contributors)
+### 13.2 Loop-vectorize-side rules (npu_loop_vectorize.cc contributors)
 
 | Rule | Why | Enforce |
 |------|-----|---------|
 | **R-LV-1: when broadcasting a loop-invariant operand into a tmp buffer for binop vectorization, the tmp buffer shape MUST come from the LOOP iteration extent, not the buffer's full shape** | `CreateTempBuffer` blindly used `ref_buf->shape` (full 128x2) — over-allocated | rewrite `CreateTempBuffer` to take an explicit shape param derived from `output_ref` (the per-iter access shape) |
 | **R-LV-2: `IsScalar(expr)` test should accept loop-invariant BufferLoad (when explicitly checked against `loop_vars`)** | runtime scalar BufferLoads should route through "keep as PrimExpr" not "broadcast to tmp buffer" — see F1.1 | new helper `IsLoopInvariantScalarLikeExpr(expr, loop_vars)` already exists at line 678; expand usage to BufferLoad case |
 
-### 12.3 Kernel-author-side rules (people writing `examples/*.py`)
+### 13.3 Kernel-author-side rules (people writing `examples/*.py`)
 
 | Rule | Why | Enforce |
 |------|-----|---------|
@@ -1104,7 +1104,7 @@ captures a bug class we already burned hours debugging.
 | **R-KA-14 (OPEN, FILED upstream as [AscendNPU-IR#248](https://gitcode.com/Ascend/AscendNPU-IR/issues/248) 2026-05-27): NPU multi-block kernels with atomic_addx4 scatter produce NaN in the second+ grid block.** | T33.P1.6 lighting_indexer_bwd: at SEQ=1 (single grid block), dQ/dKV/dW all match autograd to 1e-5. At SEQ≥2, grid block 1+ produce NaN in dKV regardless of which kv indices they write to (tested with disjoint and overlapping index ranges). Hypothesis: shared-buffer or fragment-register stale state across grid blocks (`alloc_shared`/`alloc_fragment` lifetimes unclear across `T.Kernel` grid iterations on NPU). Workaround: call the kernel per-batch-element (matches miles' `batched_indexer_bwd` per-batch loop, so this is the natural shipping pattern). | Lint/audit: for kernels that use `T.Kernel(N, is_npu=True)` with N>1 grid blocks AND `atomic_addx4`/`atomic_add` scatter, smoke test at N=1 and N=2 separately. If results diverge at N=2, surface state likely isn't reset between blocks. |
 | **R-KA-15 (OPEN, FILED upstream as [AscendNPU-IR#249](https://gitcode.com/Ascend/AscendNPU-IR/issues/249) 2026-05-27): `atomic_addx4` with all-zero source buffer produces garbage values (magic constant 6e37) instead of being a no-op.** | T33.P2 lighting_indexer_bwd corner case: when the input Q tensor has all-non-positive values (e.g. all 0 or all -0.1), scores_relu = max(Q@K^T, 0) = 0 → mask = 0 → gated = grad * w * 0 = 0 → d_k = gated @ Q = 0. The atomic_addx4(dKV[idx], d_k_shared[i, 0:4], size=[4]) call should be a no-op (adding 0 to dKV). Instead it writes ~6e37 magnitude values. Confirmed deterministic: `all zeros` and `all -0.1` produce IDENTICAL garbage value `60405883577979550923416661670064291840.000000`. Skipping the atomic_addx4 call makes dKV stay 0 correctly. Reproduced in minimal kernel at standalone P1.6 level. | Workaround (wrapper-side): before calling the bwd kernel, host-side check if any input combination would lead to all-zero scores_relu (e.g. if all grad_scores are 0, OR if you can statically prove all scores ≤ 0). Skip the kernel call entirely. Lint/audit: any kernel doing atomic_addx4 in a "may-have-all-zero-src" path needs a wrapper-side short-circuit. |
 
-### 12.4 Test-design rules (test author / reviewer)
+### 13.4 Test-design rules (test author / reviewer)
 
 | Rule | Why | Enforce |
 |------|-----|---------|
@@ -1167,3 +1167,41 @@ AND 5 Developer-mode ops are in the regression list. Currently:
   atomic_add_dev, fp8_lighting_indexer (some)
 
 The `final_verification_v2.sh` script covers both modes.
+
+
+---
+
+## 13. Cold-drive 2026-06-03 — tilelang-on-A3 capability map + verified walls (T32 replay)
+
+This session drove the tilelang-mlir-ascend stack end-to-end on A3 (sgl_probe container, CANN 8.5.0) and cold-tested CANN 9.1.0-beta.1. Findings are verified (real NPU runs / real bishengir), with honest corrections logged.
+
+### 13.1 FP8 on A3 = HARDWARE limit, NOT software (★ conclusion-flipping, owner-confirmed)
+- 8.5.0 bishengir 0.1.0: fp8 tilelang kernel fails at `hivm.hir.store` verifier — "element type [list WITHOUT float8]". Looks like a software verifier allow-list omission.
+- The whole OPEN tilelang stack was fixable and I fixed it: TVM `String2DLDataType` (add `float8_e4m3fn/e4m3/e5m2/float4_e2m1fn` parse — watch substr length, `float8_e4m3fn` is 13 chars), `DTypetoMLIRType` in `codegen_npuir_api.cc` (fp8 → `getFloat8E4M3FNType()/getFloat8E5M2Type()`; fork MLIR has NO Float4 builder → fp4 unmapped). After these, tilelang emits valid `f8E4M3FN` MLIR.
+- Upstream AscendNPU-IR master added float8 to StoreOp `OperElemTypeConstraints` (merged 2026-01-20, commit 3ea05c9). Vendored copy (31f69036, 2026-01-14) + container bishengir (built 2026-01-16) both predate it by days.
+- **CANN 9.1.0-beta.1 bishengir 1.1.0 (built 2026-05-09) on the same fp8 npuir → NEW error: `'hivm.hir.store' op Current hardware doesn't support fp8 type`.** Verifier now ACCEPTS fp8 (allow-list fixed) but the HARDWARE-capability check rejects it: **A3 (V220/910_9382) has no fp8 hardware.** Owner confirmed: "a3 上本来就没有 fp8 的支持".
+- → **act_quant / fp8_gemm / fp4 fp8-paths cannot run on A3 — period. A5 (arch35) is the fp8 target** (9.1.0 image ships `bishengir-compile-a5` / `hivmc-a5`). My open-layer fp8 fixes are correct + reusable but insufficient on A3.
+- **Why CANN-native path has no fp8 problem**: V4 CANN-native ops (npu_nsa_select_attention / npu_sparse_lightning_indexer / npu_rms_norm) run bf16/fp16, NOT fp8; fp8 quant is a perf-opt the CANN path skips on A3. The fp8 wall is specific to the tilelang path *choosing* to emit fp8 kernels.
+- **LESSON**: cold-test the real backend before concluding a wall is software-fixable. Every software layer pointed to "newer CANN fixes fp8 on A3"; the hardware was the real floor — only running 9.1.0 bishengir surfaced it.
+
+### 13.2 BUILD-TARGET TRAP — runtime loads libtilelang_module.so, NOT libtilelang.so (★ time-sink)
+- The device codegen (`DTypetoMLIRType`, `Nd2NzCodegen`, etc.) is compiled into **`libtilelang_module.so`** — verified via `/proc/self/maps` (runtime loads `libtilelang_module.so` + `libtilelangir.so`, not `libtilelang.so`). `nm -C libtilelang_module.so | grep DTypetoMLIRType` = 4 symbols.
+- `make tilelang` rebuilds `libtilelang.so` (WRONG — never loaded). Correct: **`make -j tilelang_module`**. Also needed: `ln -sf /usr/lib/x86_64-linux-gnu/libzstd.so.1 /usr/lib/x86_64-linux-gnu/libzstd.so` (link needs the dev symlink, missing in sgl_probe); and symlink `/usr/bin/cmake` to the Makefile's hardcoded pip-cmake path if it 's gone.
+- **Consequence**: codegen edits "tested" against `libtilelang.so` rebuilds never load → false negatives. Verify a codegen edit is live by `strings libtilelang_module.so | grep <your-marker>` or a `llvm::errs()` probe, before concluding a fix didn't work.
+
+### 13.3 Codegen path routing: Expert (API) vs Developer (DEV) — `lower.py:170`
+- `TILELANG_ASCEND_MODE` None/expert/exp/e → **API codegen** (`tilelang_npuir_apis`, DEFAULT). Anything else (e.g. "Developer") → **DEV codegen** (`tilelang_npuir_dev`).
+- gemm/attention examples (matmul, sparse_mla_fwd) compile + run + numerically PASS on the **API/expert path** on the stock fork — they are NOT broken on A3. (Earlier "gemm/Cube can't compile" was a wrong-mode artifact from testing in Developer mode.)
+
+### 13.4 #100 PassManager segfault — tilelang-fork in-process bug, CANN-INDEPENDENT
+- Larger vector kernels (full sinkhorn single-kernel, sparse_attn) SIGSEGV in the in-process MLIR pass pipeline: `tladapter/utils.py:103 Pipeline.run` (C++ PassManager FFI), BEFORE npuir emission → NOT a bishengir/CANN issue; a CANN upgrade does NOT fix it. Filed as tile-ai/tilelang-mlir-ascend#100.
+- **Workaround (verified BUILT OK + NUMERIC PASS on NPU)**: multi-launch decomposition — split into ≤2-3-iteration sub-kernels, host-loop. sinkhorn(iters=20) = 1 softmax-kernel + host-loop a 3-iter kernel. Numerics vs torch 8.9e-8.
+
+### 13.5 Perf: tilelang vs CANN (= torch_npu) on A3, real NPU
+- "torch_npu" baseline dispatches to CANN aclnn → tilelang-vs-torch ≡ tilelang-vs-CANN.
+- **vector (sinkhorn)**: naive 1-iter-multi-launch 0.06–0.45× CANN (launch tax); **3-iter-batched 0.17–1.15×** (N≤1024 matches/beats CANN; N=4096 still 0.17× = global round-trip bound, needs #100 single-kernel fix).
+- **gemm (matmul M1024N512K2048 fp16)**: 0.13× CANN (basic-tiling example vs Huawei hand-tuned Cube gemm). Numerically correct.
+- → tilelang on A3 is FUNCTIONALLY viable (compile+run+numerically-correct) across fp32/fp16/bf16 vector+gemm; NOT perf-competitive vs CANN yet (untuned + #100). Real tilelang value = CANN-uncovered ops + fusion + miles alignment, not "beat CANN".
+
+### 13.6 NPU-idiom vs GPU-idiom (kernel authoring) — see memory tilelang_npu_idiom_vs_gpu_idiom
+- GPU idiom (`alloc_fragment`/`threads=`/scalar `T.Parallel` writes) → lowers to unroutable `zero`-scope copies. NPU idiom (`alloc_ub`/`alloc_shared` + `T.Kernel(n, is_npu=True)` 2-tuple + block intrinsics `vadd/vsub/vmul/vdiv/vexp/reduce_max/reduce_sum/npuir_transpose` + Python `range()` unroll) BUILDS. Reference: `examples/vectorization_in_parallel.py`, `norm/example_rms_norm.py`, `gemm/matmul.py` — NOT the deepseek_v4/inference/kernel.py (targets newer tilelang, uses unsupported GemmWarpPolicy/float8/T.gemm-transpose_B).

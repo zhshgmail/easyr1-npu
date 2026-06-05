@@ -1,0 +1,32 @@
+diff --git a/include/tvm/runtime/data_type.h b/include/tvm/runtime/data_type.h
+index adcf87624..387dc16b8 100644
+--- a/include/tvm/runtime/data_type.h
++++ b/include/tvm/runtime/data_type.h
+@@ -447,6 +447,27 @@ inline DLDataType String2DLDataType(std::string s) {
+   } else if (s.substr(0, 4) == "uint") {
+     t.code = kDLUInt;
+     scan = s.c_str() + 4;
++  } else if (s.substr(0, 13) == "float8_e4m3fn") {
++    t.code = DataType::kFloat8_e4m3fn;
++    t.bits = 8;
++    scan = s.c_str() + 13;
++  } else if (s.substr(0, 11) == "float8_e4m3") {
++    // PyTorch/mainline-TVM naming (fork's older convention is "e4m3_float8").
++    t.code = DataType::kFloat8_e4m3fn;
++    t.bits = 8;
++    scan = s.c_str() + 11;
++  } else if (s.substr(0, 11) == "float8_e5m2") {
++    t.code = DataType::kFloat8_e5m2;
++    t.bits = 8;
++    scan = s.c_str() + 11;
++  } else if (s.substr(0, 13) == "float4_e2m1fn") {
++    t.code = DataType::kFloat4_e2m1fn;
++    t.bits = 4;
++    scan = s.c_str() + 13;
++  } else if (s.substr(0, 11) == "float4_e2m1") {
++    t.code = DataType::kFloat4_e2m1fn;
++    t.bits = 4;
++    scan = s.c_str() + 11;
+   } else if (s.substr(0, 5) == "float") {
+     t.code = kDLFloat;
+     scan = s.c_str() + 5;

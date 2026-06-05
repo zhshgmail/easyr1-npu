@@ -47,6 +47,8 @@ deprecated_after: ""
 
 # sglang-004 — V4 AscendAttnBackend hook gaps + V4 KV-pool NotImplementedError
 
+> **2026-06-05 re-baseline (M2)**: 独立 agent 对最新 `radixark/miles` main 校对——本条是 **sglang 推理侧**(pin 2026-06-01 sglang trunk),不依赖 miles 内部;`git grep` 确认其符号不在 miles_plugins。**对最新 miles 仍适用,无需改**。
+
 ## Why this matters
 
 `DeepseekV4ForCausalLM` exists in sglang trunk (deepseek_v4.py, ~2259 lines, `EntryClass=[DeepseekV4ForCausalLM]`),
