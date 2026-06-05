@@ -59,10 +59,19 @@ Reduced/small NSA shapes (constraints honored: D_qk=192, D_v=128, sbs=64, sbc=16
 
 → **All 3 core DSv4 attention/indexer ops RUN on A3 via CANN-native.** The hardest (sparse-MLA) has full fwd+bwd. This proves CANN-native feasibility (owner's "尽快跑完" gate). NOT yet done = numerical-vs-reference comparison, attn_sink adaptation, compress/indexer bwd, dispatcher wiring, full UT → those are the PR-bar productionization (bigger than a quick test).
 
-## Remaining M3 (next)
+## Honest follow-up findings (2026-06-05, same A3 session)
 
-- ~~bwd (sparse-MLA)~~ ✅ done.
-- compress/indexer bwd; indexer param-tune for clean values; attn_sink adaptation; numerical-vs-torch-reference; dispatcher wiring + UT + e2e report → PR-bar.
+- **compress bwd op NAME**: `npu_nsa_compress_attention_grad` does NOT exist (schema=None). The compress backward is a DIFFERENT op name — `npu_nsa_compress_grad` is in `dir(torch_npu)` (per M1 scan) → that's the bwd to use, NOT `_attention_grad`. (Not yet run; name corrected for the dispatcher.)
+- **indexer values still non-finite after param-tune (UNRESOLVED, honest)**: re-ran `npu_lightning_indexer` with `sparse_count=S=128` + `return_value=True` → out[0] indices `(1,128,1,128)int32` **finite ✓**, but out[1] values `(1,128,1,128)bf16` **STILL finite=False**. So my earlier "param artifact" hypothesis was only partly right — tuning sparse_count did NOT fix the values. Root cause unresolved (candidates: weights shape/semantics wrong, value-output unfilled-slot semantics, or a real issue). **Do NOT claim "indexer fwd numerically OK"** — only "runs + indices finite". The indices (the downstream-used selection output) are valid; the values output needs proper investigation before any correctness claim.
+- **indexer grad schema** (captured): `npu_lightning_indexer_grad(query, key, dy, sparse_indices, weights, actual_seq_lengths_query=None, actual_seq_lengths_key=None, layout="BSND", sparse_mode=3, pre_tokens, next_tokens) -> (Tensor,Tensor,Tensor)`.
+
+## Remaining M3 → PR-bar (NOT "quick test" — bigger, scope-check with owner)
+
+- ~~sparse-MLA fwd+bwd~~ ✅ | ~~compress fwd~~ ✅ | ~~indexer fwd (indices)~~ ✅
+- compress bwd (`npu_nsa_compress_grad` — corrected name); indexer values root-cause; indexer bwd.
+- **attn_sink adaptation layer** (the confirmed #1 real engineering point).
+- **numerical-vs-reference** (vs latest-main tilelang GPU kernel or a careful torch naive — beware false-mismatch from a wrong hand-reference).
+- dispatcher wiring (q.is_npu) + high-coverage UT + e2e report → PR-bar; then independent-agent verify.
 - attn_sink adaptation (finding #2) + numerical check vs the latest-main tilelang reference (GPU) or a torch naive.
 - compress (`npu_nsa_compress_attention`) + indexer (`npu_lightning_indexer`) same drill.
 - dispatcher wiring (q.is_npu) + UT + full e2e report → PR-bar.
