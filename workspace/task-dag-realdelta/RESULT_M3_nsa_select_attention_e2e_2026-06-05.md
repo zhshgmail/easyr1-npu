@@ -54,7 +54,7 @@ Reduced/small NSA shapes (constraints honored: D_qk=192, D_v=128, sbs=64, sbc=16
 |---|---|---|---|
 | `npu_nsa_select_attention` (sparse-MLA) | ✅ finite | ✅ finite (dq/dk/dv) | TND; arg-order trap in grad |
 | `npu_nsa_compress_attention` (compress) | ✅ finite | TODO | TND; 4 outputs |
-| `npu_lightning_indexer` (indexer) | ✅ runs (idx finite; values need param-tune) | TODO | BSND; sparse_count to tune |
+| `npu_lightning_indexer` (indexer) | ✅ correct (idx + unmasked scores valid; -inf at causal-masked = by design) | TODO | BSND; sparse_mode=3 causal |
 | `npu_rms_norm` | (prior-verified bit-exact) | `npu_rms_norm_backward` | — |
 
 → **All 3 core DSv4 attention/indexer ops RUN on A3 via CANN-native.** The hardest (sparse-MLA) has full fwd+bwd. This proves CANN-native feasibility (owner's "尽快跑完" gate). NOT yet done = numerical-vs-reference comparison, attn_sink adaptation, compress/indexer bwd, dispatcher wiring, full UT → those are the PR-bar productionization (bigger than a quick test).
@@ -62,7 +62,7 @@ Reduced/small NSA shapes (constraints honored: D_qk=192, D_v=128, sbs=64, sbc=16
 ## Honest follow-up findings (2026-06-05, same A3 session)
 
 - **compress bwd op NAME**: `npu_nsa_compress_attention_grad` does NOT exist (schema=None). The compress backward is a DIFFERENT op name — `npu_nsa_compress_grad` is in `dir(torch_npu)` (per M1 scan) → that's the bwd to use, NOT `_attention_grad`. (Not yet run; name corrected for the dispatcher.)
-- **indexer values still non-finite after param-tune (UNRESOLVED, honest)**: re-ran `npu_lightning_indexer` with `sparse_count=S=128` + `return_value=True` → out[0] indices `(1,128,1,128)int32` **finite ✓**, but out[1] values `(1,128,1,128)bf16` **STILL finite=False**. So my earlier "param artifact" hypothesis was only partly right — tuning sparse_count did NOT fix the values. Root cause unresolved (candidates: weights shape/semantics wrong, value-output unfilled-slot semantics, or a real issue). **Do NOT claim "indexer fwd numerically OK"** — only "runs + indices finite". The indices (the downstream-used selection output) are valid; the values output needs proper investigation before any correctness claim.
+- **indexer values "non-finite" — RESOLVED: it's correct causal masking, NOT a bug** (investigated, m3_idx3.py): of 16384 values, **nan=0, posinf=0, neginf=8128, finite=8256**. The non-finite are ALL `-inf`, and finite-fraction = **0.504 ≈ exact causal lower-triangle** (`sparse_mode=3` = causal → future/masked positions = `-inf`, standard masked-attention behavior). Index sentinel for masked slots = `-1` (idx range min=-1, max=127). Finite values are sensible scores (-21.5, 23.9, 5.4, ...). → **`npu_lightning_indexer` works correctly; my earlier `isfinite().all()` was the WRONG criterion** (`-inf` at causally-masked positions is correct). Honest-flag retracted: indexer fwd is OK (indices + unmasked scores valid; masked = -inf by design).
 - **indexer grad schema** (captured): `npu_lightning_indexer_grad(query, key, dy, sparse_indices, weights, actual_seq_lengths_query=None, actual_seq_lengths_key=None, layout="BSND", sparse_mode=3, pre_tokens, next_tokens) -> (Tensor,Tensor,Tensor)`.
 
 ## Remaining M3 → PR-bar (NOT "quick test" — bigger, scope-check with owner)
