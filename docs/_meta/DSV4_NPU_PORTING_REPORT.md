@@ -2,7 +2,9 @@
 
 **版本**:2026-06-04 ·  **目标平台**:Ascend 910C(A3,SOC `Ascend910_9382`,CANN 8.5.2;9.1.0-beta.1 复用基座已验证,见 §三.3) ·  **基线**:减层(1–2 层)
 
-> **2026-06-04 增补**:新增 §三.3 末「tilelang-port PoC + 性能 + fp8 修正 + CANN 9.1.0-beta.1 验证」+ §八「miles DSv4 训练精度与 fp8 范式」。核心新结论:(1) tilelang-on-A3 vector+gemm 均能编+真 NPU run+数值对(API 路径),perf vector batched 0.17–1.15× / gemm 0.13× 未调优;(2) **fp8 = A3 硬件墙**(软件栈已打通,墙在芯片);(3) miles 训练 bf16 高精、量化仅 rollout 侧、QAT env 默认关;(4) CANN 9.1.0-beta.1 torch_npu ABI ✅ 但 bishengir gemm 回归 ⚠️ 且不修 #100;(5) issue #100 已提。
+> **2026-04 增补**:新增 §三.3 末「tilelang-port PoC + 性能 + fp8 修正 + CANN 9.1.0-beta.1 验证」+ §八「miles DSv4 训练精度与 fp8 范式」。核心结论:(1) tilelang-on-A3 vector+gemm 均能编+真 NPU run+数值对(API 路径);(2) **fp8 = A3 硬件墙**;(3) miles 训练 bf16 高精、量化仅 rollout 侧;(4) CANN 9.1.0-beta.1 torch_npu ABI ✅ 但 bishengir gemm 回归 ⚠️;(5) issue #100 已提。
+>
+> **2026-06-05 增补(基于最新 miles 重新基线)**:新增 §九。M1/M2/M4 完成(均独立 agent 验证)。**核心转向:最新 `radixark/miles` main 的 DSv4 plugin 纯 GPU 无 NPU;torch_npu CANN-native 覆盖全部核心算子 fwd+bwd → NPU 运行层走 CANN-native,不逐个 tilelang re-port**(miles-001 cookbook 已降级 FALLBACK)。**M3(§9.4):3 个核心算子(sparse-MLA fwd+bwd / compress fwd / indexer fwd)A3 真机验证 PASS**(reduced+watchdog,HBM 未扰);attn_sink 适配是唯一真工程点(native 签名无 attn_sink)。未达 PR-bar 的产品化待 owner 节奏。
 
 > **适用范围**:本报告覆盖 **DeepSeek-V4-Flash**(4096 隐藏维 / 43 层 / 64 头 / 256 专家)。同系列的 **V4-Pro**(7168 / 61 / 128 / 384,更大)尚未做对应移植,差异与计划见附录 A。
 
@@ -435,9 +437,25 @@ M1 实测(独立 agent 验证零 REFUTED):**torch_npu(2.9.0)native 覆盖最新 
 - `sglang-004/005`、`cross-layer-012/013`:独立 agent 确认对最新 miles **仍适用**。
 - `UPSTREAM_FORKS.md`:新增 miles 行(115-commit gap + CANN-native 决策)。
 
-### 9.4 待办(M3/M5)
+### 9.4 M3 — CANN-native 算子 A3 真机验证(2026-06-05,reduced+watchdog,PASS)
 
-- **M3(需 A3)**:在最新 main 建分支,DSv4 dispatcher 接 CANN-native,A3 单算子 e2e(fwd+bwd 数值对),达 PR-bar。当前 A3 被他人 job 占,按排期。
+owner 授权用共享 A3(减层 + HBM watchdog)尽快验。复用现有 `miles_v4_npu` 容器(持 davinci0、torch_npu 2.9.0,避开新建容器 UDA ns-锁)。HBM 全程 3124MB 基线、watchdog 未触发(不扰他人 job)。**三个核心 DSv4 算子 CANN-native 在 A3 真机跑通:**
+
+| 算子 | fwd | bwd | 证据 |
+|---|---|---|---|
+| `npu_nsa_select_attention`(sparse-MLA) | ✅ finite(attn (64,4,128)) | ✅ finite(dq/dk/dv) | TND layout;返回 softmax max/sum 作 bwd state |
+| `npu_nsa_compress_attention`(compress) | ✅ finite(4 输出) | 待(op 名 = `npu_nsa_compress_grad`,非 `_attention_grad`) | TND |
+| `npu_lightning_indexer`(indexer) | ✅ 正确(indices + 未掩码分数有效;-inf 为 mode-3 causal 掩码、非 bug) | 待(`npu_lightning_indexer_grad`) | BSND |
+
+**三个硬发现(真机实测,供 dispatcher / 后续 PR):**
+1. 精确 op schema 已全部抓取(sparse_mla/compress/indexer 的 fwd+grad)——见 `RESULT_M3_nsa_select_attention_e2e_2026-06-05.md`。
+2. **`attn_sink` 风险确认为真**:native `npu_nsa_select_attention` 签名**无 attn_sink 入参**(只有 atten_mask),而最新 main `sparse_mqa_fwd_interface` 要传 `attn_sink[H]`。→ M3 真正工程点 = attn_sink 适配层(把 sink 并进返回的 softmax max/sum 重算分母)。
+3. 两个坑:grad arg-order(错序报 561103 "Cannot find bin" 假象);indexer mode-3 causal `-inf` 是正确掩码(`isfinite().all()` 是错判据)。
+
+**M3 状态**:**核心可行性已真机坐实**(DSv4 NPU 走 CANN-native 可行,sparse-MLA 训练路 fwd+bwd 全通)。**未达 PR-bar**:compress/indexer bwd、attn_sink 适配、vs-参考数值对、dispatcher 接线 + 高覆盖 UT + e2e 报告——这些是产品化(多小时),待 owner 定节奏 / 内网 agent 接(handoff doc `M3_HANDOFF_FOR_INTRANET_AGENT.md`)。
+
+### 9.5 待办(M5)
+
 - **M5(需 owner 二次确认)**:upstream 贡献整理——DSv4 NPU dispatcher 路是该提给 `radixark/miles` 的(upstream DSv4 = GPU-only,缺 NPU 路)。按 `feedback_pr_quality_bar` 充分验证后再提,不自动 PR。
 
 ---
