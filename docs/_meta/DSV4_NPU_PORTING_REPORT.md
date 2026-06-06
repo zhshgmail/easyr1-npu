@@ -10,6 +10,41 @@
 
 ---
 
+## 〇、最终实现状态总表(一眼看清)
+
+> 口径:✅=减层真机跑通 · ⚠️=部分/有缺口 · ❌=未跑通。所有"跑通"均为**减层 + 随机权重**的链路可运行性(非数值/文本正确)。详见对应章节。
+
+### 推理链路(SGLang)
+
+| 能力 | 状态 | 用的 upstream | walkaround / 缺口 |
+|---|---|---|---|
+| `DeepseekV4ForCausalLM` `generate()` 端到端 | ✅ 跑通(shape-correct) | sglang 主线 `deepseek_v4.py`(V4 已合入 trunk) | 14 项 PoC workaround(见 §3.2 / output PoC 报告 §0.1) |
+| 推理→权重同步→再推理 循环闭合 | ✅ 跑通 | sglang Engine | 减层 + 共享权重设定下 |
+| `AscendAttnBackend` V4 hook(c4_indexer/compressor/store_cache 等 7 个) | ❌ 未实现 | sgl-kernel-npu(待补) | no-op stub 占位;production 需 native NPU 实现 → 上游 PR |
+| 4 个 JIT-CUDA kernel(rope/silu 等) | ⚠️ torch fallback | sglang model bf16 路 | 需 nvcc 的 CUDA kernel → 退回 torch;production 需 NPU native |
+| V4 KV pool / fp8 路径 | ❌ A3 不走 | — | fp8 = A3 硬件墙;A3 走 bf16 |
+
+### 训练链路(Megatron + miles)
+
+| 能力 | 状态 | 用的 upstream / 算子 | walkaround / 缺口 |
+|---|---|---|---|
+| 减层单层完整训练迭代(fwd+bwd+optim) | ✅ 跑通 | miles + MindSpeed `core_r0.16.0` + Megatron | 减层 1 层;2 层 fwd+bwd |
+| sparse-MLA fwd+bwd | ✅ **CANN-native A3 真机(2026-06-05)** | `npu_nsa_select_attention(+_grad)` | TND layout;attn_sink 适配待做 |
+| compress attention fwd | ✅ CANN-native A3 真机 | `npu_nsa_compress_attention` | bwd 待(`npu_nsa_compress_grad`) |
+| lightning indexer fwd | ✅ CANN-native A3 真机 | `npu_lightning_indexer` | bwd 待;mode-3 causal 掩码已澄清 |
+| rms_norm | ✅ bit-exact | `npu_rms_norm(+_backward)` | — |
+| 训练→推理参数流动(训练特异性) | ✅ 判别实验验证 | — | 减层 2 层共享权重设定下 |
+| **attn_sink 适配层** | ❌ 待做 | — | native 签名无 attn_sink(最新 main 要传)→ M3 唯一真工程点 |
+| 全模型 43 层 / 真 RL 奖励训练 / 数值正确性 | ❌ 未做 | — | 单芯片显存墙(需 TP/PP);RL loop 当前 synth-delta 占位 |
+
+### 关键路线结论
+
+- **DSv4 NPU 运行层 = CANN-native**(torch_npu `npu_nsa_*`/`npu_lightning_indexer`/`npu_rms_norm`,fwd+bwd 全覆盖、A3 真机验证),**不逐个 tilelang re-port**(tilelang 路降级为 CANN 无 native 时的退路)。
+- **fp8 = A3 硬件墙**(V220 无 fp8 单元);A3 全程 bf16。
+- **未达 production / PR-bar**:推理 hook native 实现、attn_sink 适配、各 bwd 补全、数值对、全模型、真 RL——跨 sglang/sgl-kernel-npu/miles 上游 PR(估 1–3 个月)。
+
+---
+
 ## 一、摘要
 
 本报告记录 DeepSeek-V4-Flash 在昇腾 A3 NPU 上的移植工作,覆盖**推理(SGLang)**与**训练(Megatron + miles)**两条链路。结论分两个层面陈述,严格区分**已实测**与**待完成**:

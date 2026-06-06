@@ -5,6 +5,24 @@
 
 ---
 
+## 最终实现状态总表(一眼看清)
+
+> ✅=减层真机跑通 · ⚠️=部分/fallback · ❌=未跑通。所有"跑通"=**减层+随机权重**链路可运行性(非数值正确)。
+
+| 能力 | 状态 | upstream | walkaround / 缺口 |
+|---|---|---|---|
+| V4 真路径推理 `DeepseekV4ForCausalLM.generate()` | ✅ shape-correct | sglang 主线 `deepseek_v4.py` | 14 项 workaround(§0.1) |
+| DSAMLA 训练栈减层闭环(算子+miles+MindSpeed+sglang) | ✅ | miles PR #1246 + MindSpeed | 减层;V3.2-flavor sparse-MLA 族 |
+| sparse-MLA / compress / indexer 训练算子(CANN-native) | ✅ A3 真机(最新基线) | torch_npu `npu_nsa_*`/`npu_lightning_indexer` | 见主报告 §九;attn_sink 适配待做 |
+| `AscendAttnBackend` V4 hook(7 个) | ❌ no-op stub | sgl-kernel-npu(待补) | production 需 native NPU 实现 |
+| 4 个 JIT-CUDA kernel | ⚠️ torch fallback | sglang bf16 路 | 需 nvcc;production 需 NPU native |
+| fp8 路径 | ❌ A3 不走 | — | fp8=A3 硬件墙,走 bf16 |
+| 全模型 43 层 / 真 RL 奖励 / 数值正确 | ❌ 未做 | — | 显存墙需 TP/PP;RL=synth-delta 占位 |
+
+**一句话**:V4 真路径推理 + DSAMLA 训练栈减层均真机跑通(shape-correct);production 需补推理 hook native + attn_sink + 全模型 + 真 RL(跨 sglang/sgl-kernel-npu/miles 上游 PR,估 1–3 个月)。
+
+---
+
 ## 0. 范围与验证状态(必读)
 
 本报告记录 **miles + DeepSeek-V4-Flash 在 Ascend A3 NPU 上 RL 后训练** 的 PoC。结论严格区分**已实测**与**待完成**,所有"跑通"均为**减层(reduced-layer)+ 随机权重**的链路可运行性验证,**不验证数值或文本质量**。
