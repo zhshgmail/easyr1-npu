@@ -8,10 +8,12 @@
 
 ## 1. 起点(git)
 
-- repo: `github.com/zhshgmail/easyr1-npu` main `8dcc34c`(本文件所在)。
+- **repo + 分支:`github.com/zhshgmail/easyr1-npu`,分支 `main`**(全部已 push;`git clone` 或 `git pull` 取最新即可)。本 handoff 截至 commit ≥ `58b0636`(含 M3 真机验证结果 RESULT 文档 + 报告 §九.4 + 状态总表)。
+- M3 真机已验证结果: `workspace/task-dag-realdelta/RESULT_M3_nsa_select_attention_e2e_2026-06-05.md`(sparse-MLA fwd+bwd / compress fwd / indexer fwd 全 A3 真机跑通 + 全部 op schema + attn_sink 缺口确认 + grad-arg-order/TND-layout/causal-mask 三个坑)。**接手前先读这份**,很多预研已完成。
 - 计划全文: `workspace/task-dag-realdelta/REBASE_ON_LATEST_MILES_PLAN_2026-06-05.md`(M1-M5)。
 - 映射依据: `M1_LATEST_MILES_USECASE_UPSTREAM_MAP_2026-06-05.md` + `MILES_REBASE_ASSESSMENT_2026-06-05.md`。
 - miles 最新 main 在 `/home/z00637938/workspace/miles`(origin=radixark/miles;`git fetch origin` 取 main `74198b45`)。
+- **协作纪律(owner 2026-06-06)**:跨 agent 协作必须说清分支名 + 所有改动先 commit+push 再沟通。本 repo 改动都在 `zhshgmail/easyr1-npu` `main`、已 push。你的 M3 产出建议放分支 `blue/fix/dsv4-npu-cann-native-dispatcher`(或你的 slug),push 后告知分支名。
 
 ## 2. 已完成(M1/M2/M4,本地,独立 agent 验证零 REFUTED)
 
