@@ -45,3 +45,27 @@ arithmetic/structural hypotheses** — further blind probing is diminishing retu
 autograd, the training-side bwd path may need: tilelang sparse_mla_bwd, OR use the fwd-matched
 torch reference's autograd as the NPU bwd impl reference (build dq/dk/dv from native fwd + the
 verified sparse-softmax autograd). Decision pending scan-agent's source verdict + owner.
+
+## ROOT CAUSE CONFIRMED (2026-06-09, scan-agent source + blue empirical) — bwd internally rebuilds P
+
+**The mechanism** (scan-agent, from `nsa_selected_attention_grad_bs1.h` `CalSoftmax`): the bwd kernel
+does NOT use the fwd's P. It **internally rebuilds** P: `mm12` recomputes S=Q@K^T → `Muls(scaleValue)`
+→ `SimpleSoftMax(pTensor, sumTensor, maxTensor)` reconstructs P from the passed max/sum. So even
+feeding back the correct smax/ssum, the bwd uses ITS OWN mm12-recomputed-S + SimpleSoftMax P. Any
+difference in that internal P (mm12 precision / SimpleSoftMax normalization semantics / recompute
+path) → `dv = P_internal^T @ dO` deviates, and it is **externally uncontrollable**.
+
+This exactly explains blue's empirical signature: **fwd o always matches (1e-3) but bwd always
+wrong, and dv stuck at cos 0.4949 invariant to every external knob** (head-perm, dS variants,
+gather-order, scale). The bwd's effective P ≠ the fwd's P, and we can't reach it from the API.
+
+→ This is **CANN-internal op behavior**, beyond black-box + source-read resolution. Needs the CANN
+NSA op owner or an official golden. **Logged as ROADMAP perf-followup "native-grad P-recon alignment".**
+
+## DECISION (main, 2026-06-09): FALLBACK (option ②)
+M3 bwd = the **fwd-matched sparse-softmax reference's autograd** (mathematically-correct dq/dk/dv;
+fwd matching 1e-3 proves the ref ≡ native fwd) + the attn_sink bwd closed-form (Stage-A fp64 5.6e-16,
+da real-machine 9.9e-3) layered on top. native fused-grad demoted to a later perf-optimization item.
+This unblocks the M3 training path → dispatcher + UT + PR-bar. scan-agent implements, blue cross-verifies.
+Source pins for the future CANN-op-owner handoff: `nsa_selected_attention_grad_bs1.h`
+CalSoftmax / CalSoftmaxGrad / ScatterProcess + the 11-probe evidence in this dir.
