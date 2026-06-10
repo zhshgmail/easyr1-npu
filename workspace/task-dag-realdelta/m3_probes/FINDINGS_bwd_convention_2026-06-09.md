@@ -18,3 +18,30 @@ a torch autograd reference. Converged via blue's A3 experiments + scan-agent's C
 
 ## NOTE on attn_sink bwd
 The sink math (da = −β·Z·S/D²) was real-machine VALIDATED 9.9e-3 (scan-agent Stage B) — sink correction is correct and INDEPENDENT of this native-grad issue. Once native dq/dk/dv convention is resolved, the sink corrections (blue-reviewed closed-form, Stage A 5.6e-16) layer on top cleanly.
+
+## UPDATE 2 (2026-06-09, after 10 probes) — bwd grad mismatch is NOT a simple convention; ruled out everything arithmetic + structural
+
+Despite fwd matching 1.2e-3 in EVERY config, native `npu_nsa_select_attention_grad` dq/dk/dv
+never matches a torch-autograd reference. Systematically ruled out:
+- **D_i term** (P∘(dP−D_i)): all 3 dS variants → native dq cos≈0.053 (m3_ds_diag.py).
+- **scale**: ratio test native/ref is NON-constant (dv mean0.196 std0.297, dk median 0.0) → not a missing scalar (m3_ratio.py).
+- **gather-order / .sort()**: built gather-based ref in STORED topk order + scatter dk/dv back to full [Tkv,D] real positions via index_add → dk cos STILL 0.0045, dv 0.57 (m3_gather_ref.py).
+- **index-space**: compared at real KV positions (full Tkv), not gathered rep → still wrong.
+
+Signature: dv (P^T@dO, no Jacobian) stuck at cos≈0.5 across all variants despite P matching fwd
+to 1e-3 — abnormal; the most-constrained gradient shouldn't be half-wrong if P+dO are right.
+
+**Conclusion**: this is NOT a reference-construction bug we can fix by matching a convention.
+Either (a) a required fwd "training-mode" / extra cached state the bwd needs that we're not
+providing, (b) `dO`/`attention_out` interpreted differently than out0/g, or (c) this grad op in
+CANN 8.5 / torch_npu 2.9 does not produce an autograd-matching gradient for this config.
+No official autograd-comparison test bundled locally to ground-truth against.
+
+**Next (scan-agent source lane)**: determine if fwd needs a training flag / returns extra
+bwd-state; or whether there's a known limitation. **blue's 10 probes (durable here) rule out the
+arithmetic/structural hypotheses** — further blind probing is diminishing returns.
+
+**Fallback for M3**: attn_sink FWD is closed (validated). If native bwd can't be made to match
+autograd, the training-side bwd path may need: tilelang sparse_mla_bwd, OR use the fwd-matched
+torch reference's autograd as the NPU bwd impl reference (build dq/dk/dv from native fwd + the
+verified sparse-softmax autograd). Decision pending scan-agent's source verdict + owner.
